@@ -1,0 +1,256 @@
+import 'package:flutter/foundation.dart';
+import 'package:flutter/material.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:go_router/go_router.dart';
+
+import '../../features/account/presentation/screens/account_screen.dart';
+import '../../features/account/presentation/screens/following_screen.dart';
+import '../../features/auth/presentation/screens/reset_password_screen.dart';
+import '../../features/brands/presentation/brands_screens.dart';
+import '../../features/community/presentation/communities_screen.dart';
+import '../../features/content/presentation/gifts_screen.dart';
+import '../../features/feed/presentation/feed_screen.dart';
+import '../../features/onboarding/presentation/onboarding_screen.dart';
+import '../../features/legal/presentation/privacy_policy_screen.dart';
+import '../../features/account/presentation/screens/referrals_screen.dart';
+import '../../features/agency/presentation/agency_screens.dart';
+import '../../features/campaigns/presentation/brand/brand_campaigns_screen.dart';
+import '../../features/campaigns/presentation/brand/campaign_editor_screen.dart';
+import '../../features/campaigns/presentation/brand/campaign_manage_screen.dart';
+import '../../features/campaigns/presentation/creator/campaign_detail_screen.dart';
+import '../../features/campaigns/presentation/creator/creator_campaigns_screen.dart';
+import '../../features/chat/presentation/chat_screen.dart';
+import '../../features/chat/presentation/conversations_screen.dart';
+import '../../features/content/presentation/my_posts_screen.dart';
+import '../../features/content/presentation/my_sessions_screen.dart';
+import '../../features/creators/presentation/creator_profile_screen.dart';
+import '../../features/creators/presentation/creators_screen.dart';
+import '../../features/dashboard/presentation/brand_home_screen.dart';
+import '../../features/dashboard/presentation/creator_home_screen.dart';
+import '../../features/notifications/presentation/notifications_screen.dart';
+import '../../features/profile/presentation/edit_profile_screen.dart';
+import '../../features/subscription/presentation/plans_screen.dart';
+import '../../features/wallet/presentation/wallet_screen.dart';
+import '../../features/auth/presentation/bloc/auth_bloc.dart';
+import '../../features/auth/presentation/cubits/choose_role_cubit.dart';
+import '../../features/auth/presentation/cubits/forgot_password_cubit.dart';
+import '../../features/auth/presentation/cubits/login_cubit.dart';
+import '../../features/auth/presentation/cubits/register_cubit.dart';
+import '../../features/auth/presentation/cubits/status_check_cubit.dart';
+import '../../features/auth/presentation/screens/choose_role_screen.dart';
+import '../../features/auth/presentation/screens/forgot_password_screen.dart';
+import '../../features/auth/presentation/screens/login_screen.dart';
+import '../../features/auth/presentation/screens/register_screen.dart';
+import '../../features/auth/presentation/screens/splash_screen.dart';
+import '../../features/auth/presentation/screens/verification_status_screen.dart';
+import '../../features/auth/presentation/screens/welcome_screen.dart';
+import '../../features/shell/presentation/role_shell.dart';
+import '../di/injection.dart';
+import '../storage/onboarding_store.dart';
+import '../theme/app_icons.dart';
+import 'app_pages.dart';
+import 'app_routes.dart';
+import 'router_refresh_stream.dart';
+
+class AppRouter {
+  AppRouter(this._authBloc);
+
+  final AuthBloc _authBloc;
+
+  static final GlobalKey<NavigatorState> rootNavigatorKey = GlobalKey<NavigatorState>(debugLabel: 'root');
+
+  late final GoRouter router = GoRouter(
+    navigatorKey: rootNavigatorKey,
+    initialLocation: AppRoutes.splash,
+    debugLogDiagnostics: kDebugMode,
+    refreshListenable: RouterRefreshStream(_authBloc.stream),
+    redirect: _redirect,
+    routes: [
+      GoRoute(
+        path: AppRoutes.splash,
+        pageBuilder: (context, state) => AppPages.fade(state, const SplashScreen()),
+      ),
+      GoRoute(
+        path: AppRoutes.onboarding,
+        pageBuilder: (context, state) => AppPages.fade(state, const OnboardingScreen()),
+      ),
+      GoRoute(
+        path: AppRoutes.welcome,
+        pageBuilder: (context, state) => AppPages.fade(state, const WelcomeScreen()),
+      ),
+      GoRoute(
+        path: AppRoutes.login,
+        pageBuilder: (context, state) => AppPages.push(
+          state,
+          BlocProvider(create: (_) => LoginCubit(sl()), child: const LoginScreen()),
+        ),
+      ),
+      GoRoute(
+        path: AppRoutes.register,
+        pageBuilder: (context, state) => AppPages.push(
+          state,
+          BlocProvider(create: (_) => RegisterCubit(sl()), child: const RegisterScreen()),
+        ),
+      ),
+      GoRoute(
+        path: AppRoutes.forgotPassword,
+        pageBuilder: (context, state) => AppPages.push(
+          state,
+          BlocProvider(create: (_) => ForgotPasswordCubit(sl()), child: const ForgotPasswordScreen()),
+        ),
+      ),
+      GoRoute(
+        path: AppRoutes.resetPassword,
+        pageBuilder: (context, state) => AppPages.push(state, ResetPasswordScreen(token: state.uri.queryParameters['token'])),
+      ),
+      GoRoute(
+        path: AppRoutes.chooseRole,
+        pageBuilder: (context, state) => AppPages.fade(
+          state,
+          BlocProvider(create: (_) => ChooseRoleCubit(sl()), child: const ChooseRoleScreen()),
+        ),
+      ),
+      GoRoute(
+        path: AppRoutes.verification,
+        pageBuilder: (context, state) => AppPages.fade(
+          state,
+          BlocProvider(create: (_) => StatusCheckCubit(sl()), child: const VerificationStatusScreen()),
+        ),
+      ),
+      _creatorShell(),
+      _brandShell(),
+      _agencyShell(),
+      ..._appPages(),
+    ],
+  );
+
+  static GoRoute _page(String path, Widget Function(GoRouterState state) build) => GoRoute(
+    path: path,
+    parentNavigatorKey: rootNavigatorKey,
+    pageBuilder: (context, state) => AppPages.push(state, build(state)),
+  );
+
+  List<GoRoute> _appPages() => [
+    _page(AppRoutes.notifications, (_) => const NotificationsScreen()),
+    _page(AppRoutes.plans, (_) => const PlansScreen()),
+    _page(AppRoutes.editProfile, (_) => const EditProfileScreen()),
+    _page(AppRoutes.wallet, (_) => const WalletScreen()),
+    _page(AppRoutes.transactions, (_) => const TransactionsScreen()),
+    _page(AppRoutes.referrals, (_) => const ReferralsScreen()),
+    _page(AppRoutes.posts, (_) => const MyPostsScreen()),
+    _page(AppRoutes.sessions, (_) => const MySessionsScreen()),
+    _page(AppRoutes.campaignEditorPath, (s) => CampaignEditorScreen(draftId: s.uri.queryParameters['draft'])),
+    _page(AppRoutes.campaignDetailPath, (s) => CampaignDetailScreen(campaignId: s.pathParameters['id']!)),
+    _page(AppRoutes.manageCampaignPath, (s) => CampaignManageScreen(campaignId: s.pathParameters['id']!)),
+    _page(AppRoutes.chatPath, (s) => ChatScreen(conversationId: s.pathParameters['id']!, args: s.extra is ChatArgs ? s.extra! as ChatArgs : null)),
+    _page(AppRoutes.creatorProfilePath, (s) => CreatorProfileScreen(slug: s.pathParameters['slug']!)),
+    _page(AppRoutes.brands, (_) => const BrandsScreen()),
+    _page(AppRoutes.creatorsDirectory, (_) => const CreatorsScreen()),
+    _page(AppRoutes.brandProfilePath, (s) => BrandProfileScreen(slug: s.pathParameters['slug']!)),
+    _page(AppRoutes.communities, (_) => const CommunitiesScreen()),
+    _page(AppRoutes.feed, (_) => const FeedScreen()),
+    _page(AppRoutes.following, (_) => const FollowingScreen()),
+    _page(AppRoutes.gifts, (_) => const GiftsScreen()),
+    _page(AppRoutes.privacyPolicy, (_) => const PrivacyPolicyScreen()),
+  ];
+
+  String? _redirect(BuildContext context, GoRouterState state) {
+    final auth = _authBloc.state;
+    final location = state.matchedLocation;
+    final isPublic = AppRoutes.publicRoutes.contains(location);
+
+    switch (auth) {
+      case AuthUnknown() || AuthUnreachable():
+        return location == AppRoutes.splash ? null : AppRoutes.splash;
+
+      case AuthUnauthenticated():
+      // First launch: show the intro screens once before sign-in.
+        if (!OnboardingStore.seen) {
+          return location == AppRoutes.onboarding ? null : AppRoutes.onboarding;
+        }
+        return isPublic ? null : AppRoutes.welcome;
+
+      case AuthAuthenticated(:final user):
+        if (!user.role.isAppRole) {
+          return location == AppRoutes.chooseRole ? null : AppRoutes.chooseRole;
+        }
+        if (user.profileStatus?.blocksAccess ?? false) {
+          return location == AppRoutes.verification ? null : AppRoutes.verification;
+        }
+        if (location.startsWith(AppRoutes.appPrefix)) return null;
+        if (isPublic || AppRoutes.gateRoutes.contains(location) || !location.startsWith(user.role.routePrefix)) {
+          return user.role.homeRoute;
+        }
+        return null;
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Role areas. Each tab keeps its own navigation stack.
+  // ---------------------------------------------------------------------------
+
+  static StatefulShellBranch _branch(String path, Widget screen) {
+    return StatefulShellBranch(
+      routes: [GoRoute(path: path, pageBuilder: (context, state) => AppPages.tab(state, screen))],
+    );
+  }
+
+  static StatefulShellRoute _shell(List<ShellDestination> destinations, List<StatefulShellBranch> branches) {
+    return StatefulShellRoute.indexedStack(
+      pageBuilder: (context, state, navigationShell) => AppPages.fade(
+        state,
+        RoleShell(navigationShell: navigationShell, destinations: destinations),
+      ),
+      branches: branches,
+    );
+  }
+
+  StatefulShellRoute _creatorShell() => _shell(
+    const [
+      ShellDestination('Home', AppIcons.home, AppIcons.homeFilled),
+      ShellDestination('Feed', AppIcons.feed, AppIcons.feedFilled),
+      ShellDestination('Campaigns', AppIcons.campaigns, AppIcons.campaignsFilled),
+      ShellDestination('Messages', AppIcons.messages, AppIcons.messagesFilled),
+      ShellDestination('Account', AppIcons.account, AppIcons.accountFilled),
+    ],
+    [
+      _branch(AppRoutes.creatorHome, const CreatorHomeScreen()),
+      _branch(AppRoutes.creatorFeed, const FeedScreen()),
+      _branch(AppRoutes.creatorCampaigns, const CreatorCampaignsScreen()),
+      _branch(AppRoutes.creatorMessages, const ConversationsScreen()),
+      _branch(AppRoutes.creatorAccount, const AccountScreen()),
+    ],
+  );
+
+  StatefulShellRoute _brandShell() => _shell(
+    const [
+      ShellDestination('Home', AppIcons.home, AppIcons.homeFilled),
+      ShellDestination('Campaigns', AppIcons.campaigns, AppIcons.campaignsFilled),
+      ShellDestination('Creators', AppIcons.creators, AppIcons.creatorsFilled),
+      ShellDestination('Messages', AppIcons.messages, AppIcons.messagesFilled),
+      ShellDestination('Account', AppIcons.account, AppIcons.accountFilled),
+    ],
+    [
+      _branch(AppRoutes.brandHome, const BrandHomeScreen()),
+      _branch(AppRoutes.brandCampaigns, const BrandCampaignsScreen()),
+      _branch(AppRoutes.brandCreators, const CreatorsScreen()),
+      _branch(AppRoutes.brandMessages, const ConversationsScreen()),
+      _branch(AppRoutes.brandAccount, const AccountScreen()),
+    ],
+  );
+
+  StatefulShellRoute _agencyShell() => _shell(
+    const [
+      ShellDestination('Dashboard', AppIcons.dashboard, AppIcons.dashboardFilled),
+      ShellDestination('Network', AppIcons.network, AppIcons.networkFilled),
+      ShellDestination('Earnings', AppIcons.wallet, AppIcons.walletFilled),
+      ShellDestination('Account', AppIcons.account, AppIcons.accountFilled),
+    ],
+    [
+      _branch(AppRoutes.agencyHome, const AgencyHomeScreen()),
+      _branch(AppRoutes.agencyNetwork, const AgencyNetworkScreen()),
+      _branch(AppRoutes.agencyEarnings, const WalletScreen(title: 'Earnings')),
+      _branch(AppRoutes.agencyAccount, const AccountScreen()),
+    ],
+  );
+}

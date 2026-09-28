@@ -1,0 +1,35 @@
+<!-- Paste inside the top-level <dict> of ios/Runner/Info.plist -->
+<key>NSPhotoLibraryUsageDescription</key>
+<string>Fanitt needs access to your photos to upload profile pictures, posts and campaign media.</string>
+<key>NSCameraUsageDescription</key>
+<string>Fanitt uses the camera to take photos for your profile, posts and campaigns.</string>
+<key>NSMicrophoneUsageDescription</key>
+<string>Fanitt uses the microphone when you record videos for posts.</string>
+<key>LSApplicationQueriesSchemes</key>
+<array>
+  <string>https</string>
+  <string>mailto</string>
+  <string>zoomus</string>
+  <string>upi</string>
+  <string>tez</string>
+  <string>phonepe</string>
+  <string>paytmmp</string>
+</array>
+<!-- Push notifications -->
+<key>UIBackgroundModes</key>
+<array>
+  <string>remote-notification</string>
+</array>
+<key>FirebaseAppDelegateProxyEnabled</key>
+<true/>
+
+<!-- Google sign-in: add the REVERSED_CLIENT_ID from GoogleService-Info.plist -->
+<key>CFBundleURLTypes</key>
+<array>
+  <dict>
+    <key>CFBundleURLSchemes</key>
+    <array>
+      <string>REPLACE_WITH_REVERSED_CLIENT_ID</string>
+    </array>
+  </dict>
+</array>

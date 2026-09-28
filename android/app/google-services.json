@@ -1,0 +1,70 @@
+{
+  "project_info": {
+    "project_number": "771316915553",
+    "project_id": "fanitt-89fc4",
+    "storage_bucket": "fanitt-89fc4.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:771316915553:android:9356ba98e6312a0592b920",
+        "android_client_info": {
+          "package_name": "fanitt.comapp.fanittapp"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "771316915553-6amkae1v06tkjat9mq6h96slr062702t.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "fanitt.comapp.fanittapp",
+            "certificate_hash": "cd3671e618bf8995fbfbcdcedbb49d3d99b0f69a"
+          }
+        },
+        {
+          "client_id": "771316915553-jsfcsegraso3kvmg38cmfdfbiroa537j.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "fanitt.comapp.fanittapp",
+            "certificate_hash": "71978c21e8fe706b14db745de2e34074abf169c6"
+          }
+        },
+        {
+          "client_id": "771316915553-lls11ga28q0toq19oiqut03pavl01j4n.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "fanitt.comapp.fanittapp",
+            "certificate_hash": "78bee7d6e81cb23ceb92f7f603f5656973ecb2bf"
+          }
+        },
+        {
+          "client_id": "771316915553-li79d9ji8o04pu4t89jj6u2rvar75371.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyB3w6SkE0g0Iw0A-UB4EU66fB33z-OSCac"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "771316915553-li79d9ji8o04pu4t89jj6u2rvar75371.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "771316915553-v1oi4gq2qnnvsbfkfphboui7ki39d3ss.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "fanitt.comapp.fanittapp"
+              }
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
