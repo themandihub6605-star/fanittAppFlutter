@@ -14,6 +14,8 @@ import '../../../../core/widgets/app_card.dart';
 import '../../../../core/widgets/app_network_image.dart';
 import '../../../../core/widgets/app_snackbar.dart';
 import '../../../../core/widgets/status_chip.dart';
+import '../../../content/data/content_repository.dart';
+import '../../../feed/presentation/media_viewer_screen.dart';
 import '../../data/campaign_models.dart';
 
 extension CampaignStatusColor on CampaignStatus {
@@ -46,6 +48,8 @@ extension MilestoneStatusColor on MilestoneStatus {
 }
 
 /// List card for a campaign — used in discovery, saved and brand lists.
+/// A "brief ticket": brand on top, the offer as chips, a perforated tear
+/// line, then applicants and spots.
 class CampaignCard extends StatelessWidget {
   const CampaignCard({super.key, required this.campaign, required this.onTap, this.trailing, this.showStatus = false});
 
@@ -57,90 +61,181 @@ class CampaignCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final palette = context.palette;
-    return AppCard(
-      onTap: onTap,
-      padding: EdgeInsets.zero,
-      child: Padding(
-        padding: const EdgeInsets.all(AppSpacing.sm),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            AppNetworkImage(url: campaign.campaignImageUrl, width: 84, height: 84, radius: AppRadius.md, placeholderIcon: AppIcons.campaigns),
-            const SizedBox(width: AppSpacing.sm),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      Expanded(
-                        child: Text(
-                          campaign.brand?.name ?? campaign.category?.label ?? '',
-                          style: context.text.bodySmall,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
+    final c = campaign;
+    final spotsLeft = c.maxInfluencers > 0 ? (c.maxInfluencers - c.applicantCount).clamp(0, c.maxInfluencers) : null;
+
+    return Material(
+      color: palette.surface,
+      borderRadius: BorderRadius.circular(18),
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: onTap,
+        child: Ink(
+          decoration: BoxDecoration(borderRadius: BorderRadius.circular(18), border: Border.all(color: palette.border)),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(14, 14, 14, 0),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    AppNetworkImage(url: c.campaignImageUrl ?? c.brand?.logoUrl, width: 64, height: 64, radius: 14, placeholderIcon: AppIcons.campaigns),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              AppNetworkImage(url: c.brand?.logoUrl, width: 18, height: 18, radius: 9, placeholderIcon: AppIcons.brand),
+                              const SizedBox(width: 6),
+                              Expanded(
+                                child: Text(
+                                  c.brand?.name ?? c.category?.label ?? 'Brand',
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: context.text.labelMedium?.copyWith(color: palette.textSecondary, fontWeight: FontWeight.w600),
+                                ),
+                              ),
+                              if (c.isFeatured)
+                                const _MiniBadge(label: 'Featured', color: AppColors.warning, icon: AppIcons.sparkle)
+                              else if (c.isExclusive)
+                                const _MiniBadge(label: 'Pro only', color: AppColors.info, icon: AppIcons.crown),
+                              if (trailing != null) trailing!,
+                            ],
+                          ),
+                          const SizedBox(height: 4),
+                          Text(c.title, maxLines: 2, overflow: TextOverflow.ellipsis, style: context.text.titleSmall?.copyWith(fontSize: 15, fontWeight: FontWeight.w700, height: 1.25)),
+                        ],
                       ),
-                      if (campaign.isFeatured) const StatusChip(label: 'Featured', color: AppColors.primary),
-                      if (campaign.isExclusive && !campaign.isFeatured) const StatusChip(label: 'Exclusive', color: AppColors.info),
-                      if (trailing != null) trailing!,
-                    ],
-                  ),
-                  const SizedBox(height: 2),
-                  Text(campaign.title, style: context.text.titleSmall, maxLines: 2, overflow: TextOverflow.ellipsis),
-                  const SizedBox(height: AppSpacing.xs),
-                  Wrap(
-                    spacing: AppSpacing.sm,
-                    runSpacing: 4,
-                    crossAxisAlignment: WrapCrossAlignment.center,
-                    children: [
-                      _Meta(icon: campaign.isPaid ? AppIcons.wallet : AppIcons.gift, text: campaign.payLabel, strong: true),
-                      _Meta(icon: AppIcons.mapPin, text: campaign.locationLabel),
-                      _Meta(icon: AppIcons.users, text: '${campaign.applicantCount} applied'),
-                      if (showStatus) StatusChip(label: campaign.status.label, color: campaign.status.color(context)),
-                    ],
-                  ),
-                  if (!campaign.deliverables.isEmpty) ...[
-                    const SizedBox(height: 6),
-                    Text(campaign.deliverables.summary, style: context.text.bodySmall?.copyWith(color: palette.textTertiary)),
+                    ),
                   ],
-                ],
+                ),
               ),
-            ),
-          ],
+              const SizedBox(height: 12),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 14),
+                child: Wrap(
+                  spacing: 6,
+                  runSpacing: 6,
+                  children: [
+                    _OfferChip(
+                      icon: c.isPaid ? AppIcons.rupee : AppIcons.gift,
+                      label: c.isPaid ? '${Fmt.money(c.costPerInfluencer)} / creator' : 'Barter',
+                      color: c.isPaid ? AppColors.success : AppColors.warning,
+                    ),
+                    _OfferChip(icon: AppIcons.mapPin, label: c.locationLabel, color: palette.textSecondary),
+                    if (!c.deliverables.isEmpty) _OfferChip(icon: AppIcons.videoCamera, label: c.deliverables.summary, color: AppColors.info),
+                    if (showStatus) CampaignStatusChip(campaign: c),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 12),
+              SizedBox(width: double.infinity, height: 1, child: CustomPaint(painter: _DashLine(color: palette.border))),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(14, 10, 10, 10),
+                child: Row(
+                  children: [
+                    Icon(AppIcons.users, size: 14, color: palette.textTertiary),
+                    const SizedBox(width: 4),
+                    Expanded(
+                      child: Text(
+                        ['${c.applicantCount} applied', if (spotsLeft != null) '$spotsLeft of ${c.maxInfluencers} spots left'].join(' · '),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: context.text.bodySmall?.copyWith(fontSize: 12),
+                      ),
+                    ),
+                    Text('View', style: context.text.labelLarge?.copyWith(color: AppColors.primary, fontWeight: FontWeight.w800)),
+                    const Icon(AppIcons.chevronRight, size: 16, color: AppColors.primary),
+                  ],
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
   }
 }
 
-class _Meta extends StatelessWidget {
-  const _Meta({required this.icon, required this.text, this.strong = false});
+class _OfferChip extends StatelessWidget {
+  const _OfferChip({required this.icon, required this.label, required this.color});
 
   final IconData icon;
-  final String text;
-  final bool strong;
+  final String label;
+  final Color color;
 
   @override
   Widget build(BuildContext context) {
-    final palette = context.palette;
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Icon(icon, size: 14, color: strong ? AppColors.primary : palette.textTertiary),
-        const SizedBox(width: 4),
-        Text(
-          text,
-          style: strong
-              ? context.text.labelMedium?.copyWith(color: palette.textPrimary)
-              : context.text.bodySmall,
-        ),
-      ],
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+      decoration: BoxDecoration(color: color.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(8)),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 13, color: color),
+          const SizedBox(width: 4),
+          ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 180),
+            child: Text(label, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(color: color, fontSize: 12, fontWeight: FontWeight.w700)),
+          ),
+        ],
+      ),
     );
   }
 }
 
-/// Everything a creator needs to know about a campaign's brief.
+class _MiniBadge extends StatelessWidget {
+  const _MiniBadge({required this.label, required this.color, required this.icon});
+
+  final String label;
+  final Color color;
+  final IconData icon;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.only(left: 6),
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      decoration: BoxDecoration(color: color.withValues(alpha: 0.14), borderRadius: BorderRadius.circular(6)),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 10, color: color),
+          const SizedBox(width: 3),
+          Text(label, style: TextStyle(color: color, fontSize: 10, fontWeight: FontWeight.w800)),
+        ],
+      ),
+    );
+  }
+}
+
+class _DashLine extends CustomPainter {
+  const _DashLine({required this.color});
+
+  final Color color;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = color
+      ..strokeWidth = 1;
+    var x = 14.0;
+    while (x < size.width - 14) {
+      canvas.drawLine(Offset(x, 0), Offset(x + 5, 0), paint);
+      x += 9;
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _DashLine old) => old.color != color;
+}
+
+/// Everything a creator needs to decide: key facts as tiles, then neat
+/// section cards (about, deliverables, who they want, do / don't, products,
+/// references).
 class CampaignBrief extends StatelessWidget {
   const CampaignBrief({super.key, required this.campaign});
 
@@ -150,26 +245,19 @@ class CampaignBrief extends StatelessWidget {
   Widget build(BuildContext context) {
     final palette = context.palette;
     final c = campaign;
-
-    Widget block(String title, Widget child) => Padding(
-      padding: const EdgeInsets.only(top: AppSpacing.lg),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [Text(title, style: context.text.titleMedium), const SizedBox(height: AppSpacing.xs), child],
-      ),
-    );
+    final spots = c.maxInfluencers;
 
     Widget bullets(List<String> items, IconData icon, Color color) => Column(
       children: [
         for (final item in items)
           Padding(
-            padding: const EdgeInsets.only(bottom: 6),
+            padding: const EdgeInsets.only(bottom: 8),
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Padding(padding: const EdgeInsets.only(top: 2), child: Icon(icon, size: 16, color: color)),
-                const SizedBox(width: AppSpacing.xs),
-                Expanded(child: Text(item, style: context.text.bodyMedium?.copyWith(color: palette.textPrimary))),
+                Padding(padding: const EdgeInsets.only(top: 1), child: Icon(icon, size: 17, color: color)),
+                const SizedBox(width: 10),
+                Expanded(child: Text(item, style: context.text.bodyMedium?.copyWith(color: palette.textPrimary, height: 1.4))),
               ],
             ),
           ),
@@ -177,68 +265,301 @@ class CampaignBrief extends StatelessWidget {
     );
 
     return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        AppCard(
+        // Key facts
+        GridView.count(
+          crossAxisCount: 2,
+          shrinkWrap: true,
+          physics: const NeverScrollableScrollPhysics(),
+          mainAxisSpacing: 10,
+          crossAxisSpacing: 10,
+          childAspectRatio: 2.15,
+          children: [
+            _FactTile(
+              icon: c.isPaid ? AppIcons.rupee : AppIcons.gift,
+              color: c.isPaid ? AppColors.success : AppColors.warning,
+              value: c.isPaid ? Fmt.money(c.costPerInfluencer) : 'Barter',
+              label: c.isPaid ? 'per creator' : 'products provided',
+            ),
+            _FactTile(icon: AppIcons.users, color: AppColors.info, value: '${c.applicantCount}${spots > 0 ? ' / $spots' : ''}', label: spots > 0 ? 'applied / spots' : 'applied'),
+            _FactTile(icon: AppIcons.clock, color: const Color(0xFF7C4DFF), value: c.durationLabel.isEmpty ? 'Flexible' : c.durationLabel, label: 'duration'),
+            _FactTile(icon: AppIcons.mapPin, color: AppColors.primary, value: c.locationLabel, label: 'location'),
+          ],
+        ),
+
+        // Payment + audience
+        _Section(
+          icon: AppIcons.shieldCheck,
+          title: 'Payment & audience',
           child: Column(
             children: [
-              KeyValueRow(label: c.isPaid ? 'Pay per creator' : 'Campaign type', value: c.payLabel, emphasize: true),
-              if (c.isPaid) KeyValueRow(label: 'Paid in', value: '${c.milestoneCount} milestone${c.milestoneCount == 1 ? '' : 's'} via escrow'),
-              KeyValueRow(label: 'Creators needed', value: '${c.maxInfluencers}'),
-              KeyValueRow(label: 'Location', value: c.locationLabel),
-              if (c.durationLabel.isNotEmpty) KeyValueRow(label: 'Duration', value: c.durationLabel),
-              if (c.minFollowers != null && c.minFollowers! > 0) KeyValueRow(label: 'Minimum followers', value: Fmt.compact(c.minFollowers!)),
-              KeyValueRow(label: 'Audience age', value: '${c.ageMin}–${c.ageMax}'),
-              if (c.genderTarget.isNotEmpty) KeyValueRow(label: 'Audience gender', value: c.genderTarget.map(Fmt.titleCase).join(', ')),
+              if (c.isPaid) _Line(label: 'Paid through', value: '${c.milestoneCount} milestone${c.milestoneCount == 1 ? '' : 's'} · escrow protected'),
+              if (c.minFollowers != null && c.minFollowers! > 0) _Line(label: 'Minimum followers', value: Fmt.compact(c.minFollowers!)),
+              _Line(label: 'Audience age', value: '${c.ageMin}–${c.ageMax}'),
+              if (c.genderTarget.isNotEmpty) _Line(label: 'Audience gender', value: c.genderTarget.map(Fmt.titleCase).join(', ')),
+              _Line(label: 'Creators needed', value: '$spots', last: true),
             ],
           ),
         ),
-        if (c.description.isNotEmpty) block('About the campaign', Text(c.description, style: context.text.bodyMedium?.copyWith(color: palette.textPrimary))),
-        if (!c.deliverables.isEmpty) block('Deliverables per creator', Text(c.deliverables.summary, style: context.text.titleSmall)),
-        if (c.creatorRequirement.isNotEmpty) block('Who they’re looking for', Text(c.creatorRequirement, style: context.text.bodyMedium?.copyWith(color: palette.textPrimary))),
-        if (c.influencerCategories.isNotEmpty)
-          block(
-            'Creator categories',
-            Wrap(
-              spacing: AppSpacing.xs,
-              runSpacing: AppSpacing.xs,
-              children: [for (final tag in c.influencerCategories) StatusChip(label: tag, color: palette.textSecondary)],
+
+        if (c.description.isNotEmpty) _Section(icon: AppIcons.fileText, title: 'About the campaign', child: _ExpandableText(text: c.description)),
+
+        if (!c.deliverables.isEmpty)
+          _Section(
+            icon: AppIcons.videoCamera,
+            title: 'Deliverables per creator',
+            child: Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                if (c.deliverables.reel > 0) _CountTile(count: c.deliverables.reel, label: c.deliverables.reel == 1 ? 'Reel' : 'Reels', icon: AppIcons.video),
+                if (c.deliverables.story > 0) _CountTile(count: c.deliverables.story, label: c.deliverables.story == 1 ? 'Story' : 'Stories', icon: AppIcons.broadcast),
+                if (c.deliverables.post > 0) _CountTile(count: c.deliverables.post, label: c.deliverables.post == 1 ? 'Post' : 'Posts', icon: AppIcons.image),
+              ],
             ),
           ),
-        if (c.dos.isNotEmpty) block('Do', bullets(c.dos, AppIcons.checkCircle, AppColors.success)),
-        if (c.donts.isNotEmpty) block('Don’t', bullets(c.donts, AppIcons.xCircle, AppColors.error)),
-        if (c.products.isNotEmpty)
-          block(
-            'Products included',
-            Column(
+
+        if (c.creatorRequirement.isNotEmpty || c.influencerCategories.isNotEmpty)
+          _Section(
+            icon: AppIcons.user,
+            title: 'Who they’re looking for',
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                for (final product in c.products)
-                  Padding(
-                    padding: const EdgeInsets.only(bottom: AppSpacing.xs),
-                    child: AppCard(
-                      padding: const EdgeInsets.all(AppSpacing.sm),
-                      child: Row(
-                        children: [
-                          AppNetworkImage(url: product.imageUrl, width: 52, height: 52, radius: AppRadius.sm, placeholderIcon: AppIcons.gift),
-                          const SizedBox(width: AppSpacing.sm),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(product.name, style: context.text.titleSmall),
-                                Text('Qty ${product.quantity} · Worth ${Fmt.money(product.price)}', style: context.text.bodySmall),
-                              ],
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
+                if (c.creatorRequirement.isNotEmpty) Text(c.creatorRequirement, style: context.text.bodyMedium?.copyWith(color: palette.textPrimary, height: 1.45)),
+                if (c.creatorRequirement.isNotEmpty && c.influencerCategories.isNotEmpty) const SizedBox(height: 10),
+                if (c.influencerCategories.isNotEmpty)
+                  Wrap(
+                    spacing: 6,
+                    runSpacing: 6,
+                    children: [
+                      for (final tag in c.influencerCategories)
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                          decoration: BoxDecoration(color: palette.surfaceMuted, borderRadius: BorderRadius.circular(AppRadius.pill)),
+                          child: Text(tag, style: context.text.labelMedium?.copyWith(fontWeight: FontWeight.w600)),
+                        ),
+                    ],
                   ),
               ],
             ),
           ),
-        if (c.sampleMedia.isNotEmpty) block('Reference', _ReferenceMedia(urls: c.sampleMedia)),
+
+        if (c.dos.isNotEmpty) _Section(icon: AppIcons.checkCircle, title: 'Do', tint: AppColors.success, child: bullets(c.dos, AppIcons.checkCircle, AppColors.success)),
+        if (c.donts.isNotEmpty) _Section(icon: AppIcons.xCircle, title: 'Don’t', tint: AppColors.error, child: bullets(c.donts, AppIcons.xCircle, AppColors.error)),
+
+        if (c.products.isNotEmpty)
+          _Section(
+            icon: AppIcons.gift,
+            title: 'Products included',
+            child: Column(
+              children: [
+                for (final (i, product) in c.products.indexed) ...[
+                  if (i > 0) Divider(height: 20, color: palette.border),
+                  Row(
+                    children: [
+                      AppNetworkImage(url: product.imageUrl, width: 52, height: 52, radius: 12, placeholderIcon: AppIcons.gift),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(product.name, style: context.text.titleSmall),
+                            const SizedBox(height: 2),
+                            Text('Qty ${product.quantity} · Worth ${Fmt.money(product.price)}', style: context.text.bodySmall),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ],
+            ),
+          ),
+
+        if (c.sampleMedia.isNotEmpty) _Section(icon: AppIcons.link, title: 'Reference', child: _ReferenceMedia(urls: c.sampleMedia)),
       ],
+    );
+  }
+}
+
+class _FactTile extends StatelessWidget {
+  const _FactTile({required this.icon, required this.color, required this.value, required this.label});
+
+  final IconData icon;
+  final Color color;
+  final String value;
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.palette;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(color: palette.surface, borderRadius: BorderRadius.circular(16), border: Border.all(color: palette.border)),
+      child: Row(
+        children: [
+          Container(
+            width: 36,
+            height: 36,
+            decoration: BoxDecoration(color: color.withValues(alpha: 0.12), borderRadius: BorderRadius.circular(10)),
+            child: Icon(icon, size: 18, color: color),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                FittedBox(
+                  fit: BoxFit.scaleDown,
+                  alignment: Alignment.centerLeft,
+                  child: Text(value, maxLines: 1, style: context.text.titleSmall?.copyWith(fontSize: 15, fontWeight: FontWeight.w800)),
+                ),
+                Text(label, maxLines: 1, overflow: TextOverflow.ellipsis, style: context.text.bodySmall?.copyWith(fontSize: 11)),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _Section extends StatelessWidget {
+  const _Section({required this.icon, required this.title, required this.child, this.tint});
+
+  final IconData icon;
+  final String title;
+  final Widget child;
+  final Color? tint;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.palette;
+    final color = tint ?? AppColors.primary;
+    return Container(
+      margin: const EdgeInsets.only(top: 12),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: tint == null ? palette.surface : tint!.withValues(alpha: 0.05),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: tint == null ? palette.border : tint!.withValues(alpha: 0.25)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(icon, size: 18, color: color),
+              const SizedBox(width: 8),
+              Text(title, style: context.text.titleMedium?.copyWith(fontSize: 16, fontWeight: FontWeight.w700)),
+            ],
+          ),
+          const SizedBox(height: 12),
+          child,
+        ],
+      ),
+    );
+  }
+}
+
+class _Line extends StatelessWidget {
+  const _Line({required this.label, required this.value, this.last = false});
+
+  final String label;
+  final String value;
+  final bool last;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.palette;
+    return Container(
+      padding: const EdgeInsets.symmetric(vertical: 9),
+      decoration: BoxDecoration(border: last ? null : Border(bottom: BorderSide(color: palette.border))),
+      child: Row(
+        children: [
+          Expanded(child: Text(label, style: context.text.bodyMedium)),
+          const SizedBox(width: 12),
+          Flexible(child: Text(value, textAlign: TextAlign.right, style: context.text.titleSmall?.copyWith(fontWeight: FontWeight.w700))),
+        ],
+      ),
+    );
+  }
+}
+
+class _CountTile extends StatelessWidget {
+  const _CountTile({required this.count, required this.label, required this.icon});
+
+  final int count;
+  final String label;
+  final IconData icon;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.palette;
+    return Container(
+      padding: const EdgeInsets.fromLTRB(10, 8, 14, 8),
+      decoration: BoxDecoration(color: palette.surfaceMuted, borderRadius: BorderRadius.circular(12)),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 18, color: AppColors.info),
+          const SizedBox(width: 8),
+          Text('$count', style: context.text.titleMedium?.copyWith(fontWeight: FontWeight.w800)),
+          const SizedBox(width: 4),
+          Text(label, style: context.text.bodyMedium),
+        ],
+      ),
+    );
+  }
+}
+
+/// Long text shown as 4 lines with "Read more".
+class _ExpandableText extends StatefulWidget {
+  const _ExpandableText({required this.text});
+
+  final String text;
+
+  @override
+  State<_ExpandableText> createState() => _ExpandableTextState();
+}
+
+class _ExpandableTextState extends State<_ExpandableText> {
+  bool _open = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final style = context.text.bodyMedium?.copyWith(color: context.palette.textPrimary, height: 1.5);
+    return LayoutBuilder(
+      builder: (context, box) {
+        final painter = TextPainter(
+          text: TextSpan(text: widget.text, style: style),
+          maxLines: 4,
+          textDirection: Directionality.of(context),
+          textScaler: MediaQuery.textScalerOf(context),
+        )..layout(maxWidth: box.maxWidth);
+        final long = painter.didExceedMaxLines;
+        return AnimatedSize(
+          duration: const Duration(milliseconds: 220),
+          alignment: Alignment.topCenter,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(widget.text, style: style, maxLines: _open ? null : 4, overflow: _open ? TextOverflow.visible : TextOverflow.ellipsis),
+              if (long)
+                GestureDetector(
+                  onTap: () => setState(() => _open = !_open),
+                  child: Padding(
+                    padding: const EdgeInsets.only(top: 6),
+                    child: Text(_open ? 'Show less' : 'Read more', style: context.text.labelLarge?.copyWith(color: AppColors.primary, fontWeight: FontWeight.w700)),
+                  ),
+                ),
+            ],
+          ),
+        );
+      },
     );
   }
 }
@@ -297,7 +618,7 @@ class _ReferenceMedia extends StatelessWidget {
   }
 }
 
-/// Header with the cover image, brand and title.
+/// Header: big cover with badges, the brand (tap to open) and the title.
 class CampaignHeader extends StatelessWidget {
   const CampaignHeader({super.key, required this.campaign});
 
@@ -305,49 +626,209 @@ class CampaignHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final c = campaign;
+    final palette = context.palette;
+    final image = c.campaignImageUrl;
+    final canOpen = image != null && image.isNotEmpty;
+    // Full-screen, pinch-to-zoom view of the campaign image.
+    void openImage() => MediaViewerScreen.open(context, media: [PostMedia(url: image!, isVideo: false)], index: 0);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        AspectRatio(
-          aspectRatio: 16 / 9,
-          child: AppNetworkImage(url: campaign.campaignImageUrl, radius: AppRadius.lg, placeholderIcon: AppIcons.campaigns),
-        ),
-        const SizedBox(height: AppSpacing.md),
-        Row(
-          children: [
-            if (campaign.brand != null) ...[
-              Expanded(
-                child: InkWell(
-                  borderRadius: BorderRadius.circular(AppRadius.sm),
-                  onTap: campaign.brand!.slug.isEmpty ? null : () => context.push(AppRoutes.brandProfile(campaign.brand!.slug)),
+        ClipRRect(
+          borderRadius: BorderRadius.circular(20),
+          child: AspectRatio(
+            aspectRatio: 16 / 10,
+            child: Stack(
+              fit: StackFit.expand,
+              children: [
+                GestureDetector(
+                  onTap: canOpen ? openImage : null,
+                  child: AppNetworkImage(url: c.campaignImageUrl, placeholderIcon: AppIcons.campaigns),
+                ),
+                const DecoratedBox(
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(begin: Alignment.topCenter, end: Alignment.bottomCenter, colors: [Color(0x55000000), Color(0x00000000), Color(0xAA000000)], stops: [0, 0.4, 1]),
+                  ),
+                ),
+                Positioned(
+                  left: 12,
+                  top: 12,
                   child: Row(
                     children: [
-                      AppNetworkImage(url: campaign.brand!.logoUrl, width: 28, height: 28, radius: 14, placeholderIcon: AppIcons.brand),
-                      const SizedBox(width: AppSpacing.xs),
-                      Flexible(child: Text(campaign.brand!.name, style: context.text.labelMedium, overflow: TextOverflow.ellipsis)),
+                      if (c.isFeatured) const _OnImageBadge(label: 'Featured', icon: AppIcons.sparkle),
+                      if (c.isExclusive) const _OnImageBadge(label: 'Pro creators only', icon: AppIcons.crown),
                     ],
                   ),
                 ),
+                Positioned(right: 12, top: 12, child: CampaignStatusChip(campaign: c)),
+                Positioned(
+                  left: 14,
+                  bottom: 12,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                    decoration: BoxDecoration(
+                      gradient: c.isPaid ? const LinearGradient(colors: [Color(0xFFF4511E), Color(0xFFEC2A78)]) : null,
+                      color: c.isPaid ? null : Colors.black54,
+                      borderRadius: BorderRadius.circular(AppRadius.pill),
+                    ),
+                    child: Text(
+                      c.isPaid ? '${Fmt.money(c.costPerInfluencer)} per creator' : 'Barter collaboration',
+                      style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 13),
+                    ),
+                  ),
+                ),
+                if (canOpen)
+                  Positioned(
+                    right: 12,
+                    bottom: 12,
+                    child: Material(
+                      color: Colors.black.withValues(alpha: 0.5),
+                      shape: const CircleBorder(),
+                      child: InkWell(
+                        customBorder: const CircleBorder(),
+                        onTap: openImage,
+                        child: const Padding(
+                          padding: EdgeInsets.all(8),
+                          child: Icon(Icons.open_in_full_rounded, size: 18, color: Colors.white),
+                        ),
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        ),
+        const SizedBox(height: 16),
+        if (c.brand != null)
+          InkWell(
+            borderRadius: BorderRadius.circular(14),
+            onTap: c.brand!.slug.isEmpty ? null : () => context.push(AppRoutes.brandProfile(c.brand!.slug)),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 4),
+              child: Row(
+                children: [
+                  AppNetworkImage(url: c.brand!.logoUrl, width: 40, height: 40, radius: 12, placeholderIcon: AppIcons.brand),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(c.brand!.name, maxLines: 1, overflow: TextOverflow.ellipsis, style: context.text.titleSmall?.copyWith(fontWeight: FontWeight.w700)),
+                        Text(c.category?.label ?? 'Brand', maxLines: 1, overflow: TextOverflow.ellipsis, style: context.text.bodySmall),
+                      ],
+                    ),
+                  ),
+                  Text('View brand', style: context.text.labelMedium?.copyWith(color: AppColors.primary, fontWeight: FontWeight.w700)),
+                  const Icon(AppIcons.chevronRight, size: 16, color: AppColors.primary),
+                ],
               ),
-            ] else
-              const Spacer(),
-            StatusChip(label: campaign.status.label, color: campaign.status.color(context)),
-          ],
-        ),
-        const SizedBox(height: AppSpacing.sm),
-        Text(campaign.title, style: context.text.headlineSmall),
-        const SizedBox(height: AppSpacing.xs),
-        Wrap(
-          spacing: AppSpacing.xs,
-          runSpacing: AppSpacing.xs,
+            ),
+          ),
+        const SizedBox(height: 10),
+        Text(c.title, style: context.text.headlineSmall?.copyWith(fontSize: 22, fontWeight: FontWeight.w800, height: 1.25, letterSpacing: -0.3)),
+        const SizedBox(height: 8),
+        Row(
           children: [
-            if (campaign.category != null && campaign.category!.label.isNotEmpty)
-              StatusChip(label: campaign.category!.label, color: context.palette.textSecondary),
-            StatusChip(label: '${campaign.applicantCount} applied', color: context.palette.textSecondary, icon: AppIcons.users),
-            if (campaign.isExclusive) const StatusChip(label: 'Pro creators only', color: AppColors.info, icon: AppIcons.crown),
+            Icon(AppIcons.users, size: 15, color: palette.textTertiary),
+            const SizedBox(width: 4),
+            Text('${c.applicantCount} creators applied', style: context.text.bodySmall),
+            if (c.createdAt != null) ...[
+              Text('  ·  ', style: context.text.bodySmall),
+              Text('Posted ${Fmt.relative(c.createdAt!)}', style: context.text.bodySmall),
+            ],
           ],
         ),
+        if (c.isPendingReview || c.isRejectedByReview) ...[
+          const SizedBox(height: AppSpacing.md),
+          CampaignReviewBanner(campaign: c),
+        ],
       ],
+    );
+  }
+}
+
+class _OnImageBadge extends StatelessWidget {
+  const _OnImageBadge({required this.label, required this.icon});
+
+  final String label;
+  final IconData icon;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.only(right: 6),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(color: Colors.black.withValues(alpha: 0.5), borderRadius: BorderRadius.circular(8)),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 12, color: AppColors.sunrise),
+          const SizedBox(width: 4),
+          Text(label, style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.w700)),
+        ],
+      ),
+    );
+  }
+}
+
+/// Campaign status, or the admin-review state while it isn't public.
+class CampaignStatusChip extends StatelessWidget {
+  const CampaignStatusChip({super.key, required this.campaign});
+
+  final Campaign campaign;
+
+  @override
+  Widget build(BuildContext context) {
+    if (campaign.isPendingReview) return const StatusChip(label: 'In review', color: AppColors.warning, icon: AppIcons.hourglass);
+    if (campaign.isRejectedByReview) return const StatusChip(label: 'Not approved', color: AppColors.error, icon: AppIcons.xCircle);
+    return StatusChip(label: campaign.status.label, color: campaign.status.color(context));
+  }
+}
+
+/// Shown to the brand while a campaign waits for review or after rejection.
+class CampaignReviewBanner extends StatelessWidget {
+  const CampaignReviewBanner({super.key, required this.campaign});
+
+  final Campaign campaign;
+
+  @override
+  Widget build(BuildContext context) {
+    final pending = campaign.isPendingReview;
+    final color = pending ? AppColors.warning : AppColors.error;
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(AppSpacing.md),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.1),
+        borderRadius: BorderRadius.circular(AppRadius.md),
+        border: Border.all(color: color.withValues(alpha: 0.35)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(pending ? AppIcons.hourglass : AppIcons.xCircle, color: color, size: 20),
+          const SizedBox(width: AppSpacing.sm),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(pending ? 'Waiting for review' : 'Not approved', style: context.text.titleSmall?.copyWith(color: color)),
+                const SizedBox(height: 2),
+                Text(
+                  pending
+                      ? 'Our team is checking this campaign. It goes live for creators as soon as it’s approved — we’ll notify you.'
+                      : [
+                    if (campaign.rejectionReason.isNotEmpty) 'Reason: ${campaign.rejectionReason}.',
+                    'Edit the draft and submit it again — your campaign slot has been returned.',
+                  ].join(' '),
+                  style: context.text.bodySmall?.copyWith(color: context.palette.textPrimary),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

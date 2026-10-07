@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
-import 'package:share_plus/share_plus.dart';
 
 import '../../../../core/bloc/load_cubit.dart';
 import '../../../../core/di/injection.dart';
+import '../../../../core/services/share_service.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_icons.dart';
 import '../../../../core/theme/app_palette.dart';
@@ -65,7 +65,7 @@ class ReferralsScreen extends StatelessWidget {
                           AppButton(
                             label: 'Share invite',
                             icon: AppIcons.shareNetwork,
-                            onPressed: () => Share.share('Join me on Fanitt with my code ${data.code}: https://fanitt.com'),
+                            onPressed: () => ShareService.send(context, ShareService.referral(data.code)),
                           ),
                         ],
                       ),

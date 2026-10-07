@@ -28,6 +28,7 @@ class AppTextField extends StatefulWidget {
     this.maxLength,
     this.onChanged,
     this.suffixText,
+    this.isRequired = false,
   });
 
   final String label;
@@ -51,6 +52,9 @@ class AppTextField extends StatefulWidget {
   final ValueChanged<String>? onChanged;
   final String? suffixText;
 
+  /// Shows an orange * after the label.
+  final bool isRequired;
+
   @override
   State<AppTextField> createState() => _AppTextFieldState();
 }
@@ -66,7 +70,16 @@ class _AppTextFieldState extends State<AppTextField> {
       crossAxisAlignment: CrossAxisAlignment.start,
       mainAxisSize: MainAxisSize.min,
       children: [
-        Text(widget.label, style: context.text.labelMedium?.copyWith(color: palette.textPrimary)),
+        Text.rich(
+          TextSpan(
+            text: widget.label,
+            children: [
+              if (widget.isRequired)
+                const TextSpan(text: ' *', style: TextStyle(color: Color(0xFFF4511E), fontWeight: FontWeight.w800)),
+            ],
+          ),
+          style: context.text.labelMedium?.copyWith(color: palette.textPrimary),
+        ),
         const SizedBox(height: AppSpacing.xs),
         TextFormField(
           controller: widget.controller,
@@ -96,23 +109,23 @@ class _AppTextFieldState extends State<AppTextField> {
             prefixIcon: widget.prefixIcon == null
                 ? null
                 : Padding(
-                    padding: const EdgeInsets.only(left: 14, right: 10),
-                    child: Icon(widget.prefixIcon, size: 20),
-                  ),
+              padding: const EdgeInsets.only(left: 14, right: 10),
+              child: Icon(widget.prefixIcon, size: 20),
+            ),
             prefixIconConstraints: const BoxConstraints(minWidth: 44, minHeight: 44),
             suffixIcon: widget.isPassword
                 ? IconButton(
-                    tooltip: _obscured ? 'Show password' : 'Hide password',
-                    onPressed: () => setState(() => _obscured = !_obscured),
-                    icon: AnimatedSwitcher(
-                      duration: AppDurations.fast,
-                      child: Icon(
-                        _obscured ? AppIcons.eye : AppIcons.eyeOff,
-                        key: ValueKey(_obscured),
-                        size: 20,
-                      ),
-                    ),
-                  )
+              tooltip: _obscured ? 'Show password' : 'Hide password',
+              onPressed: () => setState(() => _obscured = !_obscured),
+              icon: AnimatedSwitcher(
+                duration: AppDurations.fast,
+                child: Icon(
+                  _obscured ? AppIcons.eye : AppIcons.eyeOff,
+                  key: ValueKey(_obscured),
+                  size: 20,
+                ),
+              ),
+            )
                 : null,
           ),
         ),

@@ -10,6 +10,7 @@ import '../../../core/bloc/load_cubit.dart';
 import '../../../core/bloc/paged_cubit.dart';
 import '../../../core/di/injection.dart';
 import '../../../core/router/app_routes.dart';
+import '../../../core/services/share_service.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_icons.dart';
 import '../../../core/theme/app_palette.dart';
@@ -170,8 +171,26 @@ class _BrandProfileView extends StatelessWidget {
   Widget build(BuildContext context) {
     final cubit = context.watch<LoadCubit<BrandPublicProfile>>();
     final actions = context.watch<ActionCubit>().state;
+    final auth = context.watch<AuthBloc>().state;
+    final myId = auth is AuthAuthenticated ? auth.user.id : '';
+    final loaded = cubit.state.data;
     return Scaffold(
-      appBar: AppBar(title: const Text('Brand')),
+      appBar: AppBar(
+        title: const Text('Brand'),
+        actions: [
+          if (loaded != null)
+            ShareIconButton(
+              size: 44,
+              message: () => ShareService.brand(
+                slug: loaded.brand.slug,
+                name: loaded.brand.companyName,
+                industry: loaded.brand.industry,
+                mine: loaded.brand.userId == myId,
+              ),
+            ),
+          const SizedBox(width: 4),
+        ],
+      ),
       body: AsyncView<BrandPublicProfile>(
         state: cubit.state,
         onRetry: cubit.load,

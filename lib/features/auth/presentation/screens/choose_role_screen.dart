@@ -15,8 +15,8 @@ import '../cubits/choose_role_cubit.dart';
 import '../widgets/auth_scaffold.dart';
 import '../widgets/role_card.dart';
 
-/// Shown to accounts created as "fan" (e.g. first-time Google sign-in from
-/// the login screen). The app needs a creator, brand or agency account.
+/// Shown once to new accounts that haven't picked a type yet (e.g. a
+/// first-time Google sign-in from the login screen).
 class ChooseRoleScreen extends StatefulWidget {
   const ChooseRoleScreen({super.key});
 
@@ -48,6 +48,8 @@ class _ChooseRoleScreenState extends State<ChooseRoleScreen> {
     context.read<ChooseRoleCubit>().submit(role: _role!, name: _name.text.trim());
   }
 
+  bool get _needsName => _role != null && _role != UserRole.fan;
+
   @override
   Widget build(BuildContext context) {
     return BlocConsumer<ChooseRoleCubit, RequestState<AppUser>>(
@@ -62,7 +64,7 @@ class _ChooseRoleScreenState extends State<ChooseRoleScreen> {
       builder: (context, state) {
         return AuthScaffold(
           title: 'Finish setting up',
-          subtitle: 'The Fanitt app is for creators, brands and agencies. Choose your account type.',
+          subtitle: 'Choose how you want to use Fanitt.',
           showBack: false,
           footer: Column(
             children: [
@@ -94,21 +96,21 @@ class _ChooseRoleScreenState extends State<ChooseRoleScreen> {
                 AnimatedSize(
                   duration: AppDurations.normal,
                   curve: Curves.easeOutCubic,
-                  child: _role == null
+                  child: !_needsName
                       ? const SizedBox(width: double.infinity)
                       : Padding(
-                          padding: const EdgeInsets.only(top: AppSpacing.md),
-                          child: AppTextField(
-                            label: _role!.nameFieldLabel,
-                            hint: _role!.nameFieldHint,
-                            controller: _name,
-                            textCapitalization: TextCapitalization.words,
-                            textInputAction: TextInputAction.done,
-                            validator: Validators.requiredText(_role!.nameFieldLabel),
-                            onSubmitted: (_) => _submit(),
-                            enabled: !state.isLoading,
-                          ),
-                        ),
+                    padding: const EdgeInsets.only(top: AppSpacing.md),
+                    child: AppTextField(
+                      label: _role!.nameFieldLabel,
+                      hint: _role!.nameFieldHint,
+                      controller: _name,
+                      textCapitalization: TextCapitalization.words,
+                      textInputAction: TextInputAction.done,
+                      validator: Validators.requiredText(_role!.nameFieldLabel),
+                      onSubmitted: (_) => _submit(),
+                      enabled: !state.isLoading,
+                    ),
+                  ),
                 ),
               ],
             ),

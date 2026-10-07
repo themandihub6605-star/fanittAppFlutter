@@ -4,8 +4,8 @@ abstract final class AppConfig {
   /// Live backend on the VPS (nginx → pm2 fanitt-api).
   static const String apiBaseUrl = String.fromEnvironment(
     'API_BASE_URL',
-   // defaultValue: 'http://10.56.97.235:5000/api',   // local testing
-     defaultValue: 'https://api.fanitt.com/api',  // live — switch back before building for Play Store
+    //defaultValue: 'http://10.80.115.235:5000/api', // local testing
+    defaultValue: 'https://api.fanitt.com/api',  // live — switch back before building for Play Store
   );
 
   /// Razorpay public key id (rzp_live_… / rzp_test_…). Safe to ship in the app.

@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:dio/dio.dart';
 import 'package:equatable/equatable.dart';
 
@@ -8,13 +10,19 @@ import '../../../core/services/media_picker.dart';
 import '../../../core/utils/json.dart';
 
 class PostMedia extends Equatable {
-  const PostMedia({required this.url, required this.isVideo});
+  const PostMedia({required this.url, required this.isVideo, this.aspectRatio});
 
-  factory PostMedia.fromJson(Map<String, dynamic> json) =>
-      PostMedia(url: J.str(json, 'url'), isVideo: J.str(json, 'type') == 'video');
+  factory PostMedia.fromJson(Map<String, dynamic> json) => PostMedia(
+    url: J.str(json, 'url'),
+    isVideo: J.str(json, 'type') == 'video',
+    aspectRatio: (json['aspectRatio'] as num?)?.toDouble(),
+  );
 
   final String url;
   final bool isVideo;
+
+  /// Width ÷ height saved at upload (null for older posts).
+  final double? aspectRatio;
 
   @override
   List<Object?> get props => [url];
@@ -35,6 +43,7 @@ class Post extends Equatable {
     this.creatorAvatarUrl,
     this.creatorSlug,
     this.isFollowingCreator = false,
+    this.isSaved = false,
   });
 
   factory Post.fromJson(Map<String, dynamic> json) {
@@ -54,6 +63,7 @@ class Post extends Equatable {
       creatorAvatarUrl: creatorUser == null ? null : J.strOrNull(creatorUser, 'avatarUrl'),
       creatorSlug: creator == null ? null : J.strOrNull(creator, 'slug'),
       isFollowingCreator: creator == null ? false : J.boolean(creator, 'isFollowing'),
+      isSaved: J.boolean(json, 'isSaved'),
     );
   }
 
@@ -77,6 +87,9 @@ class Post extends Equatable {
   final String? creatorSlug;
   final bool isFollowingCreator;
 
+  /// The current user saved this post.
+  final bool isSaved;
+
   bool likedByUser(String userId) => likedBy.contains(userId);
 
   Post copyWith({
@@ -84,6 +97,7 @@ class Post extends Equatable {
     Set<String>? likedBy,
     List<UserLite>? likePreview,
     bool? isFollowingCreator,
+    bool? isSaved,
   }) =>
       Post(
         id: id,
@@ -99,6 +113,7 @@ class Post extends Equatable {
         creatorAvatarUrl: creatorAvatarUrl,
         creatorSlug: creatorSlug,
         isFollowingCreator: isFollowingCreator ?? this.isFollowingCreator,
+        isSaved: isSaved ?? this.isSaved,
       );
 
   /// Local like/unlike, keeping the "Liked by" preview in step.
@@ -113,7 +128,7 @@ class Post extends Equatable {
   }
 
   @override
-  List<Object?> get props => [id, caption, likeCount, likedBy, likePreview, isFollowingCreator];
+  List<Object?> get props => [id, caption, likeCount, likedBy, likePreview, isFollowingCreator, isSaved];
 }
 
 enum SessionType {
@@ -224,8 +239,11 @@ class ContentRepository {
   Future<List<Post>> creatorPosts(String creatorProfileId) async =>
       (await _api.get('/posts/creator/$creatorProfileId', parser: (d) => J.listOf(d, Post.fromJson))).data;
 
-  Future<Post> createPost({required List<PickedMedia> media, String caption = ''}) async {
-    final form = FormData.fromMap({'caption': caption});
+  Future<Post> createPost({required List<PickedMedia> media, String caption = '', List<double?> aspectRatios = const []}) async {
+    final form = FormData.fromMap({
+      'caption': caption,
+      if (aspectRatios.isNotEmpty) 'aspectRatios': jsonEncode(aspectRatios),
+    });
     for (final item in media) {
       form.files.add(MapEntry('media', await multipartFrom(item)));
     }
@@ -270,6 +288,33 @@ class ContentRepository {
     return response.data;
   }
 
+  /// Edit a session (cover, details) or postpone it with [scheduledAt].
+  /// Everyone who booked is told about a new time.
+  Future<LiveSession> updateSession(
+      String id, {
+        String? title,
+        String? description,
+        DateTime? scheduledAt,
+        int? durationMinutes,
+        int? maxParticipants,
+        String? coverImageUrl,
+        String? rescheduleNote,
+      }) async =>
+      (await _api.patch(
+        '/sessions/$id',
+        data: {
+          if (title != null) 'title': title,
+          if (description != null) 'description': description,
+          if (scheduledAt != null) 'scheduledAt': scheduledAt.toUtc().toIso8601String(),
+          if (durationMinutes != null) 'durationMinutes': durationMinutes,
+          if (maxParticipants != null) 'maxParticipants': maxParticipants,
+          if (coverImageUrl != null) 'coverImageUrl': coverImageUrl,
+          if (rescheduleNote != null && rescheduleNote.isNotEmpty) 'rescheduleNote': rescheduleNote,
+        },
+        parser: (d) => LiveSession.fromJson(J.asMap(d)),
+      ))
+          .data;
+
   Future<void> cancelSession(String id) async {
     await _api.delete('/sessions/$id', parser: (_) => null);
   }
@@ -284,6 +329,16 @@ class ContentRepository {
 
   Future<List<Post>> feed({int limit = 30}) async =>
       (await _api.get('/posts/feed', query: {'limit': limit}, parser: (d) => J.listOf(d, Post.fromJson))).data;
+
+  /// One post (opened from a shared link).
+  Future<Post> post(String id) async => (await _api.get('/posts/$id', parser: (d) => Post.fromJson(J.asMap(d)))).data;
+
+  /// Posts the current user saved.
+  Future<List<Post>> savedPosts() async => (await _api.get('/posts/saved', parser: (d) => J.listOf(d, Post.fromJson))).data;
+
+  /// Saves or unsaves a post. Returns whether it's saved now.
+  Future<bool> toggleSave(String postId) async =>
+      (await _api.post('/posts/$postId/save', parser: (d) => J.boolean(J.asMap(d), 'saved'))).data;
 
   Future<({bool liked, int likeCount})> toggleLike(String postId) async =>
       (await _api.post('/posts/$postId/like', parser: (d) {

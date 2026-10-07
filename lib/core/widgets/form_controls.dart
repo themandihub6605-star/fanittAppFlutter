@@ -8,10 +8,13 @@ import '../theme/app_spacing.dart';
 
 /// Label shown above custom form controls, matching AppTextField.
 class FieldLabel extends StatelessWidget {
-  const FieldLabel(this.text, {super.key, this.trailing});
+  const FieldLabel(this.text, {super.key, this.trailing, this.isRequired = false});
 
   final String text;
   final Widget? trailing;
+
+  /// Shows an orange * after the label.
+  final bool isRequired;
 
   @override
   Widget build(BuildContext context) {
@@ -19,7 +22,17 @@ class FieldLabel extends StatelessWidget {
       padding: const EdgeInsets.only(bottom: AppSpacing.xs),
       child: Row(
         children: [
-          Expanded(child: Text(text, style: context.text.labelMedium)),
+          Expanded(
+            child: Text.rich(
+              TextSpan(
+                text: text,
+                children: [
+                  if (isRequired) const TextSpan(text: ' *', style: TextStyle(color: Color(0xFFF4511E), fontWeight: FontWeight.w800)),
+                ],
+              ),
+              style: context.text.labelMedium,
+            ),
+          ),
           if (trailing != null) trailing!,
         ],
       ),
@@ -112,6 +125,8 @@ class TagInput extends StatefulWidget {
     required this.onChanged,
     this.hint = 'Type and press add',
     this.maxItems = 20,
+    this.isRequired = false,
+    this.validator,
   });
 
   final String label;
@@ -119,6 +134,10 @@ class TagInput extends StatefulWidget {
   final ValueChanged<List<String>> onChanged;
   final String hint;
   final int maxItems;
+  final bool isRequired;
+
+  /// Checked with the rest of the Form (gets the current values).
+  final String? Function(List<String> values)? validator;
 
   @override
   State<TagInput> createState() => _TagInputState();
@@ -126,6 +145,16 @@ class TagInput extends StatefulWidget {
 
 class _TagInputState extends State<TagInput> {
   final _controller = TextEditingController();
+  final _fieldKey = GlobalKey<FormFieldState<List<String>>>();
+
+  @override
+  void didUpdateWidget(covariant TagInput oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // Clear the "required" error as soon as a tag is added.
+    if (oldWidget.values != widget.values && (_fieldKey.currentState?.hasError ?? false)) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => _fieldKey.currentState?.validate());
+    }
+  }
 
   @override
   void dispose() {
@@ -143,10 +172,18 @@ class _TagInputState extends State<TagInput> {
   @override
   Widget build(BuildContext context) {
     final palette = context.palette;
+    return FormField<List<String>>(
+      key: _fieldKey,
+      validator: widget.validator == null ? null : (_) => widget.validator!(widget.values),
+      builder: (field) => _build(context, palette, field.errorText),
+    );
+  }
+
+  Widget _build(BuildContext context, AppPalette palette, String? errorText) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        FieldLabel(widget.label),
+        FieldLabel(widget.label, isRequired: widget.isRequired),
         TextField(
           controller: _controller,
           textInputAction: TextInputAction.done,
@@ -154,6 +191,7 @@ class _TagInputState extends State<TagInput> {
           textCapitalization: TextCapitalization.sentences,
           decoration: InputDecoration(
             hintText: widget.hint,
+            errorText: errorText,
             suffixIcon: IconButton(tooltip: 'Add', icon: const Icon(AppIcons.plus, color: AppColors.primary), onPressed: _add),
           ),
         ),
@@ -210,19 +248,19 @@ class CounterField extends StatelessWidget {
   Widget build(BuildContext context) {
     final palette = context.palette;
     Widget button(IconData icon, bool enabled, int next) => IconButton(
-          onPressed: enabled
-              ? () {
-                  HapticFeedback.selectionClick();
-                  onChanged(next);
-                }
-              : null,
-          icon: Icon(icon, size: 18),
-          style: IconButton.styleFrom(
-            backgroundColor: palette.surfaceMuted,
-            disabledBackgroundColor: palette.surfaceMuted.withValues(alpha: 0.5),
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppRadius.sm)),
-          ),
-        );
+      onPressed: enabled
+          ? () {
+        HapticFeedback.selectionClick();
+        onChanged(next);
+      }
+          : null,
+      icon: Icon(icon, size: 18),
+      style: IconButton.styleFrom(
+        backgroundColor: palette.surfaceMuted,
+        disabledBackgroundColor: palette.surfaceMuted.withValues(alpha: 0.5),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppRadius.sm)),
+      ),
+    );
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md, vertical: AppSpacing.xs),
@@ -257,8 +295,10 @@ class AppDropdown<T> extends StatelessWidget {
     required this.onChanged,
     this.hint = 'Select',
     this.validator,
+    this.isRequired = false,
   });
 
+  final bool isRequired;
   final String label;
   final List<T> items;
   final T? value;
@@ -272,7 +312,7 @@ class AppDropdown<T> extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        FieldLabel(label),
+        FieldLabel(label, isRequired: isRequired),
         DropdownButtonFormField<T>(
           value: items.contains(value) ? value : null,
           isExpanded: true,

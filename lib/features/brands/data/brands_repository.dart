@@ -42,13 +42,13 @@ class BrandPublicProfile {
   final int followerCount;
 
   BrandPublicProfile copyWith({bool? isFollowing, int? followerCount}) => BrandPublicProfile(
-        brand: brand,
-        campaigns: campaigns,
-        campaignsPosted: campaignsPosted,
-        reviews: reviews,
-        isFollowing: isFollowing ?? this.isFollowing,
-        followerCount: followerCount ?? this.followerCount,
-      );
+    brand: brand,
+    campaigns: campaigns,
+    campaignsPosted: campaignsPosted,
+    reviews: reviews,
+    isFollowing: isFollowing ?? this.isFollowing,
+    followerCount: followerCount ?? this.followerCount,
+  );
 }
 
 class BrandsRepository {
@@ -56,22 +56,22 @@ class BrandsRepository {
 
   final ApiClient _api;
 
-  Future<Paged<BrandListItem>> list({String? search, int page = 1}) async => (await _api.get(
-        '/brands',
-        query: {'page': page, 'limit': 20, if (search != null && search.isNotEmpty) 'search': search},
-        parser: (d) {
-          final m = J.asMap(d);
-          final total = J.integer(m, 'total');
-          final limit = J.integer(m, 'limit', 20);
-          return Paged(
-            items: J.list(m, 'brands', BrandListItem.fromJson),
-            page: J.integer(m, 'page', 1),
-            pages: limit == 0 ? 1 : (total / limit).ceil().clamp(1, 1 << 20).toInt(),
-            total: total,
-          );
-        },
-      ))
-          .data;
+  Future<Paged<BrandListItem>> list({String? search, List<String>? ids, int page = 1}) async => (await _api.get(
+    '/brands',
+    query: {'page': page, 'limit': 20, if (search != null && search.isNotEmpty) 'search': search, if (ids != null && ids.isNotEmpty) 'ids': ids.join(',')},
+    parser: (d) {
+      final m = J.asMap(d);
+      final total = J.integer(m, 'total');
+      final limit = J.integer(m, 'limit', 20);
+      return Paged(
+        items: J.list(m, 'brands', BrandListItem.fromJson),
+        page: J.integer(m, 'page', 1),
+        pages: limit == 0 ? 1 : (total / limit).ceil().clamp(1, 1 << 20).toInt(),
+        total: total,
+      );
+    },
+  ))
+      .data;
 
   /// [myUserId] decides the follow state from the followers list.
   Future<BrandPublicProfile> bySlug(String slug, {required String myUserId}) async {

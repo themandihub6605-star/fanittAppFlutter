@@ -9,29 +9,31 @@ import '../../../../core/theme/app_spacing.dart';
 
 extension RolePresentation on UserRole {
   IconData get icon => switch (this) {
-        UserRole.brand => AppIcons.brand,
-        UserRole.agency => AppIcons.agency,
-        _ => AppIcons.creator,
-      };
+    UserRole.brand => AppIcons.brand,
+    UserRole.agency => AppIcons.agency,
+    UserRole.fan => AppIcons.store,
+    _ => AppIcons.creator,
+  };
 
   String get pitch => switch (this) {
-        UserRole.creator => 'Find paid campaigns, send proposals and get paid safely through escrow.',
-        UserRole.brand => 'Post campaigns, hire creators and pay only for work you approve.',
-        UserRole.agency => 'Bring creators and brands to Fanitt with your code and earn commission.',
-        _ => '',
-      };
+    UserRole.creator => 'Find paid campaigns, send proposals and get paid safely through escrow.',
+    UserRole.brand => 'Post campaigns, hire creators and pay only for work you approve.',
+    UserRole.agency => 'Bring creators and brands to Fanitt with your code and earn commission.',
+    UserRole.fan => 'Shop creator stores, join lives and calls, and support creators you love.',
+    _ => '',
+  };
 
   String get nameFieldLabel => switch (this) {
-        UserRole.brand => 'Brand name',
-        UserRole.agency => 'Agency name',
-        _ => 'Full name',
-      };
+    UserRole.brand => 'Brand name',
+    UserRole.agency => 'Agency name',
+    _ => 'Full name',
+  };
 
   String get nameFieldHint => switch (this) {
-        UserRole.brand => 'e.g. Chai Point',
-        UserRole.agency => 'e.g. Northstar Talent',
-        _ => 'Your full name',
-      };
+    UserRole.brand => 'e.g. Chai Point',
+    UserRole.agency => 'e.g. Northstar Talent',
+    _ => 'Your full name',
+  };
 }
 
 class RoleCard extends StatelessWidget {

@@ -34,6 +34,7 @@ class AuthRemoteDataSource {
         'role': input.role.value,
         if (input.phone != null) 'phone': input.phone,
         if (input.referralCode != null) 'referralCode': input.referralCode,
+        if (input.otp != null) 'otp': input.otp,
       },
       skipAuth: true,
       parser: _session,
@@ -65,6 +66,11 @@ class AuthRemoteDataSource {
     );
     return response.data;
   }
+
+  /// Marks sign-up as finished (used for fan accounts, which have no
+  /// creator/brand/agency profile to create).
+  Future<AppUser> completeOnboarding() async =>
+      (await _api.post(ApiEndpoints.completeOnboarding, parser: _user)).data;
 
   Future<String> forgotPassword(String email) async {
     final response = await _api.post(

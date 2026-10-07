@@ -11,7 +11,8 @@ import '../../../core/theme/app_icons.dart';
 import '../../../core/theme/app_palette.dart';
 import '../../../core/theme/app_spacing.dart';
 import '../../../core/utils/formatters.dart';
-import '../../../core/widgets/app_button.dart';
+import '../../store/presentation/widgets/store_promo_banner.dart';
+import '../../../core/widgets/app_update_banner.dart';
 import '../../../core/widgets/app_card.dart';
 import '../../../core/widgets/async_view.dart';
 import '../../auth/presentation/bloc/auth_bloc.dart';
@@ -20,7 +21,9 @@ import '../../campaigns/presentation/brand/brand_campaigns_screen.dart';
 import '../../campaigns/presentation/widgets/campaign_widgets.dart';
 import '../../subscription/data/subscription_repository.dart';
 import '../data/dashboard_repository.dart';
+import 'home_discover.dart';
 import 'home_widgets.dart';
+import 'home_banner_slider.dart';
 
 class BrandHomeData {
   const BrandHomeData({required this.dashboard, required this.subscription});
@@ -47,13 +50,14 @@ class BrandHomeScreen extends StatelessWidget {
 class _BrandHomeView extends StatelessWidget {
   const _BrandHomeView();
 
+  static const _gutter = EdgeInsets.symmetric(horizontal: AppSpacing.gutter);
+
   @override
   Widget build(BuildContext context) {
     final cubit = context.watch<LoadCubit<BrandHomeData>>();
     final auth = context.watch<AuthBloc>().state;
 
     return Scaffold(
-      appBar: const HomeAppBar(),
       body: AsyncView<BrandHomeData>(
         state: cubit.state,
         onRetry: cubit.load,
@@ -63,99 +67,150 @@ class _BrandHomeView extends StatelessWidget {
           final needsReview = active.where((c) => c.status == CampaignStatus.submitted || c.status == CampaignStatus.disputed).length;
           final limit = data.subscription.plan.campaignPostLimit;
 
+          Future<void> postCampaign() async {
+            final created = await context.push<bool>(AppRoutes.campaignEditor());
+            if ((created ?? false) && context.mounted) cubit.refresh();
+          }
+
           return AppRefresh(
             onRefresh: () async {
               context.read<AuthBloc>().add(const AuthRefreshRequested());
+              homeRefreshTick.value++;
               await cubit.refresh();
             },
-            child: ListView(
-              physics: const AlwaysScrollableScrollPhysics(),
-              padding: const EdgeInsets.fromLTRB(AppSpacing.gutter, AppSpacing.xs, AppSpacing.gutter, AppSpacing.xxl),
-              children: [
-                if (auth is AuthAuthenticated) ProfileCompletionBanner(user: auth.user),
-                Container(
-                  padding: const EdgeInsets.all(AppSpacing.xl),
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(AppRadius.xl),
-                    gradient: const LinearGradient(begin: Alignment.topLeft, end: Alignment.bottomRight, colors: [AppColors.navy, AppColors.navyRaised]),
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text('Protected in escrow', style: context.text.bodyMedium?.copyWith(color: Colors.white70)),
-                      const SizedBox(height: AppSpacing.xxs),
-                      Text(Fmt.money(d.inEscrow), style: context.text.headlineMedium?.copyWith(color: Colors.white)),
-                      const SizedBox(height: AppSpacing.xs),
-                      Text('Total spent ${Fmt.money(d.totalSpent)}', style: context.text.bodySmall?.copyWith(color: AppColors.sunrise)),
-                      const SizedBox(height: AppSpacing.lg),
-                      AppButton(
-                        label: 'Post a campaign',
-                        icon: AppIcons.plus,
-                        onPressed: () async {
-                          final created = await context.push<bool>(AppRoutes.campaignEditor());
-                          if ((created ?? false) && context.mounted) cubit.refresh();
-                        },
-                      ),
-                    ],
-                  ),
-                ).animate().fadeIn(duration: 350.ms).slideY(begin: 0.05),
-                const SizedBox(height: AppSpacing.md),
-                Row(
-                  children: [
-                    Expanded(child: StatCard(label: 'Active', value: '${active.length}', icon: AppIcons.campaigns)),
-                    const SizedBox(width: AppSpacing.sm),
-                    Expanded(child: StatCard(label: 'To review', value: '$needsReview', icon: AppIcons.eye, accent: needsReview > 0 ? AppColors.primary : null)),
-                    const SizedBox(width: AppSpacing.sm),
-                    Expanded(child: StatCard(label: 'Profile views', value: Fmt.compact(d.profileViews), icon: AppIcons.users)),
-                  ],
-                ),
-                const SizedBox(height: AppSpacing.md),
-                AppCard(
-                  onTap: () => context.push(AppRoutes.plans),
-                  child: Row(
-                    children: [
-                      const Icon(AppIcons.crown, size: 20, color: AppColors.primary),
-                      const SizedBox(width: AppSpacing.xs),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
+            // The hero handles the status bar itself; without this every
+            // grid/list inside the home adds the status-bar height as extra
+            // top space (e.g. under "Quick actions").
+            child: MediaQuery.removePadding(
+              context: context,
+              removeTop: true,
+              child: ListView(
+                physics: const AlwaysScrollableScrollPhysics(),
+                // Build the whole home once so sections don't reload or re-animate while scrolling.
+                cacheExtent: 4000,
+                // The hero draws under the status bar itself.
+                padding: const EdgeInsets.only(bottom: AppSpacing.huge),
+                children: [
+                  // Full-bleed slider + header (greeting header when no banners).
+                  HomeHeroSlider(topInset: MediaQuery.paddingOf(context).top),
+                  const Padding(padding: _gutter, child: AppUpdateBanner()),
+                  if (auth is AuthAuthenticated) Padding(padding: _gutter, child: ProfileCompletionBanner(user: auth.user)),
+                  const HomeSearchBar(hint: 'Search creators, brands, communities…'),
+                  const SizedBox(height: AppSpacing.lg),
+
+                  // Escrow hero
+                  HomeHero(
+                    label: 'Protected in escrow',
+                    value: Fmt.money(d.inEscrow),
+                    caption: 'Total spent ${Fmt.money(d.totalSpent)}${limit != null ? ' · ${data.subscription.campaignsPosted}/$limit campaigns used' : ''}',
+                    trailing: InkWell(
+                      borderRadius: BorderRadius.circular(AppRadius.pill),
+                      onTap: () => context.push(AppRoutes.plans),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                        decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.12), borderRadius: BorderRadius.circular(AppRadius.pill)),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
                           children: [
-                            Text('${data.subscription.plan.name} plan', style: context.text.titleSmall),
-                            if (limit != null)
-                              Text('${data.subscription.campaignsPosted} of $limit campaigns used', style: context.text.bodySmall),
+                            const Icon(AppIcons.crown, size: 14, color: AppColors.sunrise),
+                            const SizedBox(width: 4),
+                            Text(
+                              data.subscription.plan.isFree ? '${data.subscription.plan.name} · Upgrade' : data.subscription.plan.name,
+                              style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w700),
+                            ),
                           ],
                         ),
                       ),
-                      Text(data.subscription.plan.isFree ? 'Upgrade' : 'Manage', style: context.text.labelMedium?.copyWith(color: AppColors.primary)),
+                    ),
+                    primaryAction: Material(
+                      color: Colors.transparent,
+                      borderRadius: BorderRadius.circular(AppRadius.md),
+                      clipBehavior: Clip.antiAlias,
+                      child: Ink(
+                        decoration: const BoxDecoration(gradient: LinearGradient(colors: [Color(0xFFF4511E), Color(0xFFEC2A78)])),
+                        child: InkWell(
+                          onTap: postCampaign,
+                          child: const Padding(
+                            padding: EdgeInsets.symmetric(vertical: 13),
+                            child: Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Icon(AppIcons.plus, color: Colors.white, size: 18),
+                                SizedBox(width: 6),
+                                Text('Post a campaign', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w800)),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: AppSpacing.md),
+                  HomeStatsRow(
+                    stats: [
+                      (label: 'Active campaigns', value: '${active.length}', icon: AppIcons.campaigns, color: AppColors.primary),
+                      (label: 'To review', value: '$needsReview', icon: AppIcons.eye, color: needsReview > 0 ? AppColors.error : AppColors.info),
+                      (label: 'Profile views', value: Fmt.compact(d.profileViews), icon: AppIcons.users, color: AppColors.success),
                     ],
                   ),
-                ),
-                const SizedBox(height: AppSpacing.md),
-                Row(
-                  children: [
-                    QuickAction(icon: AppIcons.image, label: 'Creator feed', onTap: () => context.push(AppRoutes.feed)),
-                    const SizedBox(width: AppSpacing.sm),
-                    QuickAction(icon: AppIcons.users, label: 'Communities', onTap: () => context.push(AppRoutes.communities)),
-                    const SizedBox(width: AppSpacing.sm),
-                    QuickAction(icon: AppIcons.gift, label: 'Refer', onTap: () => context.push(AppRoutes.referrals)),
-                  ],
-                ),
-                const SizedBox(height: AppSpacing.xl),
-                SectionHeader(title: 'Active campaigns', actionLabel: 'See all', onAction: () => context.go(AppRoutes.brandCampaigns)),
-                if (active.isEmpty)
-                  Text('Your live campaigns appear here.', style: context.text.bodyMedium?.copyWith(color: context.palette.textSecondary))
-                else
-                  for (final c in active.take(5)) ...[
-                    CampaignCard(
-                      campaign: c,
-                      showStatus: true,
-                      onTap: () async {
-                        if (await openBrandCampaign(context, c) && context.mounted) cubit.refresh();
-                      },
+
+                  // Quick actions
+                  homeGap,
+                  const HomeSectionHeader(title: 'Quick actions'),
+                  const SizedBox(height: AppSpacing.md),
+                  HomeQuickActions(
+                    actions: [
+                      HomeAction(icon: AppIcons.plus, label: 'New campaign', onTap: postCampaign),
+                      HomeAction(icon: AppIcons.creators, label: 'Find creators', color: AppColors.info, onTap: () => context.go(AppRoutes.brandCreators)),
+                      HomeAction(icon: AppIcons.campaigns, label: 'My campaigns', color: AppColors.success, onTap: () => context.go(AppRoutes.brandCampaigns)),
+                      HomeAction(icon: AppIcons.messages, label: 'Messages', color: const Color(0xFF7C4DFF), onTap: () => context.go(AppRoutes.brandMessages)),
+                      HomeAction(icon: AppIcons.image, label: 'Creator feed', color: AppColors.warning, onTap: () => context.push(AppRoutes.feed)),
+                      HomeAction(icon: AppIcons.videoCamera, label: 'Meets', color: const Color(0xFF00A3A3), onTap: () => context.push(AppRoutes.meets)),
+                      HomeAction(icon: AppIcons.users, label: 'Communities', color: const Color(0xFFEC2A78), onTap: () => context.push(AppRoutes.communities)),
+                      HomeAction(icon: AppIcons.package, label: 'Shop', color: AppColors.primary, onTap: () => context.push(AppRoutes.products)),
+                    ],
+                  ),
+
+
+                  // Active campaigns
+                  homeGap,
+                  HomeSectionHeader(title: 'Active campaigns', subtitle: needsReview > 0 ? '$needsReview need your review' : null, onSeeAll: () => context.go(AppRoutes.brandCampaigns)),
+                  const SizedBox(height: AppSpacing.sm),
+                  Padding(
+                    padding: _gutter,
+                    child: active.isEmpty
+                        ? AppCard(
+                      onTap: postCampaign,
+                      child: Row(
+                        children: [
+                          const Icon(AppIcons.campaigns, color: AppColors.primary),
+                          const SizedBox(width: AppSpacing.sm),
+                          Expanded(child: Text('No live campaigns yet — post one and creators start applying.', style: context.text.bodyMedium?.copyWith(color: context.palette.textPrimary))),
+                        ],
+                      ),
+                    )
+                        : Column(
+                      children: [
+                        for (final (i, c) in active.take(4).indexed)
+                          Padding(
+                            padding: const EdgeInsets.only(bottom: AppSpacing.sm),
+                            child: CampaignCard(
+                              campaign: c,
+                              showStatus: true,
+                              onTap: () async {
+                                if (await openBrandCampaign(context, c) && context.mounted) cubit.refresh();
+                              },
+                            ).animate(delay: (60 * i).ms).fadeIn(duration: 300.ms).slideY(begin: 0.06),
+                          ),
+                      ],
                     ),
-                    const SizedBox(height: AppSpacing.sm),
-                  ],
-              ],
+                  ),
+
+                  const Padding(padding: EdgeInsets.fromLTRB(AppSpacing.gutter, AppSpacing.xl, AppSpacing.gutter, 0), child: StorePromoBanner()),
+                  // Discover sections — order, titles and pinned items come from the admin panel.
+                  const HomeSections(),
+                ],
+              ),
             ),
           );
         },

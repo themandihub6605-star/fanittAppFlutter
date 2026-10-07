@@ -24,7 +24,8 @@ class CreatorsRepository {
   final ApiClient _api;
   final ContentRepository _content;
 
-  Future<Paged<CreatorProfile>> list({String? search, String? categoryId, int page = 1}) async =>
+  /// [ids] = load exactly these creators (admin-pinned on the home screen).
+  Future<Paged<CreatorProfile>> list({String? search, String? categoryId, List<String>? ids, int page = 1}) async =>
       (await _api.get(
         '/creators',
         query: {
@@ -32,6 +33,7 @@ class CreatorsRepository {
           'limit': 20,
           if (search != null && search.isNotEmpty) 'search': search,
           if (categoryId != null) 'category': categoryId,
+          if (ids != null && ids.isNotEmpty) 'ids': ids.join(','),
         },
         parser: (d) {
           final m = J.asMap(d);

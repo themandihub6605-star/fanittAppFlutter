@@ -43,7 +43,11 @@ class AuthRepositoryImpl implements AuthRepository {
   @override
   Future<AppUser> register(RegisterInput input) async {
     final session = await _remote.register(input);
-    return _persist(session);
+    final user = await _persist(session);
+    // Fans have nothing else to set up — mark sign-up as finished so the
+    // app doesn't ask them to pick an account type again.
+    if (user.role == UserRole.fan && !user.onboardingCompleted) return _remote.completeOnboarding();
+    return user;
   }
 
   @override
@@ -51,7 +55,12 @@ class AuthRepositoryImpl implements AuthRepository {
     final idToken = await _google.getIdToken();
     try {
       final session = await _remote.google(idToken: idToken, role: role, referralCode: referralCode);
-      return _persist(session);
+      final user = await _persist(session);
+      // Chose "Fan" on the sign-up screen → finish sign-up now.
+      if (role == UserRole.fan && user.role == UserRole.fan && !user.onboardingCompleted) {
+        return _remote.completeOnboarding();
+      }
+      return user;
     } finally {
       await _google.signOut();
     }
@@ -62,6 +71,9 @@ class AuthRepositoryImpl implements AuthRepository {
 
   @override
   Future<AppUser> upgradeRole(UserRole role, {String? name}) => _remote.upgradeRole(role, name: name);
+
+  @override
+  Future<AppUser> completeOnboarding() => _remote.completeOnboarding();
 
   @override
   Future<String> forgotPassword(String email) => _remote.forgotPassword(email);

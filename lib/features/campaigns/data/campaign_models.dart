@@ -76,13 +76,13 @@ class CampaignProduct extends Equatable {
   const CampaignProduct({required this.id, required this.name, required this.description, required this.quantity, required this.price, this.imageUrl});
 
   factory CampaignProduct.fromJson(Map<String, dynamic> json) => CampaignProduct(
-        id: J.id(json),
-        name: J.str(json, 'name'),
-        description: J.str(json, 'description'),
-        quantity: J.integer(json, 'quantity', 1),
-        price: J.integer(json, 'price'),
-        imageUrl: J.strOrNull(json, 'imageUrl'),
-      );
+    id: J.id(json),
+    name: J.str(json, 'name'),
+    description: J.str(json, 'description'),
+    quantity: J.integer(json, 'quantity', 1),
+    price: J.integer(json, 'price'),
+    imageUrl: J.strOrNull(json, 'imageUrl'),
+  );
 
   final String id;
   final String name;
@@ -109,10 +109,10 @@ class Deliverables extends Equatable {
   bool get isEmpty => reel == 0 && story == 0 && post == 0;
 
   String get summary => [
-        if (reel > 0) '$reel reel${reel == 1 ? '' : 's'}',
-        if (post > 0) '$post post${post == 1 ? '' : 's'}',
-        if (story > 0) '$story stor${story == 1 ? 'y' : 'ies'}',
-      ].join(' · ');
+    if (reel > 0) '$reel reel${reel == 1 ? '' : 's'}',
+    if (post > 0) '$post post${post == 1 ? '' : 's'}',
+    if (story > 0) '$story stor${story == 1 ? 'y' : 'ies'}',
+  ].join(' · ');
 
   Map<String, int> toJson() => {'reel': reel, 'story': story, 'post': post};
 
@@ -147,6 +147,8 @@ class Campaign extends Equatable {
     required this.isExclusive,
     required this.isFeatured,
     required this.applicantCount,
+    this.approvalStatus,
+    this.rejectionReason = '',
     required this.milestoneCount,
     required this.milestoneTitles,
     required this.isEscrowFunded,
@@ -196,6 +198,8 @@ class Campaign extends Equatable {
       isExclusive: J.str(json, 'visibilityTier') == 'exclusive',
       isFeatured: J.boolean(json, 'isFeatured'),
       applicantCount: J.integer(json, 'applicantCount'),
+      approvalStatus: J.strOrNull(json, 'approvalStatus'),
+      rejectionReason: J.str(json, 'rejectionReason'),
       applicantLimit: J.integerOrNull(json, 'applicantLimit'),
       milestoneCount: J.integer(json, 'milestoneCount', 2),
       milestoneTitles: J.strings(json, 'milestoneTitles'),
@@ -236,6 +240,13 @@ class Campaign extends Equatable {
   final bool isExclusive;
   final bool isFeatured;
   final int applicantCount;
+
+  /// Admin review: 'pending' | 'approved' | 'rejected' (null for older campaigns = live).
+  final String? approvalStatus;
+  final String rejectionReason;
+
+  bool get isPendingReview => approvalStatus == 'pending';
+  bool get isRejectedByReview => approvalStatus == 'rejected';
   final int? applicantLimit;
   final int milestoneCount;
   final List<String> milestoneTitles;
@@ -354,11 +365,11 @@ class ProposalCounts {
   const ProposalCounts({this.all = 0, this.pending = 0, this.accepted = 0, this.rejected = 0});
 
   factory ProposalCounts.fromJson(Map<String, dynamic> json) => ProposalCounts(
-        all: J.integer(json, 'all'),
-        pending: J.integer(json, 'pending'),
-        accepted: J.integer(json, 'accepted'),
-        rejected: J.integer(json, 'rejected'),
-      );
+    all: J.integer(json, 'all'),
+    pending: J.integer(json, 'pending'),
+    accepted: J.integer(json, 'accepted'),
+    rejected: J.integer(json, 'rejected'),
+  );
 
   final int all;
   final int pending;
@@ -415,22 +426,22 @@ class Milestone extends Equatable {
   });
 
   factory Milestone.fromJson(Map<String, dynamic> json) => Milestone(
-        id: J.id(json),
-        title: J.str(json, 'title'),
-        amount: J.integer(json, 'amount'),
-        order: J.integer(json, 'order', 1),
-        status: MilestoneStatus.from(J.strOrNull(json, 'status')),
-        submissionDescription: J.str(json, 'submissionDescription'),
-        submissionLinks: J.strings(json, 'submissionLinks'),
-        submissionAttachments: J.list(json, 'submissionAttachments', Attachment.fromJson),
-        changeDescription: J.str(json, 'changeDescription'),
-        changeReferenceLinks: J.strings(json, 'changeReferenceLinks'),
-        changeAttachments: J.list(json, 'changeAttachments', Attachment.fromJson),
-        submittedAt: J.date(json, 'submittedAt'),
-        fundedAt: J.date(json, 'fundedAt'),
-        releasedAt: J.date(json, 'releasedAt'),
-        autoReleaseAt: J.date(json, 'autoReleaseAt'),
-      );
+    id: J.id(json),
+    title: J.str(json, 'title'),
+    amount: J.integer(json, 'amount'),
+    order: J.integer(json, 'order', 1),
+    status: MilestoneStatus.from(J.strOrNull(json, 'status')),
+    submissionDescription: J.str(json, 'submissionDescription'),
+    submissionLinks: J.strings(json, 'submissionLinks'),
+    submissionAttachments: J.list(json, 'submissionAttachments', Attachment.fromJson),
+    changeDescription: J.str(json, 'changeDescription'),
+    changeReferenceLinks: J.strings(json, 'changeReferenceLinks'),
+    changeAttachments: J.list(json, 'changeAttachments', Attachment.fromJson),
+    submittedAt: J.date(json, 'submittedAt'),
+    fundedAt: J.date(json, 'fundedAt'),
+    releasedAt: J.date(json, 'releasedAt'),
+    autoReleaseAt: J.date(json, 'autoReleaseAt'),
+  );
 
   final String id;
   final String title;

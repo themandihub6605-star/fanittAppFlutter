@@ -43,26 +43,26 @@ class ApiClient {
   late final Dio _dio;
 
   Future<ApiResponse<T>> get<T>(
-    String path, {
-    Map<String, dynamic>? query,
-    required JsonParser<T> parser,
-    CancelToken? cancelToken,
-  }) {
+      String path, {
+        Map<String, dynamic>? query,
+        required JsonParser<T> parser,
+        CancelToken? cancelToken,
+      }) {
     return _send(
-      () => _dio.get<dynamic>(path, queryParameters: query, cancelToken: cancelToken),
+          () => _dio.get<dynamic>(path, queryParameters: query, cancelToken: cancelToken),
       parser,
     );
   }
 
   Future<ApiResponse<T>> post<T>(
-    String path, {
-    Object? data,
-    required JsonParser<T> parser,
-    bool skipAuth = false,
-    ProgressCallback? onSendProgress,
-  }) {
+      String path, {
+        Object? data,
+        required JsonParser<T> parser,
+        bool skipAuth = false,
+        ProgressCallback? onSendProgress,
+      }) {
     return _send(
-      () => _dio.post<dynamic>(
+          () => _dio.post<dynamic>(
         path,
         data: data,
         options: Options(extra: {AuthInterceptor.skipAuthKey: skipAuth}),
@@ -73,15 +73,19 @@ class ApiClient {
   }
 
   Future<ApiResponse<T>> patch<T>(
-    String path, {
-    Object? data,
-    required JsonParser<T> parser,
-    ProgressCallback? onSendProgress,
-  }) {
+      String path, {
+        Object? data,
+        required JsonParser<T> parser,
+        ProgressCallback? onSendProgress,
+      }) {
     return _send(
-      () => _dio.patch<dynamic>(path, data: data, onSendProgress: onSendProgress),
+          () => _dio.patch<dynamic>(path, data: data, onSendProgress: onSendProgress),
       parser,
     );
+  }
+
+  Future<ApiResponse<T>> put<T>(String path, {Object? data, required JsonParser<T> parser}) {
+    return _send(() => _dio.put<dynamic>(path, data: data), parser);
   }
 
   Future<ApiResponse<T>> delete<T>(String path, {Object? data, required JsonParser<T> parser}) {
@@ -89,9 +93,9 @@ class ApiClient {
   }
 
   Future<ApiResponse<T>> _send<T>(
-    Future<Response<dynamic>> Function() request,
-    JsonParser<T> parser,
-  ) async {
+      Future<Response<dynamic>> Function() request,
+      JsonParser<T> parser,
+      ) async {
     try {
       final response = await request();
       final body = response.data;

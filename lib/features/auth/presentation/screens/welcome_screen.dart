@@ -109,7 +109,7 @@ class WelcomeScreen extends StatelessWidget {
   }
 }
 
-/// Who Fanitt is for — three pills in place of platform numbers.
+/// Who Fanitt is for — pills in place of platform numbers.
 class _RoleChips extends StatelessWidget {
   const _RoleChips();
 
@@ -117,6 +117,7 @@ class _RoleChips extends StatelessWidget {
     (AppIcons.creator, 'Creators'),
     (AppIcons.brand, 'Brands'),
     (AppIcons.agency, 'Agencies'),
+    (AppIcons.store, 'Fans'),
   ];
 
   @override

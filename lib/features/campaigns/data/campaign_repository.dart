@@ -30,10 +30,10 @@ class CampaignRepository {
 
   // --- Discovery (creator) ---------------------------------------------------
 
-  Future<Paged<Campaign>> list({String? categoryId, int page = 1}) async {
+  Future<Paged<Campaign>> list({String? categoryId, List<String>? ids, int page = 1}) async {
     final response = await _api.get(
       '/campaigns',
-      query: {'page': page, 'limit': 20, if (categoryId != null) 'category': categoryId},
+      query: {'page': page, 'limit': 20, if (categoryId != null) 'category': categoryId, if (ids != null && ids.isNotEmpty) 'ids': ids.join(',')},
       parser: (d) {
         final m = J.asMap(d);
         return Paged(
@@ -146,6 +146,17 @@ class CampaignRepository {
     await _api.post('/campaigns/$id/media', data: form, parser: (_) => null);
   }
 
+  /// Admin-set posting rules: minimum total budget (paise) and whether new
+  /// campaigns wait for review.
+  Future<({int minBudget, bool requiresApproval})> rules() async => (await _api.get(
+    '/campaigns/rules',
+    parser: (d) {
+      final m = J.asMap(d);
+      return (minBudget: J.integer(m, 'minCampaignBudget', 20000), requiresApproval: J.boolean(m, 'requireCampaignApproval', true));
+    },
+  ))
+      .data;
+
   Future<Campaign> publish(String id) async =>
       (await _api.post('/campaigns/$id/publish', parser: _campaign)).data;
 
@@ -196,8 +207,7 @@ class CampaignRepository {
     await _api.patch('/milestones/$milestoneId/approve', parser: (_) => null);
   }
 
-  /// Returns `true` on success so callers can use `run(...) != null`.
-  Future<bool> submitMilestone(
+  Future<void> submitMilestone(
       String milestoneId, {
         required String description,
         List<String> links = const [],
@@ -208,7 +218,6 @@ class CampaignRepository {
       form.files.add(MapEntry('files', await multipartFrom(file)));
     }
     await _api.patch('/milestones/$milestoneId/submit', data: form, parser: (_) => null);
-    return true;
   }
 
   Future<void> requestChanges(

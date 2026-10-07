@@ -20,7 +20,9 @@ import '../../../../core/widgets/app_snackbar.dart';
 import '../../../../core/widgets/app_text_field.dart';
 import '../../../../core/widgets/async_view.dart';
 import '../../../../core/widgets/form_controls.dart';
+import '../../../../core/widgets/image_upload_box.dart';
 import '../../../common/data/categories_repository.dart';
+import '../../../profile/presentation/widgets/profile_fields.dart';
 import '../../data/campaign_models.dart';
 import '../../data/campaign_repository.dart';
 import '../widgets/campaign_widgets.dart';
@@ -60,7 +62,11 @@ class _EditorView extends StatelessWidget {
       listenWhen: (p, c) => p.tick != c.tick || p.published != c.published,
       listener: (context, state) {
         if (state.published) {
-          AppSnackbar.success(context, 'Campaign published');
+          final inReview = state.campaign?.isPendingReview ?? false;
+          AppSnackbar.success(
+            context,
+            inReview ? 'Submitted for review — it goes live once our team approves it' : 'Campaign published',
+          );
           Navigator.of(context).pop(true);
         } else if (state.errorMessage != null) {
           if ({'PROPOSAL_QUOTA_EXCEEDED', 'PRO_FEATURE_LOCKED'}.contains(state.errorCode) ||
@@ -121,25 +127,37 @@ class _EditorView extends StatelessWidget {
             ),
             body: state.isLoading
                 ? const LoadingView()
-                : AnimatedSwitcher(
-              duration: AppDurations.normal,
-              transitionBuilder: (child, animation) => FadeTransition(
-                opacity: animation,
-                child: SlideTransition(
-                  position: Tween(begin: const Offset(0.05, 0), end: Offset.zero).animate(animation),
-                  child: child,
+                : Column(
+              children: [
+                // A rejected campaign comes back here as a draft — show why.
+                if (state.campaign?.isRejectedByReview ?? false)
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(AppSpacing.gutter, AppSpacing.sm, AppSpacing.gutter, 0),
+                    child: CampaignReviewBanner(campaign: state.campaign!),
+                  ),
+                Expanded(
+                  child: AnimatedSwitcher(
+                    duration: AppDurations.normal,
+                    transitionBuilder: (child, animation) => FadeTransition(
+                      opacity: animation,
+                      child: SlideTransition(
+                        position: Tween(begin: const Offset(0.05, 0), end: Offset.zero).animate(animation),
+                        child: child,
+                      ),
+                    ),
+                    child: KeyedSubtree(
+                      key: ValueKey(state.step),
+                      child: switch (state.step) {
+                        EditorStep.basics => const _BasicsStep(),
+                        EditorStep.budget => const _BudgetStep(),
+                        EditorStep.brief => const _BriefStep(),
+                        EditorStep.media => const _MediaStep(),
+                        EditorStep.review => const _ReviewStep(),
+                      },
+                    ),
+                  ),
                 ),
-              ),
-              child: KeyedSubtree(
-                key: ValueKey(state.step),
-                child: switch (state.step) {
-                  EditorStep.basics => const _BasicsStep(),
-                  EditorStep.budget => const _BudgetStep(),
-                  EditorStep.brief => const _BriefStep(),
-                  EditorStep.media => const _MediaStep(),
-                  EditorStep.review => const _ReviewStep(),
-                },
-              ),
+              ],
             ),
           ),
         );
@@ -279,14 +297,17 @@ class _BasicsStepState extends State<_BasicsStep> {
               ? const SizedBox(width: double.infinity)
               : Padding(
             padding: const EdgeInsets.only(top: AppSpacing.md),
-            child: AppTextField(
-              label: _locationType == LocationType.city ? 'City' : 'State',
-              hint: _locationType == LocationType.city ? 'e.g. Indore' : 'e.g. Madhya Pradesh',
+            // Same suggestions as Edit Profile: cities from India Post,
+            // states from the fixed list of 36.
+            child: _locationType == LocationType.city
+                ? CityField(
+              key: const ValueKey('campaign-city'),
               controller: _location,
-              prefixIcon: AppIcons.mapPin,
-              textCapitalization: TextCapitalization.words,
-              validator: (v) => (v?.trim().isEmpty ?? true) ? 'Enter a location' : null,
-            ),
+              label: 'City',
+              hint: 'e.g. Indore',
+              isRequired: true,
+            )
+                : StateField(key: const ValueKey('campaign-state'), controller: _location, isRequired: true),
           ),
         ),
       ],
@@ -357,6 +378,9 @@ class _BudgetStep extends StatefulWidget {
 }
 
 class _BudgetStepState extends State<_BudgetStep> {
+  /// Admin-set minimum total budget (paise). Default until loaded.
+  int _minBudget = 20000;
+
   final _formKey = GlobalKey<FormState>();
   late final TextEditingController _cost;
   late int _creators;
@@ -365,6 +389,9 @@ class _BudgetStepState extends State<_BudgetStep> {
   @override
   void initState() {
     super.initState();
+    sl<CampaignRepository>().rules().then((r) {
+      if (mounted) setState(() => _minBudget = r.minBudget);
+    }).catchError((_) {});
     final c = context.read<CampaignEditorCubit>().state.campaign!;
     _cost = TextEditingController(text: c.costPerInfluencer > 0 ? Fmt.paiseToRupeesInput(c.costPerInfluencer) : '');
     _creators = c.maxInfluencers;
@@ -382,6 +409,16 @@ class _BudgetStepState extends State<_BudgetStep> {
     if (!campaign.isPaid && campaign.products.isEmpty) {
       AppSnackbar.error(context, 'Add at least one product for a barter campaign');
       return;
+    }
+    if (campaign.isPaid) {
+      final total = (Fmt.rupeesToPaise(_cost.text) ?? 0) * _creators;
+      if (total < _minBudget) {
+        AppSnackbar.error(
+          context,
+          'The minimum campaign budget is ${Fmt.money(_minBudget)}. Increase the cost per influencer or the number of creators.',
+        );
+        return;
+      }
     }
     context.read<CampaignEditorCubit>().saveBudget(
       costPerInfluencer: campaign.isPaid ? (Fmt.rupeesToPaise(_cost.text) ?? 0) : 0,
@@ -427,7 +464,12 @@ class _BudgetStepState extends State<_BudgetStep> {
           AppCard(
             color: context.palette.primarySoft,
             borderColor: Colors.transparent,
-            child: KeyValueRow(label: 'Estimated total budget', value: Fmt.money(cost * _creators), emphasize: true),
+            child: Column(
+              children: [
+                KeyValueRow(label: 'Estimated total budget', value: Fmt.money(cost * _creators), emphasize: true),
+                KeyValueRow(label: 'Minimum allowed', value: Fmt.money(_minBudget)),
+              ],
+            ),
           ),
         ],
         _gap,
@@ -774,55 +816,33 @@ class _MediaStepState extends State<_MediaStep> {
       onContinue: () => _continue(campaign),
       children: [
         const FieldLabel('Cover image (required)'),
-        InkWell(
-          borderRadius: BorderRadius.circular(AppRadius.lg),
-          onTap: saving
-              ? null
-              : () async {
-            final image = await sl<MediaPicker>().image();
-            if (image != null) await cubit.uploadMedia(cover: image);
-          },
-          child: AspectRatio(
-            aspectRatio: 16 / 9,
-            child: Stack(
-              fit: StackFit.expand,
-              children: [
-                AppNetworkImage(url: campaign.campaignImageUrl, radius: AppRadius.lg),
-                if (campaign.campaignImageUrl == null)
-                  Center(
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(AppIcons.upload, color: palette.textSecondary),
-                        const SizedBox(height: AppSpacing.xs),
-                        Text('Upload a cover image', style: context.text.labelMedium),
-                      ],
-                    ),
-                  )
-                else
-                  Positioned(
-                    right: AppSpacing.sm,
-                    bottom: AppSpacing.sm,
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: AppSpacing.sm, vertical: 6),
-                      decoration: BoxDecoration(
-                        color: Colors.black.withValues(alpha: 0.55),
-                        borderRadius: BorderRadius.circular(AppRadius.pill),
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          const Icon(AppIcons.camera, size: 14, color: Colors.white),
-                          const SizedBox(width: 4),
-                          Text('Change', style: context.text.labelSmall?.copyWith(color: Colors.white)),
-                        ],
-                      ),
-                    ),
-                  ),
-                if (saving) const ColoredBox(color: Color(0x33000000), child: LoadingView()),
-              ],
+        // Same shape and look as the top of the campaign page creators open.
+        Stack(
+          children: [
+            ImageUploadBox(
+              slot: ImageSlot.campaignCover,
+              url: campaign.campaignImageUrl,
+              enabled: !saving,
+              onPick: () async {
+                final image = await sl<MediaPicker>().image();
+                if (image != null) await cubit.uploadMedia(cover: image);
+              },
+              previewBuilder: (context, image) => CampaignCoverPreview(image: image, campaign: campaign),
             ),
-          ),
+            if (saving)
+              Positioned(
+                left: 0,
+                right: 0,
+                top: 0,
+                child: AspectRatio(
+                  aspectRatio: ImageSlot.campaignCover.aspectRatio,
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(ImageSlot.campaignCover.radius),
+                    child: const ColoredBox(color: Color(0x33000000), child: LoadingView()),
+                  ),
+                ),
+              ),
+          ],
         ),
         _gap,
         const FieldLabel('Reference links (optional)'),
@@ -916,6 +936,62 @@ class _ReviewStep extends StatelessWidget {
               ),
             ),
           ],
+        ),
+      ],
+    );
+  }
+}
+/// Top of the campaign page (as creators see it) drawn over the cover.
+class CampaignCoverPreview extends StatelessWidget {
+  const CampaignCoverPreview({super.key, required this.image, required this.campaign});
+
+  final Widget image;
+  final Campaign campaign;
+
+  @override
+  Widget build(BuildContext context) {
+    final c = campaign;
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        image,
+        const DecoratedBox(
+          decoration: BoxDecoration(
+            gradient: LinearGradient(begin: Alignment.topCenter, end: Alignment.bottomCenter, colors: [Color(0x55000000), Color(0x00000000), Color(0xAA000000)], stops: [0, 0.4, 1]),
+          ),
+        ),
+        if (c.isExclusive)
+          Positioned(
+            left: 12,
+            top: 12,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              decoration: BoxDecoration(color: Colors.black.withValues(alpha: 0.45), borderRadius: BorderRadius.circular(AppRadius.pill)),
+              child: const Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(AppIcons.crown, size: 12, color: Colors.white),
+                  SizedBox(width: 4),
+                  Text('Pro creators only', style: TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.w700)),
+                ],
+              ),
+            ),
+          ),
+        Positioned(
+          left: 14,
+          bottom: 12,
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+            decoration: BoxDecoration(
+              gradient: c.isPaid ? const LinearGradient(colors: [Color(0xFFF4511E), Color(0xFFEC2A78)]) : null,
+              color: c.isPaid ? null : Colors.black54,
+              borderRadius: BorderRadius.circular(AppRadius.pill),
+            ),
+            child: Text(
+              c.isPaid ? '${Fmt.money(c.costPerInfluencer)} per creator' : 'Barter collaboration',
+              style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 13),
+            ),
+          ),
         ),
       ],
     );

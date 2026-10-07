@@ -27,11 +27,15 @@ class PushService {
   Map<String, dynamic>? _initialTap;
   bool _initialized = false;
 
+  // New channel id: Android fixes a channel's sound when it's first created,
+  // so the custom sound needs a fresh channel.
   static const AndroidNotificationChannel _channel = AndroidNotificationChannel(
-    'fanitt_default',
+    'fanitt_alerts',
     'Fanitt',
     description: 'Proposals, payments and messages',
     importance: Importance.high,
+    playSound: true,
+    sound: RawResourceAndroidNotificationSound('notification_app'),
   );
 
   /// Notification taps (data payload: type, relatedModel, relatedId).
@@ -64,9 +68,10 @@ class PushService {
           if (data is Map<String, dynamic>) _taps.add(data);
         },
       );
-      await _local
-          .resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>()
-          ?.createNotificationChannel(_channel);
+      final android = _local.resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>();
+      await android?.createNotificationChannel(_channel);
+      // Remove the old silent-default channel so settings show just one.
+      await android?.deleteNotificationChannel('fanitt_default');
 
       await _messaging.setForegroundNotificationPresentationOptions(alert: true, badge: true, sound: true);
       FirebaseMessaging.onMessage.listen(_showForeground);
@@ -142,6 +147,8 @@ class PushService {
           channelDescription: _channel.description,
           importance: Importance.high,
           priority: Priority.high,
+          playSound: true,
+          sound: const RawResourceAndroidNotificationSound('notification_app'),
           color: const Color(0xFFF4511E),
         ),
       ),

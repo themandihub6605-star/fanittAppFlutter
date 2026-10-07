@@ -128,8 +128,9 @@ class _DeleteAccountSheetState extends State<_DeleteAccountSheet> {
             color: AppColors.error.withValues(alpha: 0.08),
             borderColor: Colors.transparent,
             child: Text(
-              'Your profile, campaigns and messages will no longer be available and you won’t be able to log in. '
-              'Withdraw any wallet balance first — it can’t be recovered after deletion.',
+              'Your request goes to the Fanitt team and your account is locked right away. '
+                  'Once approved, your account is permanently deleted and you can sign up again with the same email. '
+                  'Withdraw any wallet balance first — it can’t be recovered after deletion.',
               style: context.text.bodyMedium?.copyWith(color: context.palette.textPrimary),
             ),
           ),
@@ -143,7 +144,7 @@ class _DeleteAccountSheetState extends State<_DeleteAccountSheet> {
           const SizedBox(height: AppSpacing.lg),
           const InlineActionError(),
           AppButton(
-            label: 'Delete account',
+            label: 'Request deletion',
             variant: AppButtonVariant.danger,
             isLoading: busy,
             onPressed: busy || !ready ? null : _delete,

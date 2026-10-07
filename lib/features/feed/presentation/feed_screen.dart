@@ -17,6 +17,8 @@ import '../../../core/utils/formatters.dart';
 import '../../../core/widgets/app_network_image.dart';
 import '../../../core/widgets/app_snackbar.dart';
 import '../../../core/widgets/async_view.dart';
+import '../../../core/services/share_service.dart';
+import '../../../core/widgets/media_aspect.dart';
 import '../../../core/widgets/stream_video_player.dart';
 import '../../../core/widgets/user_avatar.dart';
 import '../../../core/enums/user_role.dart';
@@ -28,19 +30,30 @@ import 'likers_sheet.dart';
 import 'media_viewer_screen.dart';
 
 class FeedScreen extends StatelessWidget {
-  const FeedScreen({super.key});
+  const FeedScreen({super.key, this.savedOnly = false, this.postId});
+
+  /// Shows only the posts the user saved (Saved posts screen).
+  final bool savedOnly;
+
+  /// Shows just this one post (opened from a shared link).
+  final String? postId;
 
   @override
   Widget build(BuildContext context) {
+    final repo = sl<ContentRepository>();
+    final id = postId;
     return BlocProvider(
-      create: (_) => LoadCubit<List<Post>>(sl<ContentRepository>().feed),
-      child: const _FeedView(),
+      create: (_) => LoadCubit<List<Post>>(id != null ? () async => [await repo.post(id)] : (savedOnly ? repo.savedPosts : repo.feed)),
+      child: _FeedView(savedOnly: savedOnly, single: id != null),
     );
   }
 }
 
 class _FeedView extends StatelessWidget {
-  const _FeedView();
+  const _FeedView({required this.savedOnly, this.single = false});
+
+  final bool savedOnly;
+  final bool single;
 
   Future<void> _createPost(BuildContext context) async {
     final created = await showCreatePostSheet(context);
@@ -55,27 +68,30 @@ class _FeedView extends StatelessWidget {
     final cubit = context.watch<LoadCubit<List<Post>>>();
     final auth = context.watch<AuthBloc>().state;
     // Only creators can post (backend rule).
-    final canPost = auth is AuthAuthenticated && auth.user.role == UserRole.creator;
+    final canPost = !savedOnly && !single && auth is AuthAuthenticated && auth.user.role == UserRole.creator;
 
     return Scaffold(
-      floatingActionButton: canPost
-          ? FloatingActionButton.extended(
-        heroTag: 'feed-new-post',
-        onPressed: () => _createPost(context),
-        icon: const Icon(AppIcons.plus),
-        label: const Text('Post'),
-      ).animate().scale(begin: const Offset(0.6, 0.6), duration: 350.ms, curve: Curves.easeOutBack)
-          : null,
       appBar: AppBar(
-        title: const Text('Feed'),
+        title: Text(single ? 'Post' : (savedOnly ? 'Saved posts' : 'Feed')),
         actions: [
-          IconButton(
-            tooltip: 'Find creators',
-            icon: const Icon(AppIcons.search),
-            onPressed: () => context.push(AppRoutes.creatorsDirectory),
-          ),
+          if (!savedOnly && !single) ...[
+            IconButton(
+              tooltip: 'Find creators',
+              icon: const Icon(AppIcons.search),
+              onPressed: () => context.push(AppRoutes.creatorsDirectory),
+            ),
+            IconButton(
+              tooltip: 'Saved posts',
+              icon: const Icon(AppIcons.bookmark),
+              onPressed: () => context.push(AppRoutes.savedPosts),
+            ),
+          ],
           const _AutoplayToggle(),
-          const SizedBox(width: AppSpacing.xs),
+          if (canPost) ...[
+            const SizedBox(width: AppSpacing.xxs),
+            _NewPostButton(onTap: () => _createPost(context)),
+          ],
+          const SizedBox(width: AppSpacing.md),
         ],
       ),
       body: AsyncView<List<Post>>(
@@ -84,14 +100,17 @@ class _FeedView extends StatelessWidget {
         builder: (posts) => AppRefresh(
           onRefresh: cubit.refresh,
           child: posts.isEmpty
-              ? const ScrollableMessage(child: MessageView(icon: AppIcons.image, title: 'No posts yet'))
+              ? ScrollableMessage(
+            child: savedOnly
+                ? const MessageView(icon: AppIcons.bookmark, title: 'No saved posts', message: 'Tap Save under any post to keep it here.')
+                : const MessageView(icon: AppIcons.image, title: 'No posts yet'),
+          )
               : ListView.separated(
             physics: const AlwaysScrollableScrollPhysics(),
-            // Extra bottom space so the Post button never covers the last post.
-            padding: const EdgeInsets.fromLTRB(0, AppSpacing.xs, 0, 96),
+            padding: const EdgeInsets.fromLTRB(0, AppSpacing.xs, 0, AppSpacing.xl),
             itemCount: posts.length,
             separatorBuilder: (_, _) => Divider(height: 1, thickness: 1, color: context.palette.border),
-            itemBuilder: (context, i) => _FeedPost(key: ValueKey(posts[i].id), post: posts[i]),
+            itemBuilder: (context, i) => _FeedPost(key: ValueKey(posts[i].id), post: posts[i], savedOnly: savedOnly),
           ),
         ),
       ),
@@ -100,9 +119,10 @@ class _FeedView extends StatelessWidget {
 }
 
 class _FeedPost extends StatefulWidget {
-  const _FeedPost({super.key, required this.post});
+  const _FeedPost({super.key, required this.post, this.savedOnly = false});
 
   final Post post;
+  final bool savedOnly;
 
   @override
   State<_FeedPost> createState() => _FeedPostState();
@@ -110,7 +130,7 @@ class _FeedPost extends StatefulWidget {
 
 class _FeedPostState extends State<_FeedPost> {
   late final bool _hasMultipleMedia = widget.post.media.length > 1;
-  late final PageController _pageController = PageController(viewportFraction: _hasMultipleMedia ? 0.82 : 1);
+  late final PageController _pageController = PageController();
   bool _likeBusy = false;
   bool _followBusy = false;
   bool _burst = false;
@@ -165,6 +185,38 @@ class _FeedPostState extends State<_FeedPost> {
     }
   }
 
+  // --- Save ------------------------------------------------------------------
+
+  bool _saveBusy = false;
+
+  Future<void> _toggleSave() async {
+    if (_saveBusy) return;
+    HapticFeedback.selectionClick();
+    final cubit = context.read<LoadCubit<List<Post>>>();
+    final posts = cubit.state.data ?? const <Post>[];
+    final wasSaved = widget.post.isSaved;
+    List<Post> apply(List<Post> list, bool saved) => [
+      for (final p in list)
+        if (p.id == widget.post.id) ...[
+          // On the Saved screen, unsaving removes the post.
+          if (!(widget.savedOnly && !saved)) p.copyWith(isSaved: saved),
+        ] else
+          p,
+    ];
+    cubit.replace(apply(posts, !wasSaved));
+    _saveBusy = true;
+    try {
+      final saved = await sl<ContentRepository>().toggleSave(widget.post.id);
+      if (!widget.savedOnly) cubit.replace(apply(cubit.state.data ?? posts, saved));
+      if (mounted && saved) AppSnackbar.success(context, 'Saved');
+    } on ApiException catch (error) {
+      cubit.replace(posts);
+      if (mounted) AppSnackbar.error(context, error.displayMessage);
+    } finally {
+      _saveBusy = false;
+    }
+  }
+
   // --- Follow ----------------------------------------------------------------
 
   Future<void> _toggleFollow() async {
@@ -207,9 +259,6 @@ class _FeedPostState extends State<_FeedPost> {
     final liked = myId != null && post.likedByUser(myId);
     final isOwnPost = myId != null && post.creatorUserId == myId;
     final name = post.creatorName ?? 'Creator';
-    final screenWidth = MediaQuery.sizeOf(context).width;
-    // Item width shrinks to match viewportFraction; height mirrors it for a square-ish media.
-    final itemWidth = _hasMultipleMedia ? screenWidth * 0.82 - AppSpacing.gutter : screenWidth - AppSpacing.gutter * 2;
 
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: AppSpacing.sm),
@@ -244,127 +293,173 @@ class _FeedPostState extends State<_FeedPost> {
             ),
           ),
 
-          // Caption — above the media
+          // Caption — above the media (2 lines, then "more"). Without a
+          // caption there's still a gap between the name and the media.
           if (post.caption.isNotEmpty)
             Padding(
-              padding: const EdgeInsets.fromLTRB(AppSpacing.gutter, AppSpacing.xs, AppSpacing.gutter, AppSpacing.sm),
-              child: Text(post.caption, style: context.text.bodyMedium?.copyWith(color: context.palette.textPrimary)),
-            ),
+              padding: const EdgeInsets.fromLTRB(AppSpacing.gutter, AppSpacing.sm, AppSpacing.gutter, AppSpacing.sm),
+              child: _ExpandableCaption(text: post.caption),
+            )
+          else
+            const SizedBox(height: AppSpacing.sm),
 
-          // Media — full width for a single item, peeks the next one when there's more than one
+          // Media — every post keeps its real shape (tall, square or wide).
           if (post.media.isNotEmpty)
-            GestureDetector(
-              onDoubleTap: () => _toggleLike(fromDoubleTap: true),
-              child: SizedBox(
-                height: itemWidth,
-                child: Stack(
-                  children: [
-                    PageView.builder(
-                      controller: _pageController,
-                      padEnds: false,
-                      itemCount: post.media.length,
-                      onPageChanged: (i) => setState(() => _mediaIndex = i),
-                      itemBuilder: (context, i) {
-                        final m = post.media[i];
-                        final isLast = i == post.media.length - 1;
-                        return Padding(
-                          padding: EdgeInsets.only(
-                            left: i == 0 ? AppSpacing.gutter : AppSpacing.xxs,
-                            right: isLast ? AppSpacing.gutter : AppSpacing.xxs,
-                          ),
-                          child: ClipRRect(
-                            borderRadius: BorderRadius.circular(AppRadius.lg),
-                            child: m.isVideo
-                                ? StreamVideoPlayer(
-                              key: ValueKey(m.url),
-                              url: m.url,
-                              showProgress: false,
-                              showPlayPauseButton: true,
-                              onTap: (position) => _openViewer(i, position: position),
-                            )
-                                : GestureDetector(
-                              onTap: () => _openViewer(i),
-                              child: AppNetworkImage(url: m.url),
-                            ),
-                          ),
-                        );
-                      },
-                    ),
-                    if (_hasMultipleMedia)
-                      Positioned(
-                        top: AppSpacing.sm,
-                        right: AppSpacing.gutter + AppSpacing.xs,
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                          decoration: BoxDecoration(
-                            color: Colors.black.withValues(alpha: 0.55),
-                            borderRadius: BorderRadius.circular(AppRadius.pill),
-                          ),
-                          child: Text(
-                            '${_mediaIndex + 1}/${post.media.length}',
-                            style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.w600),
-                          ),
-                        ),
-                      ),
-                    IgnorePointer(
-                      child: Center(
-                        child: AnimatedScale(
-                          scale: _burst ? 1 : 0,
-                          duration: const Duration(milliseconds: 250),
-                          curve: Curves.easeOutBack,
-                          child: const Icon(AppIcons.heartFilled, size: 96, color: Colors.white),
-                        ),
-                      ),
-                    ),
-                  ],
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: AppSpacing.gutter),
+              child: GestureDetector(
+                onDoubleTap: () => _toggleLike(fromDoubleTap: true),
+                child: _AdaptiveMedia(
+                  media: post.media,
+                  controller: _pageController,
+                  index: _mediaIndex,
+                  burst: _burst,
+                  onPageChanged: (i) => setState(() => _mediaIndex = i),
+                  onOpen: _openViewer,
                 ),
               ),
             ),
-
-          // Like + "Liked by …" in one row
-          Padding(
-            padding: const EdgeInsets.fromLTRB(AppSpacing.gutter - 4, AppSpacing.xs, AppSpacing.gutter, 0),
-            child: Row(
-              children: [
-                InkWell(
-                  borderRadius: BorderRadius.circular(AppRadius.pill),
-                  onTap: _toggleLike,
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        AnimatedSwitcher(
-                          duration: const Duration(milliseconds: 180),
-                          transitionBuilder: (child, a) => ScaleTransition(scale: a, child: child),
-                          child: Icon(
-                            liked ? AppIcons.heartFilled : AppIcons.heart,
-                            key: ValueKey(liked),
-                            size: 24,
-                            color: liked ? AppColors.error : null,
-                          ),
-                        ),
-                        const SizedBox(width: 6),
-                        Text('${post.likeCount}', style: context.text.labelMedium),
-                      ],
+          if (_hasMultipleMedia)
+            Padding(
+              padding: const EdgeInsets.only(top: AppSpacing.xs),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  for (var i = 0; i < post.media.length; i++)
+                    AnimatedContainer(
+                      duration: const Duration(milliseconds: 220),
+                      margin: const EdgeInsets.symmetric(horizontal: 3),
+                      width: i == _mediaIndex ? 18 : 6,
+                      height: 6,
+                      decoration: BoxDecoration(
+                        color: i == _mediaIndex ? AppColors.primary : context.palette.border,
+                        borderRadius: BorderRadius.circular(3),
+                      ),
                     ),
-                  ),
-                ),
-                if (post.likeCount > 0) ...[
-                  const SizedBox(width: AppSpacing.sm),
-                  Expanded(
-                    child: _LikedByRow(
-                      post: post,
-                      myId: myId,
-                      onTap: () => showLikersSheet(context, postId: post.id, likeCount: post.likeCount),
-                    ),
-                  ),
                 ],
-              ],
+              ),
             ),
+
+          // Likes summary + Like | Save
+          _PostActions(
+            post: post,
+            liked: liked,
+            myId: myId,
+            onLike: () => _toggleLike(),
+            onSave: _toggleSave,
+            onShare: (ctx) => ShareService.send(
+              ctx,
+              ShareService.post(id: post.id, creator: post.creatorName ?? 'A creator', caption: post.caption, mine: post.creatorUserId == myId),
+            ),
+            onShowLikers: () => showLikersSheet(context, postId: post.id, likeCount: post.likeCount),
           ),
         ],
       ),
+    );
+  }
+}
+
+/// Shows a post's media at its real shape. The box takes the shape of the
+/// first item (clamped between 9:16 and 1.91:1); every item is shown whole
+/// (never cropped) on a dark background.
+class _AdaptiveMedia extends StatefulWidget {
+  const _AdaptiveMedia({
+    required this.media,
+    required this.controller,
+    required this.index,
+    required this.burst,
+    required this.onPageChanged,
+    required this.onOpen,
+  });
+
+  final List<PostMedia> media;
+  final PageController controller;
+  final int index;
+  final bool burst;
+  final ValueChanged<int> onPageChanged;
+  final Future<Duration?> Function(int index, {Duration? position}) onOpen;
+
+  @override
+  State<_AdaptiveMedia> createState() => _AdaptiveMediaState();
+}
+
+class _AdaptiveMediaState extends State<_AdaptiveMedia> {
+  double? _ratio;
+
+  @override
+  void initState() {
+    super.initState();
+    final first = widget.media.first;
+    _ratio = first.aspectRatio ?? MediaAspect.cached(first.url);
+    if (_ratio == null) {
+      MediaAspect.ofNetwork(first.url, isVideo: first.isVideo).then((r) {
+        if (mounted && r != null) setState(() => _ratio = r);
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final multiple = widget.media.length > 1;
+    return LayoutBuilder(
+      builder: (context, box) {
+        final width = box.maxWidth;
+        // Unknown shape for an old post: start square, then glide to the real one.
+        final height = width / MediaAspect.clamp(_ratio ?? 1);
+        return AnimatedContainer(
+          duration: const Duration(milliseconds: 260),
+          curve: Curves.easeOutCubic,
+          height: height,
+          decoration: BoxDecoration(color: const Color(0xFF0E0E14), borderRadius: BorderRadius.circular(16)),
+          clipBehavior: Clip.antiAlias,
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              PageView.builder(
+                controller: widget.controller,
+                itemCount: widget.media.length,
+                onPageChanged: widget.onPageChanged,
+                itemBuilder: (context, i) {
+                  final m = widget.media[i];
+                  return m.isVideo
+                      ? StreamVideoPlayer(
+                    key: ValueKey(m.url),
+                    url: m.url,
+                    fit: BoxFit.contain,
+                    showProgress: false,
+                    showPlayPauseButton: true,
+                    onTap: (position) => widget.onOpen(i, position: position),
+                  )
+                      : GestureDetector(
+                    onTap: () => widget.onOpen(i),
+                    child: AppNetworkImage(url: m.url, fit: BoxFit.contain),
+                  );
+                },
+              ),
+              if (multiple)
+                Positioned(
+                  top: AppSpacing.sm,
+                  right: AppSpacing.sm,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                    decoration: BoxDecoration(color: Colors.black.withValues(alpha: 0.55), borderRadius: BorderRadius.circular(AppRadius.pill)),
+                    child: Text('${widget.index + 1}/${widget.media.length}', style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.w600)),
+                  ),
+                ),
+              IgnorePointer(
+                child: Center(
+                  child: AnimatedScale(
+                    scale: widget.burst ? 1 : 0,
+                    duration: const Duration(milliseconds: 250),
+                    curve: Curves.easeOutBack,
+                    child: const Icon(AppIcons.heartFilled, size: 96, color: Colors.white),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        );
+      },
     );
   }
 }
@@ -435,74 +530,252 @@ class _FollowButton extends StatelessWidget {
 }
 
 /// "Liked by Priya and 12 others" with overlapping avatars.
-class _LikedByRow extends StatelessWidget {
-  const _LikedByRow({required this.post, required this.myId, required this.onTap});
+/// Under every post:
+///   ❤ Riya and 127 others                (tap to see who liked it)
+///   ───────────────────────────────────────
+///   [ ♡ Like ]          │          [ ⌑ Save ]
+class _PostActions extends StatelessWidget {
+  const _PostActions({
+    required this.post,
+    required this.liked,
+    required this.myId,
+    required this.onLike,
+    required this.onSave,
+    required this.onShare,
+    required this.onShowLikers,
+  });
 
   final Post post;
+  final bool liked;
   final String? myId;
-  final VoidCallback onTap;
+  final VoidCallback onLike;
+  final VoidCallback onSave;
+  final void Function(BuildContext context) onShare;
+  final VoidCallback onShowLikers;
 
   @override
   Widget build(BuildContext context) {
     final palette = context.palette;
-    final preview = post.likePreview.take(3).toList();
-    final first = preview.isEmpty ? null : preview.first;
-    final firstName = first == null ? null : (first.id == myId ? 'you' : first.name);
+    final first = post.likePreview.isEmpty ? null : post.likePreview.first;
+    final firstName = first == null ? null : (first.id == myId ? 'You' : first.name);
     final others = post.likeCount - (first == null ? 0 : 1);
+    final text = context.text.bodySmall?.copyWith(fontSize: 13, color: palette.textSecondary);
+    final strong = text?.copyWith(color: palette.textPrimary, fontWeight: FontWeight.w600);
 
-    final baseStyle = context.text.bodySmall?.copyWith(color: palette.textSecondary);
-    final boldStyle = context.text.labelMedium?.copyWith(color: palette.textPrimary);
-
-    return InkWell(
-      borderRadius: BorderRadius.circular(AppRadius.sm),
-      onTap: onTap,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 4),
-        child: Row(
-          children: [
-            if (preview.isNotEmpty) ...[
-              SizedBox(
-                width: 20.0 + (preview.length - 1) * 14,
-                height: 22,
-                child: Stack(
-                  children: [
-                    for (final (i, user) in preview.indexed)
-                      Positioned(
-                        left: i * 14.0,
-                        child: Container(
-                          padding: const EdgeInsets.all(1.5),
-                          decoration: BoxDecoration(color: palette.background, shape: BoxShape.circle),
-                          child: UserAvatar(initials: user.initials, imageUrl: user.avatarUrl, size: 19),
-                        ),
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(AppSpacing.gutter, AppSpacing.sm, AppSpacing.gutter, 0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          // Likes summary
+          InkWell(
+            onTap: post.likeCount > 0 ? onShowLikers : null,
+            borderRadius: BorderRadius.circular(8),
+            child: SizedBox(
+              height: 32,
+              child: Row(
+                children: [
+                  Container(
+                    width: 20,
+                    height: 20,
+                    decoration: const BoxDecoration(color: AppColors.error, shape: BoxShape.circle),
+                    child: const Icon(AppIcons.heartFilled, size: 11, color: Colors.white),
+                  ),
+                  const SizedBox(width: AppSpacing.xs),
+                  Expanded(
+                    child: post.likeCount == 0
+                        ? Text('Be the first to like this', style: text)
+                        : Text.rich(
+                      TextSpan(
+                        style: text,
+                        children: [
+                          if (firstName != null) ...[
+                            TextSpan(text: firstName, style: strong),
+                            if (others > 0) TextSpan(text: ' and ${Fmt.compact(others)} ${others == 1 ? 'other' : 'others'}'),
+                          ] else
+                            TextSpan(text: '${Fmt.compact(post.likeCount)} ${post.likeCount == 1 ? 'like' : 'likes'}', style: strong),
+                        ],
                       ),
-                  ],
-                ),
-              ),
-              const SizedBox(width: AppSpacing.xs),
-            ],
-            Expanded(
-              child: Text.rich(
-                TextSpan(
-                  style: baseStyle,
-                  children: [
-                    const TextSpan(text: 'Liked by '),
-                    if (firstName != null) ...[
-                      TextSpan(text: firstName, style: boldStyle),
-                      if (others > 0) ...[
-                        const TextSpan(text: ' and '),
-                        TextSpan(text: '$others ${others == 1 ? 'other' : 'others'}', style: boldStyle),
-                      ],
-                    ] else
-                      TextSpan(text: '${post.likeCount} ${post.likeCount == 1 ? 'person' : 'people'}', style: boldStyle),
-                  ],
-                ),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                ],
               ),
             ),
-          ],
-        ),
+          ),
+          const SizedBox(height: AppSpacing.xs),
+          Divider(height: 1, thickness: 1, color: palette.border),
+          // Like | Save
+          SizedBox(
+            height: 48,
+            child: Row(
+              children: [
+                Expanded(
+                  child: _ActionButton(
+                    icon: liked ? AppIcons.heartFilled : AppIcons.heart,
+                    label: 'Like',
+                    active: liked,
+                    activeColor: AppColors.error,
+                    onTap: onLike,
+                  ),
+                ),
+                Container(width: 1, height: 22, color: palette.border),
+                Expanded(
+                  child: _ActionButton(
+                    icon: post.isSaved ? AppIcons.bookmarkFilled : AppIcons.bookmark,
+                    label: post.isSaved ? 'Saved' : 'Save',
+                    active: post.isSaved,
+                    activeColor: AppColors.primary,
+                    onTap: onSave,
+                  ),
+                ),
+                Container(width: 1, height: 22, color: palette.border),
+                Expanded(
+                  child: Builder(
+                    builder: (ctx) => _ActionButton(
+                      icon: AppIcons.share,
+                      label: 'Share',
+                      active: false,
+                      activeColor: AppColors.primary,
+                      onTap: () => onShare(ctx),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
       ),
     );
+  }
+}
+
+class _ActionButton extends StatelessWidget {
+  const _ActionButton({required this.icon, required this.label, required this.active, required this.activeColor, required this.onTap});
+
+  final IconData icon;
+  final String label;
+  final bool active;
+  final Color activeColor;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final color = active ? activeColor : context.palette.textPrimary;
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(10),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(icon, size: 21, color: color)
+              .animate(key: ValueKey(active), target: active ? 1 : 0)
+              .scaleXY(begin: 1, end: 1.3, duration: 140.ms, curve: Curves.easeOut)
+              .then()
+              .scaleXY(begin: 1.3, end: 1, duration: 160.ms, curve: Curves.easeIn),
+          const SizedBox(width: 8),
+          AnimatedDefaultTextStyle(
+            duration: const Duration(milliseconds: 180),
+            style: (context.text.labelLarge ?? const TextStyle()).copyWith(fontWeight: FontWeight.w600, color: color),
+            child: Text(label),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Caption limited to 2 lines with an inline "more" / "less".
+class _ExpandableCaption extends StatefulWidget {
+  const _ExpandableCaption({required this.text});
+
+  final String text;
+
+  @override
+  State<_ExpandableCaption> createState() => _ExpandableCaptionState();
+}
+
+class _ExpandableCaptionState extends State<_ExpandableCaption> {
+  bool _expanded = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final style = context.text.bodyMedium?.copyWith(color: context.palette.textPrimary, height: 1.4);
+    return LayoutBuilder(
+      builder: (context, box) {
+        final painter = TextPainter(
+          text: TextSpan(text: widget.text, style: style),
+          maxLines: 2,
+          textDirection: Directionality.of(context),
+          textScaler: MediaQuery.textScalerOf(context),
+        )..layout(maxWidth: box.maxWidth);
+        final overflows = painter.didExceedMaxLines;
+
+        return GestureDetector(
+          onTap: overflows ? () => setState(() => _expanded = !_expanded) : null,
+          child: AnimatedSize(
+            duration: const Duration(milliseconds: 220),
+            curve: Curves.easeOutCubic,
+            alignment: Alignment.topCenter,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  widget.text,
+                  style: style,
+                  maxLines: _expanded ? null : 2,
+                  overflow: _expanded ? TextOverflow.visible : TextOverflow.ellipsis,
+                ),
+                if (overflows)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 2),
+                    child: Text(
+                      _expanded ? 'See less' : 'See more',
+                      style: context.text.labelLarge?.copyWith(color: AppColors.primary, fontWeight: FontWeight.w700),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
+/// Gradient "Post" button for the app bar (creators only).
+class _NewPostButton extends StatelessWidget {
+  const _NewPostButton({required this.onTap});
+
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.transparent,
+      borderRadius: BorderRadius.circular(12),
+      clipBehavior: Clip.antiAlias,
+      child: Ink(
+        decoration: const BoxDecoration(gradient: LinearGradient(colors: [Color(0xFFF4511E), Color(0xFFEC2A78)])),
+        child: InkWell(
+          onTap: () {
+            HapticFeedback.selectionClick();
+            onTap();
+          },
+          child: const Padding(
+            padding: EdgeInsets.symmetric(horizontal: 14, vertical: 9),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(AppIcons.plus, color: Colors.white, size: 18),
+                SizedBox(width: 4),
+                Text('Post', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w800)),
+              ],
+            ),
+          ),
+        ),
+      ),
+    ).animate().scale(begin: const Offset(0.7, 0.7), duration: 320.ms, curve: Curves.easeOutBack);
   }
 }

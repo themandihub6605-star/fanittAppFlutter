@@ -9,6 +9,7 @@ class RegisterInput {
     required this.password,
     this.phone,
     this.referralCode,
+    this.otp,
   });
 
   final UserRole role;
@@ -17,6 +18,9 @@ class RegisterInput {
   final String password;
   final String? phone;
   final String? referralCode;
+
+  /// 6-digit code emailed by POST /auth/register/send-otp.
+  final String? otp;
 }
 
 abstract interface class AuthRepository {
@@ -26,6 +30,7 @@ abstract interface class AuthRepository {
 
   Future<AppUser> login({required String email, required String password});
 
+  /// [RegisterInput.otp] must hold the code sent to the email first.
   Future<AppUser> register(RegisterInput input);
 
   /// Throws [GoogleSignInCancelled] when the user closes the Google sheet.
@@ -34,6 +39,9 @@ abstract interface class AuthRepository {
   Future<AppUser> fetchCurrentUser();
 
   Future<AppUser> upgradeRole(UserRole role, {String? name});
+
+  /// Finishes sign-up for a fan account.
+  Future<AppUser> completeOnboarding();
 
   /// Returns the server's confirmation message.
   Future<String> forgotPassword(String email);

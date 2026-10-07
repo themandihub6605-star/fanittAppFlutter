@@ -6,7 +6,8 @@ import '../../../../core/network/api_exception.dart';
 import '../../domain/entities/app_user.dart';
 import '../../domain/repositories/auth_repository.dart';
 
-/// Turns an existing fan account into a creator, brand or agency account.
+/// Finishes sign-up for a new account: stays a fan, or becomes a creator,
+/// brand or agency account.
 class ChooseRoleCubit extends Cubit<RequestState<AppUser>> {
   ChooseRoleCubit(this._repository) : super(const RequestState<AppUser>());
 
@@ -16,7 +17,8 @@ class ChooseRoleCubit extends Cubit<RequestState<AppUser>> {
     if (state.isLoading) return;
     emit(state.loading());
     try {
-      emit(state.success(await _repository.upgradeRole(role, name: name)));
+      final user = role == UserRole.fan ? await _repository.completeOnboarding() : await _repository.upgradeRole(role, name: name);
+      emit(state.success(user));
     } on ApiException catch (error) {
       emit(state.failure(error.displayMessage));
     }

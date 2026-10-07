@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_animate/flutter_animate.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
+
+import '../../../../core/guards/profile_gate.dart';
 
 import '../../../../core/bloc/action_cubit.dart';
 import '../../../../core/bloc/load_cubit.dart';
@@ -27,6 +30,7 @@ import '../../../chat/presentation/chat_screen.dart';
 import '../../data/campaign_models.dart';
 import '../../data/campaign_repository.dart';
 import '../../../reviews/presentation/review_sheet.dart';
+import '../../../../core/services/share_service.dart';
 import '../widgets/attachment_picker.dart';
 import '../widgets/campaign_widgets.dart';
 
@@ -102,6 +106,18 @@ class _CampaignDetailView extends StatelessWidget {
         title: const Text('Campaign'),
         actions: [
           if (view != null)
+            ShareIconButton(
+              size: 44,
+              message: () => ShareService.campaign(
+                id: view.campaign.id,
+                title: view.campaign.title,
+                brand: view.campaign.brand?.name ?? 'A brand',
+                isPaid: view.campaign.isPaid,
+                pay: view.campaign.costPerInfluencer,
+                location: view.campaign.locationLabel,
+              ),
+            ),
+          if (view != null)
             BlocBuilder<ActionCubit, ActionState>(
               builder: (context, action) => IconButton(
                 tooltip: view.isSaved ? 'Remove from saved' : 'Save',
@@ -109,18 +125,18 @@ class _CampaignDetailView extends StatelessWidget {
                 onPressed: action.isBusy
                     ? null
                     : () async {
-                        final saved = await context.read<ActionCubit>().run('save', () => sl<CampaignRepository>().toggleSave(view.campaign.id));
-                        if (saved != null && context.mounted) {
-                          HapticFeedback.lightImpact();
-                          cubit.replace(CreatorCampaignView(
-                            campaign: view.campaign,
-                            isSaved: saved,
-                            proposal: view.proposal,
-                            milestones: view.milestones,
-                            conversation: view.conversation,
-                          ));
-                        }
-                      },
+                  final saved = await context.read<ActionCubit>().run('save', () => sl<CampaignRepository>().toggleSave(view.campaign.id));
+                  if (saved != null && context.mounted) {
+                    HapticFeedback.lightImpact();
+                    cubit.replace(CreatorCampaignView(
+                      campaign: view.campaign,
+                      isSaved: saved,
+                      proposal: view.proposal,
+                      milestones: view.milestones,
+                      conversation: view.conversation,
+                    ));
+                  }
+                },
               ),
             ),
           const SizedBox(width: AppSpacing.xs),
@@ -135,7 +151,7 @@ class _CampaignDetailView extends StatelessWidget {
             physics: const AlwaysScrollableScrollPhysics(),
             padding: const EdgeInsets.fromLTRB(AppSpacing.gutter, AppSpacing.xs, AppSpacing.gutter, AppSpacing.huge * 2),
             children: [
-              CampaignHeader(campaign: view.campaign),
+              CampaignHeader(campaign: view.campaign).animate().fadeIn(duration: 300.ms),
               if (view.proposal != null) ...[
                 const SizedBox(height: AppSpacing.lg),
                 _ProposalStatusCard(view: view),
@@ -168,7 +184,7 @@ class _CampaignDetailView extends StatelessWidget {
                   ],
               ],
               const SizedBox(height: AppSpacing.lg),
-              CampaignBrief(campaign: view.campaign),
+              CampaignBrief(campaign: view.campaign).animate().fadeIn(delay: 120.ms, duration: 350.ms).slideY(begin: 0.04),
             ],
           ),
         ),
@@ -270,15 +286,34 @@ class _ApplyBar extends StatelessWidget {
 
   final Campaign campaign;
 
+  Future<void> _apply(BuildContext context) async {
+    if (!await ensureProfileComplete(context)) return;
+    if (!context.mounted) return;
+    HapticFeedback.mediumImpact();
+    final sent = await showAppSheet<bool>(
+      context,
+      builder: (_) => SheetActionScope(child: _ApplySheet(campaign: campaign)),
+    );
+    if ((sent ?? false) && context.mounted) {
+      AppSnackbar.success(context, 'Proposal sent');
+      context.read<LoadCubit<CreatorCampaignView>>().refresh();
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final palette = context.palette;
+    final spotsLeft = campaign.maxInfluencers > 0 ? (campaign.maxInfluencers - campaign.applicantCount).clamp(0, campaign.maxInfluencers) : null;
     return DecoratedBox(
-      decoration: BoxDecoration(color: palette.surface, border: Border(top: BorderSide(color: palette.border))),
+      decoration: BoxDecoration(
+        color: palette.surface,
+        border: Border(top: BorderSide(color: palette.border)),
+        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.06), blurRadius: 16, offset: const Offset(0, -4))],
+      ),
       child: SafeArea(
         top: false,
         child: Padding(
-          padding: const EdgeInsets.fromLTRB(AppSpacing.gutter, AppSpacing.sm, AppSpacing.gutter, AppSpacing.sm),
+          padding: const EdgeInsets.fromLTRB(AppSpacing.gutter, 12, AppSpacing.gutter, 12),
           child: Row(
             children: [
               Expanded(
@@ -286,27 +321,39 @@ class _ApplyBar extends StatelessWidget {
                   mainAxisSize: MainAxisSize.min,
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(campaign.payLabel, style: context.text.titleLarge),
-                    Text(campaign.isPaid ? 'per creator' : 'products provided', style: context.text.bodySmall),
+                    Text(campaign.payLabel, style: context.text.titleLarge?.copyWith(fontWeight: FontWeight.w800)),
+                    Text(
+                      [campaign.isPaid ? 'per creator' : 'products provided', if (spotsLeft != null) '$spotsLeft spots left'].join(' · '),
+                      style: context.text.bodySmall,
+                    ),
                   ],
                 ),
               ),
-              SizedBox(
-                width: 170,
-                child: AppButton(
-                  label: 'Send proposal',
-                  onPressed: () async {
-                    final sent = await showAppSheet<bool>(
-                      context,
-                      builder: (_) => SheetActionScope(child: _ApplySheet(campaign: campaign)),
-                    );
-                    if ((sent ?? false) && context.mounted) {
-                      AppSnackbar.success(context, 'Proposal sent');
-                      context.read<LoadCubit<CreatorCampaignView>>().refresh();
-                    }
-                  },
+              Material(
+                color: Colors.transparent,
+                borderRadius: BorderRadius.circular(14),
+                clipBehavior: Clip.antiAlias,
+                child: Ink(
+                  decoration: const BoxDecoration(gradient: LinearGradient(colors: [Color(0xFFF4511E), Color(0xFFEC2A78)])),
+                  child: InkWell(
+                    onTap: () => _apply(context),
+                    child: const SizedBox(
+                      height: 52,
+                      child: Padding(
+                        padding: EdgeInsets.symmetric(horizontal: 24),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text('Apply now', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 15)),
+                            SizedBox(width: 6),
+                            Icon(AppIcons.arrowRightSimple, color: Colors.white, size: 18),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
                 ),
-              ),
+              ).animate(onPlay: (c) => c.repeat()).shimmer(delay: 2200.ms, duration: 1100.ms, color: Colors.white.withValues(alpha: 0.35)),
             ],
           ),
         ),
@@ -343,15 +390,15 @@ class _ApplySheetState extends State<_ApplySheet> {
     if (!(_formKey.currentState?.validate() ?? false)) return;
     final links = _links.map((c) => c.text.trim()).where((l) => l.isNotEmpty).toList();
     final result = await context.read<ActionCubit>().run(
-          'apply',
+      'apply',
           () => sl<CampaignRepository>().apply(
-            widget.campaign.id,
-            pitch: _pitch.text.trim(),
-            quotedAmount: Fmt.rupeesToPaise(_quote.text),
-            portfolioLinks: links,
-            deliveryTimeline: _timeline.text.trim(),
-          ),
-        );
+        widget.campaign.id,
+        pitch: _pitch.text.trim(),
+        quotedAmount: Fmt.rupeesToPaise(_quote.text),
+        portfolioLinks: links,
+        deliveryTimeline: _timeline.text.trim(),
+      ),
+    );
     if (result != null && mounted) Navigator.of(context).pop(true);
   }
 
@@ -359,67 +406,67 @@ class _ApplySheetState extends State<_ApplySheet> {
   Widget build(BuildContext context) {
     final busy = context.watch<ActionCubit>().state.isBusyWith('apply');
     return SheetBody(
-        title: 'Send a proposal',
-        subtitle: 'Tell ${widget.campaign.brand?.name ?? 'the brand'} why you’re a good fit.',
-        child: Form(
-          key: _formKey,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
+      title: 'Send a proposal',
+      subtitle: 'Tell ${widget.campaign.brand?.name ?? 'the brand'} why you’re a good fit.',
+      child: Form(
+        key: _formKey,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            AppTextField(
+              label: 'Your pitch',
+              hint: 'Your audience, past work and how you’d approach this',
+              controller: _pitch,
+              minLines: 4,
+              maxLines: 8,
+              maxLength: 1000,
+              textCapitalization: TextCapitalization.sentences,
+              validator: (v) => (v?.trim().length ?? 0) < 20 ? 'Write at least 20 characters' : null,
+            ),
+            if (widget.campaign.isPaid) ...[
+              const SizedBox(height: AppSpacing.md),
               AppTextField(
-                label: 'Your pitch',
-                hint: 'Your audience, past work and how you’d approach this',
-                controller: _pitch,
-                minLines: 4,
-                maxLines: 8,
-                maxLength: 1000,
-                textCapitalization: TextCapitalization.sentences,
-                validator: (v) => (v?.trim().length ?? 0) < 20 ? 'Write at least 20 characters' : null,
+                label: 'Your price (optional)',
+                hint: 'Leave empty to accept ${widget.campaign.payLabel}',
+                controller: _quote,
+                prefixIcon: AppIcons.rupee,
+                keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'[0-9.]'))],
               ),
-              if (widget.campaign.isPaid) ...[
-                const SizedBox(height: AppSpacing.md),
-                AppTextField(
-                  label: 'Your price (optional)',
-                  hint: 'Leave empty to accept ${widget.campaign.payLabel}',
-                  controller: _quote,
-                  prefixIcon: AppIcons.rupee,
-                  keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                  inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'[0-9.]'))],
-                ),
-              ],
-              const SizedBox(height: AppSpacing.md),
-              AppTextField(label: 'Delivery time (optional)', hint: 'e.g. 5 days', controller: _timeline, prefixIcon: AppIcons.clock),
-              const SizedBox(height: AppSpacing.md),
-              for (final (index, controller) in _links.indexed) ...[
-                AppTextField(
-                  label: index == 0 ? 'Links to your work (optional)' : 'Another link',
-                  hint: 'https://',
-                  controller: controller,
-                  prefixIcon: AppIcons.link,
-                  keyboardType: TextInputType.url,
-                  validator: (v) {
-                    final value = v?.trim() ?? '';
-                    if (value.isEmpty) return null;
-                    final uri = Uri.tryParse(value);
-                    return uri == null || !uri.hasScheme ? 'Enter a full link starting with https://' : null;
-                  },
-                ),
-                const SizedBox(height: AppSpacing.xs),
-              ],
-              if (_links.length < 3)
-                Align(
-                  alignment: Alignment.centerLeft,
-                  child: TextButton.icon(
-                    onPressed: () => setState(() => _links.add(TextEditingController())),
-                    icon: const Icon(AppIcons.plus, size: 18),
-                    label: const Text('Add another link'),
-                  ),
-                ),
-              const SizedBox(height: AppSpacing.md),
-              const InlineActionError(),
-              AppButton(label: 'Send proposal', isLoading: busy, onPressed: busy ? null : _submit),
             ],
-          ),
+            const SizedBox(height: AppSpacing.md),
+            AppTextField(label: 'Delivery time (optional)', hint: 'e.g. 5 days', controller: _timeline, prefixIcon: AppIcons.clock),
+            const SizedBox(height: AppSpacing.md),
+            for (final (index, controller) in _links.indexed) ...[
+              AppTextField(
+                label: index == 0 ? 'Links to your work (optional)' : 'Another link',
+                hint: 'https://',
+                controller: controller,
+                prefixIcon: AppIcons.link,
+                keyboardType: TextInputType.url,
+                validator: (v) {
+                  final value = v?.trim() ?? '';
+                  if (value.isEmpty) return null;
+                  final uri = Uri.tryParse(value);
+                  return uri == null || !uri.hasScheme ? 'Enter a full link starting with https://' : null;
+                },
+              ),
+              const SizedBox(height: AppSpacing.xs),
+            ],
+            if (_links.length < 3)
+              Align(
+                alignment: Alignment.centerLeft,
+                child: TextButton.icon(
+                  onPressed: () => setState(() => _links.add(TextEditingController())),
+                  icon: const Icon(AppIcons.plus, size: 18),
+                  label: const Text('Add another link'),
+                ),
+              ),
+            const SizedBox(height: AppSpacing.md),
+            const InlineActionError(),
+            AppButton(label: 'Send proposal', isLoading: busy, onPressed: busy ? null : _submit),
+          ],
+        ),
       ),
     );
   }
@@ -450,58 +497,58 @@ class _SubmitWorkSheetState extends State<_SubmitWorkSheet> {
   Future<void> _submit(ActionCubit actions) async {
     if (!(_formKey.currentState?.validate() ?? false)) return;
     final link = _link.text.trim();
-    final done = await actions.run(
-      'submit',
-      () => sl<CampaignRepository>().submitMilestone(
+    final done = await actions.run('submit', () async {
+      await sl<CampaignRepository>().submitMilestone(
         widget.milestone.id,
         description: _description.text.trim(),
         links: link.isEmpty ? const [] : [link],
         files: _files,
-      ),
-    );
-    if (done != null && mounted) Navigator.of(context).pop(true);
+      );
+      return true;
+    });
+    if (done == true && mounted) Navigator.of(context).pop(true);
   }
 
   @override
   Widget build(BuildContext context) {
     final actions = context.watch<ActionCubit>();
     return SheetBody(
-            title: 'Submit ${widget.milestone.title}',
-            subtitle: 'The brand reviews it and releases ${Fmt.money(widget.milestone.amount)} when approved.',
-            child: Form(
-              key: _formKey,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  AppTextField(
-                    label: 'What you’re delivering',
-                    hint: 'Describe the work and anything the brand should check',
-                    controller: _description,
-                    minLines: 3,
-                    maxLines: 6,
-                    textCapitalization: TextCapitalization.sentences,
-                    validator: (v) => (v?.trim().isEmpty ?? true) ? 'Describe the work' : null,
-                  ),
-                  const SizedBox(height: AppSpacing.md),
-                  AppTextField(
-                    label: 'Link (optional)',
-                    hint: 'Drive, Instagram post, etc.',
-                    controller: _link,
-                    prefixIcon: AppIcons.link,
-                    keyboardType: TextInputType.url,
-                  ),
-                  const SizedBox(height: AppSpacing.md),
-                  AttachmentPicker(files: _files, onChanged: (files) => setState(() => _files = files)),
-                  const SizedBox(height: AppSpacing.lg),
-                  const InlineActionError(),
-                  AppButton(
-                    label: 'Submit work',
-                    isLoading: actions.state.isBusyWith('submit'),
-                    onPressed: actions.state.isBusy ? null : () => _submit(actions),
-                  ),
-                ],
-              ),
+      title: 'Submit ${widget.milestone.title}',
+      subtitle: 'The brand reviews it and releases ${Fmt.money(widget.milestone.amount)} when approved.',
+      child: Form(
+        key: _formKey,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            AppTextField(
+              label: 'What you’re delivering',
+              hint: 'Describe the work and anything the brand should check',
+              controller: _description,
+              minLines: 3,
+              maxLines: 6,
+              textCapitalization: TextCapitalization.sentences,
+              validator: (v) => (v?.trim().isEmpty ?? true) ? 'Describe the work' : null,
             ),
+            const SizedBox(height: AppSpacing.md),
+            AppTextField(
+              label: 'Link (optional)',
+              hint: 'Drive, Instagram post, etc.',
+              controller: _link,
+              prefixIcon: AppIcons.link,
+              keyboardType: TextInputType.url,
+            ),
+            const SizedBox(height: AppSpacing.md),
+            AttachmentPicker(files: _files, onChanged: (files) => setState(() => _files = files)),
+            const SizedBox(height: AppSpacing.lg),
+            const InlineActionError(),
+            AppButton(
+              label: 'Submit work',
+              isLoading: actions.state.isBusyWith('submit'),
+              onPressed: actions.state.isBusy ? null : () => _submit(actions),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }

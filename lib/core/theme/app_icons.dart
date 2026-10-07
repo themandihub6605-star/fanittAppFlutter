@@ -7,6 +7,16 @@ abstract final class AppIcons {
   // Navigation
   static const IconData home = PhosphorIconsRegular.house;
   static const IconData homeFilled = PhosphorIconsFill.house;
+  static const IconData store = PhosphorIconsRegular.storefront;
+  static const IconData storeFilled = PhosphorIconsFill.storefront;
+  static const IconData library = PhosphorIconsRegular.books;
+  static const IconData libraryFilled = PhosphorIconsFill.books;
+  static const IconData package = PhosphorIconsRegular.package;
+  static const IconData download = PhosphorIconsRegular.downloadSimple;
+  static const IconData idCard = PhosphorIconsRegular.identificationCard;
+  static const IconData fileText = PhosphorIconsRegular.fileText;
+  static const IconData lightning = PhosphorIconsRegular.lightning;
+  static const IconData chartLine = PhosphorIconsRegular.chartLineUp;
   static const IconData campaigns = PhosphorIconsRegular.megaphone;
   static const IconData campaignsFilled = PhosphorIconsFill.megaphone;
   static const IconData megaphoneAlt = PhosphorIconsRegular.megaphoneSimple;
@@ -45,6 +55,10 @@ abstract final class AppIcons {
   static const IconData copy = PhosphorIconsRegular.copy;
   static const IconData signOut = PhosphorIconsRegular.signOut;
   static const IconData refresh = PhosphorIconsRegular.arrowClockwise;
+  static const IconData arrowCircleUp = PhosphorIconsRegular.arrowCircleUp;
+  static const IconData gear = PhosphorIconsRegular.gearSix;
+  static const IconData pencil = PhosphorIconsRegular.pencilSimple;
+  static const IconData dotsThree = PhosphorIconsRegular.dotsThree;
 
   // Status
   static const IconData shieldCheck = PhosphorIconsRegular.shieldCheck;
@@ -84,9 +98,15 @@ abstract final class AppIcons {
   static const IconData send = PhosphorIconsRegular.paperPlaneRight;
   static const IconData paperPlane = PhosphorIconsRegular.paperPlaneTilt;
   static const IconData search = PhosphorIconsRegular.magnifyingGlass;
+  static const IconData sliders = PhosphorIconsRegular.slidersHorizontal;
+  static const IconData crop = PhosphorIconsRegular.crop;
+  static const IconData chevronDown = PhosphorIconsRegular.caretDown;
   static const IconData bookmark = PhosphorIconsRegular.bookmarkSimple;
   static const IconData bookmarkFilled = PhosphorIconsFill.bookmarkSimple;
   static const IconData bell = PhosphorIconsRegular.bell;
+  static const IconData bellSlash = PhosphorIconsRegular.bellSlash;
+  static const IconData pushPin = PhosphorIconsRegular.pushPin;
+  static const IconData chartBar = PhosphorIconsRegular.chartBar;
   static const IconData heart = PhosphorIconsRegular.heart;
   static const IconData heartFilled = PhosphorIconsFill.heart;
   static const IconData star = PhosphorIconsRegular.star;
@@ -94,6 +114,7 @@ abstract final class AppIcons {
   static const IconData userPlus = PhosphorIconsRegular.userPlus;
   static const IconData users = PhosphorIconsRegular.users;
   static const IconData shareNetwork = PhosphorIconsRegular.shareNetwork;
+  static const IconData share = PhosphorIconsRegular.shareFat;
   static const IconData translate = PhosphorIconsRegular.translate;
 
   // Money & places

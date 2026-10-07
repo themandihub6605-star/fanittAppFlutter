@@ -7,6 +7,7 @@ import '../../../../core/config/app_config.dart';
 import '../../../../core/enums/user_role.dart';
 import '../../../../core/network/api_exception.dart';
 import '../../../../core/router/app_routes.dart';
+import '../../../../core/services/share_service.dart';
 import '../../../../core/services/link_opener.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_icons.dart';
@@ -68,9 +69,18 @@ class AccountScreen extends StatelessWidget {
               _Tile(icon: AppIcons.user, title: 'Edit profile', onTap: () => context.push(AppRoutes.editProfile)),
               if (role == UserRole.creator) ...[
                 _Tile(icon: AppIcons.image, title: 'My posts', onTap: () => context.push(AppRoutes.posts)),
-                _Tile(icon: AppIcons.videoCamera, title: 'Live sessions', onTap: () => context.push(AppRoutes.sessions)),
+                //_Tile(icon: AppIcons.videoCamera, title: 'Live sessions', onTap: () => context.push(AppRoutes.sessions)),
                 _Tile(icon: AppIcons.gift, title: 'FanBox gifts', onTap: () => context.push(AppRoutes.gifts)),
               ],
+            ]),
+            const SizedBox(height: AppSpacing.lg),
+            const _SectionLabel('Fanitt Store'),
+            _Group(children: [
+              if (role == UserRole.creator) _Tile(icon: AppIcons.store, title: 'My Fanitt Store', subtitle: 'Sell, stream and earn', onTap: () => context.push(AppRoutes.store)),
+              if (role != UserRole.fan) _Tile(icon: AppIcons.storeFilled, title: 'Explore stores', onTap: () => context.push(AppRoutes.stores)),
+              _Tile(icon: AppIcons.library, title: 'My library', subtitle: 'Products you bought', onTap: () => context.push(AppRoutes.library)),
+              _Tile(icon: AppIcons.videoCamera, title: 'Explore Live Sessions', subtitle: 'Book and join meetings in the app', onTap: () => context.push(AppRoutes.meets)),
+              _Tile(icon: AppIcons.bookmark, title: 'Saved posts', onTap: () => context.push(AppRoutes.savedPosts)),
             ]),
             const SizedBox(height: AppSpacing.lg),
             const _SectionLabel('Discover'),
@@ -85,12 +95,12 @@ class AccountScreen extends StatelessWidget {
             const SizedBox(height: AppSpacing.lg),
             const _SectionLabel('Money'),
             _Group(children: [
-              if (role != UserRole.agency) _Tile(icon: AppIcons.crown, title: 'Plans & billing', onTap: () => context.push(AppRoutes.plans)),
-              if (role == UserRole.creator || role == UserRole.brand)
+              if (role != UserRole.agency && role != UserRole.fan) _Tile(icon: AppIcons.crown, title: 'Plans & billing', onTap: () => context.push(AppRoutes.plans)),
+              if (role == UserRole.creator || role == UserRole.brand || role == UserRole.fan)
                 _Tile(icon: AppIcons.wallet, title: 'Wallet', subtitle: Fmt.money(user.walletBalance), onTap: () => context.push(AppRoutes.wallet)),
               _Tile(icon: AppIcons.receipt, title: 'All activity', onTap: () => context.push(AppRoutes.transactions)),
               if (role != UserRole.agency) _Tile(icon: AppIcons.gift, title: 'Refer & earn', onTap: () => context.push(AppRoutes.referrals)),
-              if (role != UserRole.agency)
+              if (role == UserRole.creator || role == UserRole.brand)
                 _Tile(
                   icon: AppIcons.agency,
                   title: 'Join an agency',
@@ -106,6 +116,8 @@ class AccountScreen extends StatelessWidget {
               _Tile(icon: AppIcons.bell, title: 'Notifications', onTap: () => context.push(AppRoutes.notifications)),
               _Tile(icon: AppIcons.mail, title: 'Contact support', subtitle: AppConfig.supportEmail, onTap: () => _contactSupport(context)),
               _Tile(icon: AppIcons.shieldCheck, title: 'Privacy policy', onTap: () => context.push(AppRoutes.privacyPolicy)),
+              _Tile(icon: AppIcons.fileText, title: 'Terms of use', onTap: () => context.push(AppRoutes.termsOfUse)),
+              Builder(builder: (ctx) => _Tile(icon: AppIcons.share, title: 'Share Fanitt', subtitle: 'Invite friends to the app', onTap: () => ShareService.send(ctx, ShareService.app()))),
             ]),
             const SizedBox(height: AppSpacing.lg),
             const _SectionLabel('Security'),

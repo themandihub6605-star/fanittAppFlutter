@@ -10,6 +10,8 @@ import '../../../core/theme/app_icons.dart';
 import '../../../core/theme/app_palette.dart';
 import '../../../core/theme/app_spacing.dart';
 import '../../../core/utils/formatters.dart';
+import '../../../core/services/link_opener.dart';
+import '../../../core/widgets/app_network_image.dart';
 import '../../../core/widgets/async_view.dart';
 import '../../auth/presentation/bloc/auth_bloc.dart';
 import '../../../core/enums/user_role.dart';
@@ -50,6 +52,15 @@ class _NotificationsView extends StatelessWidget {
       sl<NotificationRepository>().markRead(item.id).ignore();
     }
 
+    // Admin broadcast links: full URLs open in the browser; website paths
+    // open on fanitt.com.
+    final link = item.link;
+    if (link != null && link.isNotEmpty) {
+      final url = link.startsWith('/') ? 'https://app.fanitt.com$link' : link;
+      LinkOpener.open(url).ignore();
+      return;
+    }
+
     final auth = context.read<AuthBloc>().state;
     final role = auth is AuthAuthenticated ? auth.user.role : null;
     final id = item.relatedId;
@@ -59,6 +70,21 @@ class _NotificationsView extends StatelessWidget {
         context.push(role == UserRole.brand ? AppRoutes.manageCampaign(id) : AppRoutes.campaignDetail(id));
       case 'Conversation':
         context.push(AppRoutes.chat(id));
+      case 'Community':
+        context.push(AppRoutes.communityDetail(id));
+      case 'Session':
+        context.push(AppRoutes.meetDetail(id));
+      case 'CommunityPost':
+        context.push(AppRoutes.communityPost(id));
+    // Fanitt Store
+      case 'CallSession':
+        context.push(AppRoutes.storeCall(id));
+      case 'LiveStream':
+        context.push(AppRoutes.liveDetail(id));
+      case 'StoreOrder':
+        context.push(item.type == 'store_sale' ? AppRoutes.storeSales : AppRoutes.library);
+      case 'Store':
+        context.push(AppRoutes.store);
     }
   }
 
@@ -83,18 +109,18 @@ class _NotificationsView extends StatelessWidget {
           onRefresh: cubit.refresh,
           child: feed.items.isEmpty
               ? const ScrollableMessage(
-                  child: MessageView(icon: AppIcons.bell, title: 'You’re all caught up', message: 'Updates on proposals, payments and messages appear here.'),
-                )
+            child: MessageView(icon: AppIcons.bell, title: 'You’re all caught up', message: 'Updates on proposals, payments and messages appear here.'),
+          )
               : ListView.separated(
-                  physics: const AlwaysScrollableScrollPhysics(),
-                  padding: const EdgeInsets.symmetric(vertical: AppSpacing.xs),
-                  itemCount: feed.items.length,
-                  separatorBuilder: (_, _) => const Divider(indent: 72),
-                  itemBuilder: (context, index) {
-                    final item = feed.items[index];
-                    return _NotificationTile(item: item, onTap: () => _open(context, feed, item));
-                  },
-                ),
+            physics: const AlwaysScrollableScrollPhysics(),
+            padding: const EdgeInsets.symmetric(vertical: AppSpacing.xs),
+            itemCount: feed.items.length,
+            separatorBuilder: (_, _) => const Divider(indent: 72),
+            itemBuilder: (context, index) {
+              final item = feed.items[index];
+              return _NotificationTile(item: item, onTap: () => _open(context, feed, item));
+            },
+          ),
         ),
       ),
     );
@@ -108,17 +134,27 @@ class _NotificationTile extends StatelessWidget {
   final VoidCallback onTap;
 
   IconData get _icon => switch (item.type) {
-        'new_message' => AppIcons.messages,
-        'proposal_received' || 'proposal_status_update' => AppIcons.paperPlane,
-        'milestone_funded' || 'payout_released' || 'payment_success' => AppIcons.wallet,
-        'milestone_submitted' || 'milestone_changes_requested' || 'campaign_update' => AppIcons.campaigns,
-        'dispute_raised' || 'dispute_refund' => AppIcons.warning,
-        'follow' => AppIcons.userPlus,
-        'like' => AppIcons.heart,
-        'gift_received' || 'donation_received' => AppIcons.gift,
-        'account_verified' => AppIcons.sealCheck,
-        _ => AppIcons.bell,
-      };
+    'new_message' => AppIcons.messages,
+    'proposal_received' || 'proposal_status_update' => AppIcons.paperPlane,
+    'milestone_funded' || 'payout_released' || 'payment_success' => AppIcons.wallet,
+    'milestone_submitted' || 'milestone_changes_requested' || 'campaign_update' => AppIcons.campaigns,
+    'dispute_raised' || 'dispute_refund' => AppIcons.warning,
+    'follow' => AppIcons.userPlus,
+    'like' => AppIcons.heart,
+    'community_mention' => AppIcons.at,
+    'community_reply' => AppIcons.messages,
+    'community_join_request' => AppIcons.userPlus,
+    'community_join_approved' => AppIcons.users,
+    'community_announcement' => AppIcons.campaigns,
+    'store_order' => AppIcons.library,
+    'store_sale' => AppIcons.rupee,
+    'store_update' => AppIcons.store,
+    'store_live' => AppIcons.broadcast,
+    'store_call' => AppIcons.phone,
+    'gift_received' || 'donation_received' => AppIcons.gift,
+    'account_verified' => AppIcons.sealCheck,
+    _ => AppIcons.bell,
+  };
 
   @override
   Widget build(BuildContext context) {
@@ -153,6 +189,13 @@ class _NotificationTile extends StatelessWidget {
                   ),
                   const SizedBox(height: 2),
                   Text(item.message, style: context.text.bodyMedium),
+                  if (item.imageUrl != null && item.imageUrl!.isNotEmpty) ...[
+                    const SizedBox(height: AppSpacing.xs),
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(AppRadius.md),
+                      child: AspectRatio(aspectRatio: 2, child: AppNetworkImage(url: item.imageUrl)),
+                    ),
+                  ],
                 ],
               ),
             ),

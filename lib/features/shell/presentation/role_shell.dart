@@ -12,7 +12,7 @@ class ShellDestination {
   final IconData selectedIcon;
 }
 
-/// Bottom-navigation frame shared by the creator, brand and agency areas.
+/// Bottom-navigation frame shared by the creator, brand, agency and fan areas.
 class RoleShell extends StatelessWidget {
   const RoleShell({super.key, required this.navigationShell, required this.destinations});
 
@@ -27,24 +27,34 @@ class RoleShell extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      body: navigationShell,
-      bottomNavigationBar: DecoratedBox(
-        decoration: BoxDecoration(
-          border: Border(top: BorderSide(color: context.palette.border)),
-        ),
-        child: NavigationBar(
-          selectedIndex: navigationShell.currentIndex,
-          onDestinationSelected: _onSelected,
-          destinations: [
-            for (final destination in destinations)
-              NavigationDestination(
-                icon: Icon(destination.icon),
-                selectedIcon: Icon(destination.selectedIcon),
-                label: destination.label,
-                tooltip: destination.label,
-              ),
-          ],
+    final onFirstTab = navigationShell.currentIndex == 0;
+    // Back on any other tab goes to the first tab; only the first tab exits the app.
+    return PopScope(
+      canPop: onFirstTab,
+      onPopInvokedWithResult: (didPop, _) {
+        if (didPop || onFirstTab) return;
+        HapticFeedback.selectionClick();
+        navigationShell.goBranch(0);
+      },
+      child: Scaffold(
+        body: navigationShell,
+        bottomNavigationBar: DecoratedBox(
+          decoration: BoxDecoration(
+            border: Border(top: BorderSide(color: context.palette.border)),
+          ),
+          child: NavigationBar(
+            selectedIndex: navigationShell.currentIndex,
+            onDestinationSelected: _onSelected,
+            destinations: [
+              for (final destination in destinations)
+                NavigationDestination(
+                  icon: Icon(destination.icon),
+                  selectedIcon: Icon(destination.selectedIcon),
+                  label: destination.label,
+                  tooltip: destination.label,
+                ),
+            ],
+          ),
         ),
       ),
     );

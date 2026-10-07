@@ -28,6 +28,7 @@ import '../../../chat/presentation/chat_screen.dart';
 import '../../data/campaign_models.dart';
 import '../../data/campaign_repository.dart';
 import '../../../reviews/presentation/review_sheet.dart';
+import '../../../../core/services/share_service.dart';
 import '../widgets/attachment_picker.dart';
 import '../widgets/campaign_widgets.dart';
 
@@ -82,6 +83,25 @@ class _ManageView extends StatelessWidget {
       child: Scaffold(
         appBar: AppBar(
           title: const Text('Manage campaign'),
+          actions: [
+            if (cubit.state.data != null)
+              ShareIconButton(
+                size: 44,
+                message: () {
+                  final c = cubit.state.data!.campaign;
+                  return ShareService.campaign(
+                    id: c.id,
+                    title: c.title,
+                    brand: c.brand?.name ?? 'Our brand',
+                    isPaid: c.isPaid,
+                    pay: c.costPerInfluencer,
+                    location: c.locationLabel,
+                    mine: true,
+                  );
+                },
+              ),
+            const SizedBox(width: 4),
+          ],
           bottom: TabBar(
             labelColor: AppColors.primary,
             unselectedLabelColor: palette.textSecondary,
@@ -226,24 +246,24 @@ class _PaymentsTab extends StatelessWidget {
             onPressed: actions.isBusy
                 ? null
                 : () async {
-                    final done = await showAppSheet<bool>(context, builder: (_) => SheetActionScope(child: _FeedbackSheet(milestone: milestone, isDispute: false)));
-                    if ((done ?? false) && context.mounted) {
-                      AppSnackbar.success(context, 'Change request sent');
-                      cubit.refresh();
-                    }
-                  },
+              final done = await showAppSheet<bool>(context, builder: (_) => SheetActionScope(child: _FeedbackSheet(milestone: milestone, isDispute: false)));
+              if ((done ?? false) && context.mounted) {
+                AppSnackbar.success(context, 'Change request sent');
+                cubit.refresh();
+              }
+            },
           ),
           TextButton(
             style: TextButton.styleFrom(foregroundColor: AppColors.error),
             onPressed: actions.isBusy
                 ? null
                 : () async {
-                    final done = await showAppSheet<bool>(context, builder: (_) => SheetActionScope(child: _FeedbackSheet(milestone: milestone, isDispute: true)));
-                    if ((done ?? false) && context.mounted) {
-                      AppSnackbar.success(context, 'Dispute raised. The Fanitt team will review it.');
-                      cubit.refresh();
-                    }
-                  },
+              final done = await showAppSheet<bool>(context, builder: (_) => SheetActionScope(child: _FeedbackSheet(milestone: milestone, isDispute: true)));
+              if ((done ?? false) && context.mounted) {
+                AppSnackbar.success(context, 'Dispute raised. The Fanitt team will review it.');
+                cubit.refresh();
+              }
+            },
             child: const Text('Raise dispute'),
           ),
         ];
@@ -258,7 +278,7 @@ class _PaymentsTab extends StatelessWidget {
     final user = auth is AuthAuthenticated ? auth.user : null;
     final ok = await context.read<ActionCubit>().run(
       'fund-${milestone.id}',
-      () async {
+          () async {
         final order = await repo.fundMilestone(milestone.id);
         final payment = await sl<PaymentService>().checkout(
           orderId: order.id,
@@ -288,13 +308,13 @@ class _PaymentsTab extends StatelessWidget {
     );
     if (!confirmed || !context.mounted) return;
     final ok = await context.read<ActionCubit>().run(
-          'approve-${milestone.id}',
+      'approve-${milestone.id}',
           () async {
-            await sl<CampaignRepository>().approveMilestone(milestone.id);
-            return true;
-          },
-          success: 'Payment released',
-        );
+        await sl<CampaignRepository>().approveMilestone(milestone.id);
+        return true;
+      },
+      success: 'Payment released',
+    );
     if (ok != null && context.mounted) context.read<LoadCubit<ManageView>>().refresh();
   }
 }
@@ -402,19 +422,19 @@ class _ProposalsTab extends StatelessWidget {
       onRefresh: cubit.refresh,
       child: view.proposals.isEmpty
           ? const ScrollableMessage(
-              child: MessageView(
-                icon: AppIcons.paperPlane,
-                title: 'No proposals yet',
-                message: 'Creators who apply to this campaign show up here.',
-              ),
-            )
+        child: MessageView(
+          icon: AppIcons.paperPlane,
+          title: 'No proposals yet',
+          message: 'Creators who apply to this campaign show up here.',
+        ),
+      )
           : ListView.separated(
-              physics: const AlwaysScrollableScrollPhysics(),
-              padding: const EdgeInsets.fromLTRB(AppSpacing.gutter, AppSpacing.md, AppSpacing.gutter, AppSpacing.xxl),
-              itemCount: view.proposals.length,
-              separatorBuilder: (_, _) => const SizedBox(height: AppSpacing.sm),
-              itemBuilder: (context, index) => _ProposalCard(proposal: view.proposals[index], campaign: view.campaign),
-            ),
+        physics: const AlwaysScrollableScrollPhysics(),
+        padding: const EdgeInsets.fromLTRB(AppSpacing.gutter, AppSpacing.md, AppSpacing.gutter, AppSpacing.xxl),
+        itemCount: view.proposals.length,
+        separatorBuilder: (_, _) => const SizedBox(height: AppSpacing.sm),
+        itemBuilder: (context, index) => _ProposalCard(proposal: view.proposals[index], campaign: view.campaign),
+      ),
     );
   }
 }
@@ -427,9 +447,9 @@ class _ProposalCard extends StatelessWidget {
 
   Future<void> _message(BuildContext context) async {
     final conversation = await context.read<ActionCubit>().run(
-          'chat-${proposal.id}',
+      'chat-${proposal.id}',
           () => sl<ChatRepository>().startForApplication(proposal.id),
-        );
+    );
     if (conversation != null && context.mounted) {
       context.push(
         AppRoutes.chat(conversation.id),
@@ -444,19 +464,19 @@ class _ProposalCard extends StatelessWidget {
       title: 'Hire ${proposal.creator?.name ?? 'this creator'}?',
       message: campaign.isPaid
           ? 'The deal is split into ${campaign.milestoneCount} milestone${campaign.milestoneCount == 1 ? '' : 's'}. '
-              'You’ll fund the first one into escrow before work starts.'
+          'You’ll fund the first one into escrow before work starts.'
           : 'They’ll be assigned to this campaign.',
       confirmLabel: 'Hire',
     );
     if (!confirmed || !context.mounted) return;
     final ok = await context.read<ActionCubit>().run(
-          'decide-${proposal.id}',
+      'decide-${proposal.id}',
           () async {
-            await sl<CampaignRepository>().decide(campaign.id, proposal.id, accept: true);
-            return true;
-          },
-          success: 'Creator hired',
-        );
+        await sl<CampaignRepository>().decide(campaign.id, proposal.id, accept: true);
+        return true;
+      },
+      success: 'Creator hired',
+    );
     if (ok != null && context.mounted) {
       final cubit = context.read<LoadCubit<ManageView>>();
       await cubit.refresh();
@@ -468,13 +488,13 @@ class _ProposalCard extends StatelessWidget {
     final reason = await showAppSheet<String>(context, builder: (_) => const _DeclineSheet());
     if (reason == null || !context.mounted) return;
     final ok = await context.read<ActionCubit>().run(
-          'decide-${proposal.id}',
+      'decide-${proposal.id}',
           () async {
-            await sl<CampaignRepository>().decide(campaign.id, proposal.id, accept: false, reason: reason);
-            return true;
-          },
-          success: 'Proposal declined',
-        );
+        await sl<CampaignRepository>().decide(campaign.id, proposal.id, accept: false, reason: reason);
+        return true;
+      },
+      success: 'Proposal declined',
+    );
     if (ok != null && context.mounted) context.read<LoadCubit<ManageView>>().refresh();
   }
 

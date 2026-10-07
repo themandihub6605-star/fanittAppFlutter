@@ -40,6 +40,7 @@ class CreatorProfile extends Equatable {
     required this.averageRating,
     required this.reviewCount,
     required this.verificationStatus,
+    this.rejectionReason = '',
     required this.portfolioLink,
     required this.responseTime,
     required this.planName,
@@ -73,6 +74,7 @@ class CreatorProfile extends Equatable {
       averageRating: J.dbl(json, 'averageRating'),
       reviewCount: J.integer(json, 'reviewCount'),
       verificationStatus: VerificationStatus.fromValue(J.strOrNull(json, 'verificationStatus')) ?? VerificationStatus.unverified,
+      rejectionReason: J.str(json, 'rejectionReason'),
       portfolioLink: J.str(json, 'portfolioLink'),
       responseTime: J.str(json, 'responseTime'),
       yearsOfExperience: J.integerOrNull(json, 'yearsOfExperience'),
@@ -102,6 +104,9 @@ class CreatorProfile extends Equatable {
   final double averageRating;
   final int reviewCount;
   final VerificationStatus verificationStatus;
+
+  /// Admin's note when the profile was not approved.
+  final String rejectionReason;
   final String portfolioLink;
   final String responseTime;
   final int? yearsOfExperience;
@@ -120,33 +125,34 @@ class CreatorProfile extends Equatable {
   }
 
   CreatorProfile copyWith({bool? isFollowing, int? followerCount}) => CreatorProfile(
-        id: id,
-        userId: userId,
-        slug: slug,
-        name: name,
-        avatarUrl: avatarUrl,
-        bio: bio,
-        title: title,
-        category: category,
-        skills: skills,
-        languages: languages,
-        location: location,
-        socials: socials,
-        isAvailableForWork: isAvailableForWork,
-        followerCount: followerCount ?? this.followerCount,
-        averageRating: averageRating,
-        reviewCount: reviewCount,
-        verificationStatus: verificationStatus,
-        portfolioLink: portfolioLink,
-        responseTime: responseTime,
-        yearsOfExperience: yearsOfExperience,
-        coverImageUrl: coverImageUrl,
-        planName: planName,
-        isProPlan: isProPlan,
-        isFollowing: isFollowing ?? this.isFollowing,
-        totalEarnings: totalEarnings,
-        agencyId: agencyId,
-      );
+    id: id,
+    userId: userId,
+    slug: slug,
+    name: name,
+    avatarUrl: avatarUrl,
+    bio: bio,
+    title: title,
+    category: category,
+    skills: skills,
+    languages: languages,
+    location: location,
+    socials: socials,
+    isAvailableForWork: isAvailableForWork,
+    followerCount: followerCount ?? this.followerCount,
+    averageRating: averageRating,
+    reviewCount: reviewCount,
+    verificationStatus: verificationStatus,
+    rejectionReason: rejectionReason,
+    portfolioLink: portfolioLink,
+    responseTime: responseTime,
+    yearsOfExperience: yearsOfExperience,
+    coverImageUrl: coverImageUrl,
+    planName: planName,
+    isProPlan: isProPlan,
+    isFollowing: isFollowing ?? this.isFollowing,
+    totalEarnings: totalEarnings,
+    agencyId: agencyId,
+  );
 
   @override
   List<Object?> get props => [id, name, avatarUrl, bio, title, category, skills, followerCount, isFollowing, verificationStatus];
@@ -172,6 +178,7 @@ class BrandProfile extends Equatable {
     required this.totalCampaigns,
     required this.totalSpent,
     required this.verificationStatus,
+    this.rejectionReason = '',
     required this.planName,
     this.logoUrl,
     this.foundedYear,
@@ -179,29 +186,30 @@ class BrandProfile extends Equatable {
   });
 
   factory BrandProfile.fromJson(Map<String, dynamic> json) => BrandProfile(
-        id: J.id(json),
-        userId: J.refId(json, 'user') ?? '',
-        slug: J.str(json, 'slug'),
-        companyName: J.str(json, 'companyName'),
-        logoUrl: J.strOrNull(json, 'logoUrl'),
-        tagline: J.str(json, 'tagline'),
-        industry: J.str(json, 'industry'),
-        about: J.str(json, 'about'),
-        location: J.str(json, 'location'),
-        website: J.str(json, 'website'),
-        foundedYear: J.integerOrNull(json, 'foundedYear'),
-        companySize: J.str(json, 'companySize'),
-        whatWeOffer: J.strings(json, 'whatWeOffer'),
-        targetAudience: J.str(json, 'targetAudience'),
-        contactDesignation: J.str(json, 'contactDesignation'),
-        socials: Socials.fromJson(J.map(json, 'socials')),
-        averageRating: J.dbl(json, 'averageRating'),
-        totalCampaigns: J.integer(json, 'totalCampaigns'),
-        totalSpent: J.integer(json, 'totalSpent'),
-        verificationStatus: VerificationStatus.fromValue(J.strOrNull(json, 'verificationStatus')) ?? VerificationStatus.unverified,
-        planName: J.str(json, 'planName', 'Lite'),
-        agencyId: J.refId(json, 'agency'),
-      );
+    id: J.id(json),
+    userId: J.refId(json, 'user') ?? '',
+    slug: J.str(json, 'slug'),
+    companyName: J.str(json, 'companyName'),
+    logoUrl: J.strOrNull(json, 'logoUrl'),
+    tagline: J.str(json, 'tagline'),
+    industry: J.str(json, 'industry'),
+    about: J.str(json, 'about'),
+    location: J.str(json, 'location'),
+    website: J.str(json, 'website'),
+    foundedYear: J.integerOrNull(json, 'foundedYear'),
+    companySize: J.str(json, 'companySize'),
+    whatWeOffer: J.strings(json, 'whatWeOffer'),
+    targetAudience: J.str(json, 'targetAudience'),
+    contactDesignation: J.str(json, 'contactDesignation'),
+    socials: Socials.fromJson(J.map(json, 'socials')),
+    averageRating: J.dbl(json, 'averageRating'),
+    totalCampaigns: J.integer(json, 'totalCampaigns'),
+    totalSpent: J.integer(json, 'totalSpent'),
+    verificationStatus: VerificationStatus.fromValue(J.strOrNull(json, 'verificationStatus')) ?? VerificationStatus.unverified,
+    rejectionReason: J.str(json, 'rejectionReason'),
+    planName: J.str(json, 'planName', 'Lite'),
+    agencyId: J.refId(json, 'agency'),
+  );
 
   final String id;
   final String userId;
@@ -223,6 +231,9 @@ class BrandProfile extends Equatable {
   final int totalCampaigns;
   final int totalSpent;
   final VerificationStatus verificationStatus;
+
+  /// Admin's note when the profile was not approved.
+  final String rejectionReason;
   final String planName;
   final String? agencyId;
 
@@ -250,22 +261,22 @@ class AgencyProfile extends Equatable {
   });
 
   factory AgencyProfile.fromJson(Map<String, dynamic> json) => AgencyProfile(
-        id: J.id(json),
-        agencyName: J.str(json, 'agencyName'),
-        ownerName: J.str(json, 'ownerName'),
-        mobile: J.str(json, 'mobile'),
-        city: J.str(json, 'city'),
-        state: J.str(json, 'state'),
-        gstNumber: J.str(json, 'gstNumber'),
-        teamSize: J.str(json, 'teamSize'),
-        yearsInBusiness: J.integerOrNull(json, 'yearsInBusiness'),
-        specialization: J.str(json, 'specialization'),
-        documentUrl: J.strOrNull(json, 'documentUrl'),
-        referralCode: J.str(json, 'referralCode'),
-        commissionPercent: J.dbl(json, 'commissionPercent'),
-        verificationStatus: VerificationStatus.fromValue(J.strOrNull(json, 'verificationStatus')) ?? VerificationStatus.unverified,
-        rejectionReason: J.str(json, 'rejectionReason'),
-      );
+    id: J.id(json),
+    agencyName: J.str(json, 'agencyName'),
+    ownerName: J.str(json, 'ownerName'),
+    mobile: J.str(json, 'mobile'),
+    city: J.str(json, 'city'),
+    state: J.str(json, 'state'),
+    gstNumber: J.str(json, 'gstNumber'),
+    teamSize: J.str(json, 'teamSize'),
+    yearsInBusiness: J.integerOrNull(json, 'yearsInBusiness'),
+    specialization: J.str(json, 'specialization'),
+    documentUrl: J.strOrNull(json, 'documentUrl'),
+    referralCode: J.str(json, 'referralCode'),
+    commissionPercent: J.dbl(json, 'commissionPercent'),
+    verificationStatus: VerificationStatus.fromValue(J.strOrNull(json, 'verificationStatus')) ?? VerificationStatus.unverified,
+    rejectionReason: J.str(json, 'rejectionReason'),
+  );
 
   final String id;
   final String agencyName;

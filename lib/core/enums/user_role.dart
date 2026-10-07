@@ -12,18 +12,18 @@ enum UserRole {
   static UserRole fromValue(String? value) =>
       UserRole.values.firstWhere((role) => role.value == value, orElse: () => UserRole.fan);
 
-  /// Roles this mobile app is built for.
-  static const List<UserRole> appRoles = [UserRole.creator, UserRole.brand, UserRole.agency];
+  /// Roles this mobile app is built for (fans shop in Fanitt Store).
+  static const List<UserRole> appRoles = [UserRole.creator, UserRole.brand, UserRole.agency, UserRole.fan];
 
   bool get isAppRole => appRoles.contains(this);
 
   String get label => switch (this) {
-        UserRole.fan => 'Fan',
-        UserRole.creator => 'Creator',
-        UserRole.brand => 'Brand',
-        UserRole.agency => 'Agency',
-        UserRole.admin => 'Admin',
-      };
+    UserRole.fan => 'Fan',
+    UserRole.creator => 'Creator',
+    UserRole.brand => 'Brand',
+    UserRole.agency => 'Agency',
+    UserRole.admin => 'Admin',
+  };
 }
 
 enum VerificationStatus {
@@ -35,7 +35,7 @@ enum VerificationStatus {
   static VerificationStatus? fromValue(String? value) {
     if (value == null) return null;
     return VerificationStatus.values.firstWhere(
-      (status) => status.name == value,
+          (status) => status.name == value,
       orElse: () => VerificationStatus.unverified,
     );
   }
@@ -43,9 +43,9 @@ enum VerificationStatus {
   bool get blocksAccess => this == VerificationStatus.pending || this == VerificationStatus.rejected;
 
   String get label => switch (this) {
-        VerificationStatus.unverified => 'Not verified',
-        VerificationStatus.pending => 'Under review',
-        VerificationStatus.verified => 'Verified',
-        VerificationStatus.rejected => 'Not approved',
-      };
+    VerificationStatus.unverified => 'Not verified',
+    VerificationStatus.pending => 'Under review',
+    VerificationStatus.verified => 'Verified',
+    VerificationStatus.rejected => 'Not approved',
+  };
 }

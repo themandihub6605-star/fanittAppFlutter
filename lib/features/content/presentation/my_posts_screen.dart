@@ -4,21 +4,20 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../../core/bloc/action_cubit.dart';
 import '../../../core/bloc/load_cubit.dart';
 import '../../../core/di/injection.dart';
-import '../../../core/services/media_picker.dart';
 import '../../../core/theme/app_icons.dart';
 import '../../../core/theme/app_palette.dart';
 import '../../../core/theme/app_spacing.dart';
 import '../../../core/utils/formatters.dart';
 import '../../../core/widgets/action_scope.dart';
-import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_card.dart';
 import '../../../core/widgets/app_network_image.dart';
 import '../../../core/widgets/app_sheet.dart';
 import '../../../core/widgets/app_snackbar.dart';
-import '../../../core/widgets/app_text_field.dart';
 import '../../../core/widgets/async_view.dart';
+import '../../../core/widgets/media_aspect.dart';
 import '../../../core/widgets/stream_video_player.dart';
 import '../data/content_repository.dart';
+import 'create_post_screen.dart';
 
 class MyPostsScreen extends StatelessWidget {
   const MyPostsScreen({super.key});
@@ -112,13 +111,19 @@ class _PostCard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          SizedBox(
-            height: 200,
-            child: PageView(
-              children: [
-                for (final media in post.media)
-                  media.isVideo ? StreamVideoPlayer(key: ValueKey(media.url), url: media.url) : AppNetworkImage(url: media.url),
-              ],
+          // Each post in its real shape.
+          AspectRatio(
+            aspectRatio: MediaAspect.clamp(post.media.first.aspectRatio ?? 1),
+            child: ColoredBox(
+              color: const Color(0xFF0E0E14),
+              child: PageView(
+                children: [
+                  for (final media in post.media)
+                    media.isVideo
+                        ? StreamVideoPlayer(key: ValueKey(media.url), url: media.url, fit: BoxFit.contain)
+                        : AppNetworkImage(url: media.url, fit: BoxFit.contain),
+                ],
+              ),
             ),
           ),
           Padding(
@@ -144,102 +149,6 @@ class _PostCard extends StatelessWidget {
   }
 }
 
-/// Opens the "New post" sheet. Returns true when a post was published.
-/// Used by My posts and the Feed.
-Future<bool> showCreatePostSheet(BuildContext context) async {
-  final created = await showAppSheet<bool>(context, builder: (_) => const SheetActionScope(child: _NewPostSheet()));
-  return created ?? false;
-}
-
-class _NewPostSheet extends StatefulWidget {
-  const _NewPostSheet();
-
-  @override
-  State<_NewPostSheet> createState() => _NewPostSheetState();
-}
-
-class _NewPostSheetState extends State<_NewPostSheet> {
-  final _caption = TextEditingController();
-  List<PickedMedia> _media = const [];
-
-  @override
-  void dispose() {
-    _caption.dispose();
-    super.dispose();
-  }
-
-  Future<void> _pick() async {
-    final picked = await sl<MediaPicker>().media(limit: ContentRepository.maxMediaPerPost - _media.length);
-    if (picked.isNotEmpty) setState(() => _media = [..._media, ...picked].take(ContentRepository.maxMediaPerPost).toList());
-  }
-
-  Future<void> _publish() async {
-    final ok = await context.read<ActionCubit>().run('post', () => sl<ContentRepository>().createPost(media: _media, caption: _caption.text.trim()));
-    if (ok != null && mounted) Navigator.of(context).pop(true);
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final busy = context.watch<ActionCubit>().state.isBusy;
-    final palette = context.palette;
-    return SheetBody(
-      title: 'New post',
-      subtitle: 'Up to ${ContentRepository.maxMediaPerPost} photos or videos.',
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          SizedBox(
-            height: 96,
-            child: ListView(
-              scrollDirection: Axis.horizontal,
-              children: [
-                for (final item in _media)
-                  Padding(
-                    padding: const EdgeInsets.only(right: AppSpacing.xs),
-                    child: Stack(
-                      children: [
-                        Container(
-                          width: 96,
-                          height: 96,
-                          decoration: BoxDecoration(color: palette.surfaceMuted, borderRadius: BorderRadius.circular(AppRadius.sm)),
-                          child: Icon(item.isVideo ? AppIcons.video : AppIcons.image, color: palette.textSecondary),
-                        ),
-                        Positioned(
-                          top: 2,
-                          right: 2,
-                          child: IconButton.filledTonal(
-                            iconSize: 14,
-                            visualDensity: VisualDensity.compact,
-                            onPressed: () => setState(() => _media = _media.where((m) => m != item).toList()),
-                            icon: const Icon(AppIcons.close),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                if (_media.length < ContentRepository.maxMediaPerPost)
-                  InkWell(
-                    borderRadius: BorderRadius.circular(AppRadius.sm),
-                    onTap: _pick,
-                    child: Container(
-                      width: 96,
-                      decoration: BoxDecoration(
-                        borderRadius: BorderRadius.circular(AppRadius.sm),
-                        border: Border.all(color: palette.borderStrong),
-                      ),
-                      child: Icon(AppIcons.plus, color: palette.textSecondary),
-                    ),
-                  ),
-              ],
-            ),
-          ),
-          const SizedBox(height: AppSpacing.md),
-          AppTextField(label: 'Caption (optional)', controller: _caption, minLines: 2, maxLines: 5, maxLength: 2200, textCapitalization: TextCapitalization.sentences),
-          const SizedBox(height: AppSpacing.md),
-          const InlineActionError(),
-          AppButton(label: 'Publish', isLoading: busy, onPressed: busy || _media.isEmpty ? null : _publish),
-        ],
-      ),
-    );
-  }
-}
+/// Opens the full-screen "New post" composer. Returns true when a post was
+/// published. Used by My posts and the Feed.
+Future<bool> showCreatePostSheet(BuildContext context) => CreatePostScreen.open(context);

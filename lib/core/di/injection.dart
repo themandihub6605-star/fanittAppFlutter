@@ -25,6 +25,8 @@ import '../../features/wallet/data/wallet_repository.dart';
 import '../network/api_client.dart';
 import '../network/session_events.dart';
 import '../services/media_picker.dart';
+import '../../features/store/data/store_repository.dart';
+import '../services/app_update_service.dart';
 import '../services/payment_service.dart';
 import '../services/push_service.dart';
 import '../services/socket_service.dart';
@@ -42,28 +44,30 @@ Future<void> configureDependencies() async {
   await _clearKeychainOnFreshInstall(prefs, secureStorage);
 
   sl
-    // Core
+  // Core
     ..registerSingleton<SharedPreferences>(prefs)
     ..registerSingleton<FlutterSecureStorage>(secureStorage)
     ..registerLazySingleton<TokenStorage>(() => TokenStorage(sl()))
     ..registerLazySingleton<SessionEvents>(SessionEvents.new)
     ..registerLazySingleton<ApiClient>(() => ApiClient(storage: sl(), sessionEvents: sl()))
 
-    // Auth
+  // Auth
     ..registerLazySingleton<GoogleAuthService>(() => GoogleAuthService(FirebaseAuth.instance))
     ..registerLazySingleton<AuthRemoteDataSource>(() => AuthRemoteDataSource(sl()))
     ..registerLazySingleton<AuthRepository>(
-      () => AuthRepositoryImpl(remote: sl(), tokens: sl(), google: sl()),
+          () => AuthRepositoryImpl(remote: sl(), tokens: sl(), google: sl()),
     )
     ..registerLazySingleton<AuthBloc>(() => AuthBloc(repository: sl(), sessionEvents: sl(), socket: sl(), push: sl()))
 
-    // Services
+  // Services
     ..registerLazySingleton<PaymentService>(PaymentService.new)
     ..registerLazySingleton<MediaPicker>(MediaPicker.new)
     ..registerLazySingleton<SocketService>(() => SocketService(sl()))
     ..registerLazySingleton<PushService>(() => PushService(sl()))
+    ..registerLazySingleton<AppUpdateService>(AppUpdateService.new)
+    ..registerLazySingleton<StoreRepository>(() => StoreRepository(sl()))
 
-    // Features
+  // Features
     ..registerLazySingleton<CategoriesRepository>(() => CategoriesRepository(sl()))
     ..registerLazySingleton<ProfileRepository>(() => ProfileRepository(sl()))
     ..registerLazySingleton<CampaignRepository>(() => CampaignRepository(sl()))

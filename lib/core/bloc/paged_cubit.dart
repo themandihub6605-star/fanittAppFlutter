@@ -23,12 +23,12 @@ class PagedState<T> extends Equatable {
   bool get hasLoaded => page > 0;
 
   PagedState<T> copyWith({List<T>? items, int? page, bool? hasMore, bool? isLoading, String? errorMessage}) => PagedState<T>(
-        items: items ?? this.items,
-        page: page ?? this.page,
-        hasMore: hasMore ?? this.hasMore,
-        isLoading: isLoading ?? this.isLoading,
-        errorMessage: errorMessage,
-      );
+    items: items ?? this.items,
+    page: page ?? this.page,
+    hasMore: hasMore ?? this.hasMore,
+    isLoading: isLoading ?? this.isLoading,
+    errorMessage: errorMessage,
+  );
 
   @override
   List<Object?> get props => [items, page, hasMore, isLoading, errorMessage];
@@ -61,6 +61,16 @@ class PagedCubit<T> extends SafeCubit<PagedState<T>> {
   /// Local edit after an action (e.g. follow toggled on one item).
   void updateItem(bool Function(T item) test, T Function(T item) update) {
     safeEmit(state.copyWith(items: [for (final item in state.items) test(item) ? update(item) : item]));
+  }
+
+  /// Local removal (e.g. a deleted post or a removed member).
+  void removeItem(bool Function(T item) test) {
+    safeEmit(state.copyWith(items: [for (final item in state.items) if (!test(item)) item]));
+  }
+
+  /// Adds an item at the top (e.g. a post the user just published).
+  void prependItem(T item) {
+    safeEmit(state.copyWith(items: [item, ...state.items]));
   }
 
   Future<void> _load(int page, {bool reset = false}) async {
