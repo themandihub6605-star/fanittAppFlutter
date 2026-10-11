@@ -42,9 +42,14 @@ class PagedCubit<T> extends SafeCubit<PagedState<T>> {
 
   Future<Paged<T>> Function(int page) _fetch;
 
+  /// Bumped on every query change / refresh, so a slow older request can't
+  /// overwrite the results of a newer one.
+  int _generation = 0;
+
   /// Swap the query (search text, filters) and reload from page 1.
   void updateQuery(Future<Paged<T>> Function(int page) fetch) {
     _fetch = fetch;
+    _generation++;
     safeEmit(PagedState<T>());
     refresh();
   }
@@ -74,15 +79,19 @@ class PagedCubit<T> extends SafeCubit<PagedState<T>> {
   }
 
   Future<void> _load(int page, {bool reset = false}) async {
+    if (reset) _generation++;
+    final generation = _generation;
     safeEmit(state.copyWith(isLoading: true));
     try {
       final result = await _fetch(page);
+      if (generation != _generation) return; // a newer load replaced this one
       safeEmit(PagedState<T>(
         items: reset ? result.items : [...state.items, ...result.items],
         page: result.page,
         hasMore: result.hasMore,
       ));
     } on ApiException catch (error) {
+      if (generation != _generation) return;
       safeEmit(state.copyWith(isLoading: false, errorMessage: error.displayMessage));
     }
   }

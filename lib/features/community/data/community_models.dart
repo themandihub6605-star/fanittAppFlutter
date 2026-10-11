@@ -328,6 +328,12 @@ class CommunityPost extends Equatable {
     this.poll,
     this.editedAt,
     this.community,
+    this.isFree = false,
+    this.isLocked = false,
+    this.teaserImage = '',
+    this.mediaCount = 0,
+    this.hasVideo = false,
+    this.hasPoll = false,
   });
 
   factory CommunityPost.fromJson(Map<String, dynamic> json) {
@@ -347,6 +353,12 @@ class CommunityPost extends Equatable {
       createdAt: J.date(json, 'createdAt') ?? DateTime.now(),
       editedAt: J.date(json, 'editedAt'),
       community: communityJson == null ? null : Community.fromJson(communityJson),
+      isFree: J.boolean(json, 'isFree'),
+      isLocked: J.boolean(json, 'isLocked'),
+      teaserImage: J.str(json, 'teaserImage'),
+      mediaCount: J.integer(json, 'mediaCount'),
+      hasVideo: J.boolean(json, 'hasVideo'),
+      hasPoll: J.boolean(json, 'hasPoll'),
     );
   }
 
@@ -364,6 +376,17 @@ class CommunityPost extends Equatable {
   final DateTime createdAt;
   final DateTime? editedAt;
 
+  /// Paid communities: a free preview post anyone can read without a plan.
+  final bool isFree;
+
+  /// Paid post shown locked to someone without a plan: [text] is only the
+  /// first line and [teaserImage] a tiny blurred picture (data URI).
+  final bool isLocked;
+  final String teaserImage;
+  final int mediaCount;
+  final bool hasVideo;
+  final bool hasPoll;
+
   /// Only set when a single post is loaded (notifications).
   final Community? community;
 
@@ -375,6 +398,7 @@ class CommunityPost extends Equatable {
     int? commentCount,
     bool? isLiked,
     DateTime? editedAt,
+    bool? isFree,
   }) =>
       CommunityPost(
         id: id,
@@ -391,10 +415,16 @@ class CommunityPost extends Equatable {
         createdAt: createdAt,
         editedAt: editedAt ?? this.editedAt,
         community: community,
+        isFree: isFree ?? this.isFree,
+        isLocked: isLocked,
+        teaserImage: teaserImage,
+        mediaCount: mediaCount,
+        hasVideo: hasVideo,
+        hasPoll: hasPoll,
       );
 
   @override
-  List<Object?> get props => [id, text, poll, isPinned, likeCount, commentCount, isLiked, editedAt];
+  List<Object?> get props => [id, text, poll, isPinned, likeCount, commentCount, isLiked, editedAt, isFree];
 }
 
 class CommunityComment extends Equatable {

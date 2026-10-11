@@ -3,11 +3,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:go_router/go_router.dart';
 
 import '../../../core/bloc/action_cubit.dart';
 import '../../../core/bloc/load_cubit.dart';
 import '../../../core/di/injection.dart';
 import '../../../core/enums/user_role.dart';
+import '../../../core/router/app_routes.dart';
 import '../../../core/services/link_opener.dart';
 import '../../../core/services/share_service.dart';
 import '../../../core/theme/app_colors.dart';
@@ -19,7 +21,10 @@ import '../../../core/widgets/action_scope.dart';
 import '../../../core/widgets/app_network_image.dart';
 import '../../../core/widgets/async_view.dart';
 import '../../auth/presentation/bloc/auth_bloc.dart';
+import '../../../core/widgets/stream_video_player.dart';
 import '../../content/data/content_repository.dart';
+import '../../feed/presentation/media_viewer_screen.dart';
+import '../../feed/presentation/reels_screen.dart';
 import '../../store/presentation/fanbox/fanbox_sheet.dart';
 import '../data/creators_repository.dart';
 
@@ -53,12 +58,7 @@ class _ProfileView extends StatelessWidget {
     final result = await context.read<ActionCubit>().run('follow', () => sl<CreatorsRepository>().toggleFollow(data.creator.id));
     if (result == null) return;
     HapticFeedback.mediumImpact();
-    cubit.replace(CreatorPublicProfile(
-      creator: data.creator.copyWith(isFollowing: result.following, followerCount: result.followerCount),
-      reviews: data.reviews,
-      projectsCompleted: data.projectsCompleted,
-      posts: data.posts,
-    ));
+    cubit.replace(data.withCreator(data.creator.copyWith(isFollowing: result.following, followerCount: result.followerCount)));
   }
 
   @override
@@ -211,6 +211,8 @@ class _Loaded extends StatelessWidget {
                       decoration: BoxDecoration(color: palette.surface, borderRadius: BorderRadius.circular(18), border: Border.all(color: palette.border)),
                       child: Row(
                         children: [
+                          _Stat(value: Fmt.compact(data.posts.length), label: 'Posts'),
+                          _Divider(color: palette.border),
                           _Stat(value: Fmt.compact(c.followerCount), label: 'Followers'),
                           _Divider(color: palette.border),
                           _Stat(value: c.reviewCount == 0 ? '—' : c.averageRating.toStringAsFixed(1), label: c.reviewCount == 0 ? 'Rating' : '${c.reviewCount} reviews', icon: c.reviewCount == 0 ? null : AppIcons.starFilled),
@@ -262,7 +264,95 @@ class _Loaded extends StatelessWidget {
                       ),
                     ],
 
+                    // Their Fanitt Store
+                    if (data.store != null) _StoreCard(store: data.store!),
+
                     if (c.bio.isNotEmpty) _Section(title: 'About', icon: AppIcons.user, child: _Expandable(text: c.bio)),
+
+                    // Quick facts
+                    _Section(
+                      title: 'Highlights',
+                      icon: AppIcons.lightning,
+                      child: Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
+                        children: [
+                          if (data.isTopCreator) const _Fact(icon: AppIcons.crown, text: 'Top creator', color: AppColors.warning),
+                          if (verified) const _Fact(icon: AppIcons.sealCheck, text: 'Verified', color: Color(0xFF3B82F6)),
+                          _Fact(icon: AppIcons.check, text: '${data.onTimeDeliveryPercent}% on-time delivery', color: AppColors.success),
+                          if (c.isAvailableForWork) const _Fact(icon: AppIcons.campaigns, text: 'Open to work', color: AppColors.success),
+                          if (c.responseTime.isNotEmpty) _Fact(icon: AppIcons.clock, text: 'Replies ${c.responseTime}'),
+                          if (c.yearsOfExperience != null) _Fact(icon: AppIcons.star, text: '${c.yearsOfExperience} yrs experience'),
+                          if (c.location.isNotEmpty) _Fact(icon: AppIcons.mapPin, text: c.location),
+                          if (data.profileViews > 0) _Fact(icon: AppIcons.eye, text: '${Fmt.compact(data.profileViews)} profile views'),
+                          if (data.joinedAt != null) _Fact(icon: AppIcons.calendar, text: 'Joined ${Fmt.date(data.joinedAt!)}'),
+                        ],
+                      ),
+                    ),
+
+                    // Portfolio photos
+                    if (data.portfolioImages.isNotEmpty)
+                      _Section(
+                        title: 'Portfolio',
+                        icon: AppIcons.image,
+                        child: SizedBox(
+                          height: 120,
+                          child: ListView.separated(
+                            scrollDirection: Axis.horizontal,
+                            itemCount: data.portfolioImages.length,
+                            separatorBuilder: (_, _) => const SizedBox(width: 8),
+                            itemBuilder: (context, i) => GestureDetector(
+                              onTap: () => MediaViewerScreen.open(
+                                context,
+                                media: [for (final u in data.portfolioImages) PostMedia(url: u, isVideo: false)],
+                                index: i,
+                              ),
+                              child: ClipRRect(
+                                borderRadius: BorderRadius.circular(12),
+                                child: SizedBox(width: 120, child: AppNetworkImage(url: data.portfolioImages[i], fit: BoxFit.cover)),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+
+                    // Upcoming live sessions
+                    if (data.sessions.isNotEmpty)
+                      _Section(
+                        title: 'Upcoming sessions',
+                        icon: AppIcons.videoCamera,
+                        child: Column(
+                          children: [
+                            for (final (i, se) in data.sessions.take(5).indexed) ...[
+                              if (i > 0) Divider(height: 18, color: palette.border),
+                              Row(
+                                children: [
+                                  Container(
+                                    width: 40,
+                                    height: 40,
+                                    decoration: BoxDecoration(color: AppColors.primary.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(12)),
+                                    child: const Icon(AppIcons.videoCamera, size: 19, color: AppColors.primary),
+                                  ),
+                                  const SizedBox(width: 12),
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        Text(se.title, maxLines: 1, overflow: TextOverflow.ellipsis, style: context.text.titleSmall?.copyWith(fontWeight: FontWeight.w700)),
+                                        Text(
+                                          '${se.scheduledAt == null ? 'Soon' : Fmt.dateTime(se.scheduledAt!)} · ${se.durationMinutes} min',
+                                          style: context.text.bodySmall,
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                  Text(se.price == 0 ? 'Free' : Fmt.money(se.price), style: context.text.labelLarge?.copyWith(color: AppColors.primary, fontWeight: FontWeight.w800)),
+                                ],
+                              ),
+                            ],
+                          ],
+                        ),
+                      ),
 
                     if (c.skills.isNotEmpty || c.languages.isNotEmpty)
                       _Section(
@@ -319,7 +409,7 @@ class _Loaded extends StatelessWidget {
                       ),
 
                     if (data.posts.isNotEmpty)
-                      _Section(title: 'Posts', icon: AppIcons.image, padded: false, child: _PostGrid(posts: data.posts)),
+                      _Section(title: 'Posts & reels', icon: AppIcons.image, padded: false, child: _ContentGrid(posts: data.posts)),
 
                     _Section(
                       title: 'Reviews${c.reviewCount > 0 ? ' · ${c.reviewCount}' : ''}',
@@ -592,32 +682,196 @@ class _ExpandableState extends State<_Expandable> {
   }
 }
 
-class _PostGrid extends StatelessWidget {
-  const _PostGrid({required this.posts});
+/// Posts | Reels switch and a 3-column grid. Every tile shows what it is
+/// (several photos, video, reel) and opens it.
+class _ContentGrid extends StatefulWidget {
+  const _ContentGrid({required this.posts});
 
   final List<Post> posts;
 
   @override
+  State<_ContentGrid> createState() => _ContentGridState();
+}
+
+class _ContentGridState extends State<_ContentGrid> {
+  bool _reels = false;
+
+  @override
   Widget build(BuildContext context) {
+    final posts = [for (final p in widget.posts) if (!p.isReel) p];
+    final reels = [for (final p in widget.posts) if (p.isReel) p];
+    final list = _reels ? reels : posts;
     final palette = context.palette;
-    return GridView.count(
-      crossAxisCount: 3,
-      shrinkWrap: true,
-      physics: const NeverScrollableScrollPhysics(),
-      mainAxisSpacing: 3,
-      crossAxisSpacing: 3,
+
+    Widget tab(String label, int count, bool active, VoidCallback onTap) => Expanded(
+      child: GestureDetector(
+        onTap: onTap,
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 10),
+          decoration: BoxDecoration(border: Border(bottom: BorderSide(color: active ? palette.textPrimary : palette.border, width: active ? 2 : 1))),
+          child: Text(
+            '$label · $count',
+            textAlign: TextAlign.center,
+            style: context.text.labelLarge?.copyWith(fontWeight: FontWeight.w800, color: active ? palette.textPrimary : palette.textTertiary),
+          ),
+        ),
+      ),
+    );
+
+    return Column(
       children: [
-        for (final post in posts)
-          ClipRRect(
-            borderRadius: BorderRadius.circular(10),
-            child: post.media.isNotEmpty && !post.media.first.isVideo
-                ? AppNetworkImage(url: post.media.first.url)
-                : Container(
-              color: palette.surfaceMuted,
-              child: Icon(post.media.isEmpty ? AppIcons.fileText : AppIcons.play, color: palette.textSecondary),
-            ),
+        Row(
+          children: [
+            tab('Posts', posts.length, !_reels, () => setState(() => _reels = false)),
+            tab('Reels', reels.length, _reels, () => setState(() => _reels = true)),
+          ],
+        ),
+        const SizedBox(height: 3),
+        if (list.isEmpty)
+          Padding(
+            padding: const EdgeInsets.all(28),
+            child: Text(_reels ? 'No reels yet' : 'No posts yet', style: context.text.bodyMedium?.copyWith(color: palette.textSecondary)),
+          )
+        else
+          GridView.builder(
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            padding: EdgeInsets.zero,
+            gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: 3, mainAxisSpacing: 3, crossAxisSpacing: 3, childAspectRatio: _reels ? 9 / 16 : 1),
+            itemCount: list.length,
+            itemBuilder: (context, i) => _ContentTile(post: list[i]),
           ),
       ],
+    );
+  }
+}
+
+class _ContentTile extends StatelessWidget {
+  const _ContentTile({required this.post});
+
+  final Post post;
+
+  @override
+  Widget build(BuildContext context) {
+    final m = post.cover;
+    final poster = m == null ? '' : (m.isVideo ? (m.thumbnailUrl.isNotEmpty ? m.thumbnailUrl : StreamVideoPlayer.thumbnailFor(m.url) ?? '') : m.url);
+    const shadow = [Shadow(color: Colors.black54, blurRadius: 6)];
+    return GestureDetector(
+      onTap: () => post.isReel ? ReelsScreen.open(context, startId: post.id) : context.push(AppRoutes.postDetail(post.id)),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(6),
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            ColoredBox(color: context.palette.surfaceMuted, child: AppNetworkImage(url: poster, fit: BoxFit.cover)),
+            // What it is, top-right: several items / a video / a reel.
+            Positioned(
+              top: 6,
+              right: 6,
+              child: Icon(
+                post.isReel ? AppIcons.video : (post.media.length > 1 ? AppIcons.copy : (m?.isVideo ?? false) ? AppIcons.play : null),
+                color: Colors.white,
+                size: 16,
+                shadows: shadow,
+              ),
+            ),
+            if (post.isReel || post.likeCount > 0)
+              Positioned(
+                left: 6,
+                bottom: 5,
+                child: Row(
+                  children: [
+                    Icon(post.isReel ? AppIcons.play : AppIcons.heartFilled, color: Colors.white, size: 12, shadows: shadow),
+                    const SizedBox(width: 3),
+                    Text(Fmt.compact(post.isReel ? post.viewCount : post.likeCount), style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.w700, shadows: shadow)),
+                  ],
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// "Visit store" card.
+class _StoreCard extends StatelessWidget {
+  const _StoreCard({required this.store});
+
+  final CreatorStoreRef store;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.palette;
+    return Padding(
+      padding: const EdgeInsets.only(top: AppSpacing.md),
+      child: Material(
+        color: palette.surface,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18), side: BorderSide(color: palette.border)),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(18),
+          onTap: () => context.push(AppRoutes.storePage(store.slug)),
+          child: Padding(
+            padding: const EdgeInsets.all(14),
+            child: Row(
+              children: [
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(12),
+                  child: SizedBox(
+                    width: 46,
+                    height: 46,
+                    child: store.logoUrl.isEmpty
+                        ? const DecoratedBox(decoration: BoxDecoration(gradient: _gradient), child: Icon(AppIcons.store, color: Colors.white))
+                        : AppNetworkImage(url: store.logoUrl, fit: BoxFit.cover),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(store.name, maxLines: 1, overflow: TextOverflow.ellipsis, style: context.text.titleSmall?.copyWith(fontWeight: FontWeight.w800)),
+                      Text(store.tagline.isNotEmpty ? store.tagline : 'Products, live sessions & more', maxLines: 1, overflow: TextOverflow.ellipsis, style: context.text.bodySmall),
+                    ],
+                  ),
+                ),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+                  decoration: BoxDecoration(gradient: _gradient, borderRadius: BorderRadius.circular(AppRadius.pill)),
+                  child: const Text('Visit store', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 12.5)),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Small rounded fact: icon + text.
+class _Fact extends StatelessWidget {
+  const _Fact({required this.icon, required this.text, this.color});
+
+  final IconData icon;
+  final String text;
+  final Color? color;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.palette;
+    final c = color ?? palette.textSecondary;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+      decoration: BoxDecoration(color: palette.surfaceMuted, borderRadius: BorderRadius.circular(AppRadius.pill)),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 14, color: c),
+          const SizedBox(width: 5),
+          Text(text, style: context.text.labelMedium?.copyWith(fontWeight: FontWeight.w600, color: palette.textPrimary)),
+        ],
+      ),
     );
   }
 }

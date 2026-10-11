@@ -12,10 +12,10 @@ import '../../../core/widgets/action_scope.dart';
 import '../../../core/widgets/app_card.dart';
 import '../../../core/widgets/app_network_image.dart';
 import '../../../core/widgets/app_sheet.dart';
-import '../../../core/widgets/app_snackbar.dart';
 import '../../../core/widgets/async_view.dart';
-import '../../../core/widgets/media_aspect.dart';
-import '../../../core/widgets/stream_video_player.dart';
+import '../../feed/presentation/media_viewer_screen.dart';
+import '../../feed/presentation/reels_screen.dart';
+import '../../feed/presentation/widgets/post_media_grid.dart';
 import '../data/content_repository.dart';
 import 'create_post_screen.dart';
 
@@ -37,20 +37,18 @@ class _PostsView extends StatelessWidget {
   const _PostsView();
 
   Future<void> _create(BuildContext context) async {
-    final created = await showCreatePostSheet(context);
-    if (created && context.mounted) {
-      AppSnackbar.success(context, 'Post published');
-      context.read<LoadCubit<List<Post>>>().refresh();
-    }
+    final made = await showCreateChooser(context);
+    if (made != null && made != CreateMode.story && context.mounted) context.read<LoadCubit<List<Post>>>().refresh();
   }
 
   Future<void> _delete(BuildContext context, Post post) async {
-    final ok = await confirmAction(context, title: 'Delete this post?', message: 'It’s removed from your profile for everyone.', confirmLabel: 'Delete', destructive: true);
+    final what = post.isReel ? 'reel' : 'post';
+    final ok = await confirmAction(context, title: 'Delete this $what?', message: 'It’s removed from the feed and your profile for everyone.', confirmLabel: 'Delete', destructive: true);
     if (!ok || !context.mounted) return;
     final done = await context.read<ActionCubit>().run('delete-${post.id}', () async {
       await sl<ContentRepository>().deletePost(post.id);
       return true;
-    }, success: 'Post deleted');
+    }, success: post.isReel ? 'Reel deleted' : 'Post deleted');
     if (done != null && context.mounted) context.read<LoadCubit<List<Post>>>().refresh();
   }
 
@@ -58,12 +56,14 @@ class _PostsView extends StatelessWidget {
   Widget build(BuildContext context) {
     final cubit = context.watch<LoadCubit<List<Post>>>();
     final posts = cubit.state.data ?? const <Post>[];
-    final canAdd = cubit.state.data != null && posts.length < ContentRepository.maxPosts;
+    final postCount = posts.where((p) => !p.isReel).length;
+    final reelCount = posts.where((p) => p.isReel).length;
+    final canAdd = cubit.state.data != null;
 
     return Scaffold(
-      appBar: AppBar(title: const Text('My posts')),
+      appBar: AppBar(title: const Text('My posts & reels')),
       floatingActionButton: canAdd
-          ? FloatingActionButton.extended(onPressed: () => _create(context), icon: const Icon(AppIcons.plus), label: const Text('New post'))
+          ? FloatingActionButton.extended(onPressed: () => _create(context), icon: const Icon(AppIcons.plus), label: const Text('Create'))
           : null,
       body: AsyncView<List<Post>>(
         state: cubit.state,
@@ -74,8 +74,8 @@ class _PostsView extends StatelessWidget {
               ? const ScrollableMessage(
             child: MessageView(
               icon: AppIcons.image,
-              title: 'Show brands your work',
-              message: 'Add up to 5 posts with photos or videos. They appear on your public profile.',
+              title: 'Share your work',
+              message: 'Post photos and videos, or a short reel. They show in the feed and on your profile.',
             ),
           )
               : ListView.separated(
@@ -85,7 +85,10 @@ class _PostsView extends StatelessWidget {
             separatorBuilder: (_, _) => const SizedBox(height: AppSpacing.sm),
             itemBuilder: (context, index) {
               if (index == 0) {
-                return Text('${posts.length} of ${ContentRepository.maxPosts} posts used', style: context.text.bodySmall);
+                return Text(
+                  '$postCount of ${ContentRepository.maxPosts} posts · $reelCount of ${ContentRepository.maxReels} reels',
+                  style: context.text.bodySmall,
+                );
               }
               final post = posts[index - 1];
               return _PostCard(post: post, onDelete: () => _delete(context, post));
@@ -111,21 +114,52 @@ class _PostCard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Each post in its real shape.
-          AspectRatio(
-            aspectRatio: MediaAspect.clamp(post.media.first.aspectRatio ?? 1),
-            child: ColoredBox(
-              color: const Color(0xFF0E0E14),
-              child: PageView(
-                children: [
-                  for (final media in post.media)
-                    media.isVideo
-                        ? StreamVideoPlayer(key: ValueKey(media.url), url: media.url, fit: BoxFit.contain)
-                        : AppNetworkImage(url: media.url, fit: BoxFit.contain),
-                ],
+          // Reels: open the full-screen player. Posts: all media in one block.
+          if (post.isReel)
+            GestureDetector(
+              onTap: () => ReelsScreen.open(context, startId: post.id),
+              child: AspectRatio(
+                aspectRatio: 16 / 10,
+                child: Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    ColoredBox(color: const Color(0xFF0E0E14), child: AppNetworkImage(url: post.cover?.thumbnailUrl ?? '', fit: BoxFit.cover, placeholderIcon: AppIcons.video)),
+                    Center(
+                      child: Container(
+                        width: 52,
+                        height: 52,
+                        decoration: BoxDecoration(color: Colors.black.withValues(alpha: 0.5), shape: BoxShape.circle),
+                        child: const Icon(AppIcons.play, color: Colors.white, size: 24),
+                      ),
+                    ),
+                    Positioned(
+                      left: 10,
+                      top: 10,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                        decoration: BoxDecoration(color: Colors.black.withValues(alpha: 0.6), borderRadius: BorderRadius.circular(6)),
+                        child: const Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(AppIcons.video, color: Colors.white, size: 12),
+                            SizedBox(width: 4),
+                            Text('Reel', style: TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.w800)),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            )
+          else
+            Padding(
+              padding: const EdgeInsets.all(AppSpacing.xs),
+              child: PostMediaGrid(
+                media: post.media,
+                onOpen: (i, {position}) => MediaViewerScreen.open(context, media: post.media, index: i, position: position),
               ),
             ),
-          ),
           Padding(
             padding: const EdgeInsets.fromLTRB(AppSpacing.md, AppSpacing.sm, AppSpacing.xs, AppSpacing.sm),
             child: Row(
@@ -135,7 +169,10 @@ class _PostCard extends StatelessWidget {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       if (post.caption.isNotEmpty) Text(post.caption, style: context.text.bodyMedium?.copyWith(color: palette.textPrimary)),
-                      Text('${post.likeCount} likes · ${Fmt.relative(post.createdAt)}${post.media.length > 1 ? ' · ${post.media.length} items' : ''}', style: context.text.bodySmall),
+                      Text(
+                        '${post.likeCount} likes${post.isReel ? ' · ${post.viewCount} views' : ''} · ${Fmt.relative(post.createdAt)}${post.media.length > 1 ? ' · ${post.media.length} items' : ''}',
+                        style: context.text.bodySmall,
+                      ),
                     ],
                   ),
                 ),

@@ -17,6 +17,7 @@ import '../../../../core/widgets/app_button.dart';
 import '../../../../core/services/link_opener.dart';
 import '../../../../core/services/share_service.dart';
 import '../call/request_call_sheet.dart';
+import '../commerce/store_shop_section.dart';
 import '../fanbox/fanbox_sheet.dart';
 import '../meet/meets_section.dart';
 import '../widgets/store_widgets.dart';
@@ -138,6 +139,8 @@ class _StoreBody extends StatelessWidget {
                     onPressed: () => showFanBoxSheet(context, storeId: store.id, creatorName: store.name, config: page.fanbox),
                   ),
                 ],
+                // Physical products (clothes, merch…) — hidden when there are none.
+                StoreShopSection(storeId: store.id, storeName: store.name),
                 if (page.calls.enabled && !page.isOwner) ...[
                   const SizedBox(height: AppSpacing.lg),
                   _CallCard(page: page),

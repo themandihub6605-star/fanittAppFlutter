@@ -3,7 +3,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
 
-import '../../features/account/presentation/screens/account_screen.dart';
 import '../../features/account/presentation/screens/following_screen.dart';
 import '../../features/auth/presentation/screens/reset_password_screen.dart';
 import '../../features/brands/presentation/brands_screens.dart';
@@ -79,6 +78,16 @@ import '../guards/profile_gate.dart';
 import '../di/injection.dart';
 import '../storage/onboarding_store.dart';
 import '../theme/app_icons.dart';
+import '../../features/store/presentation/commerce/cart_screen.dart';
+import '../../features/store/presentation/commerce/checkout_screen.dart';
+import '../../features/store/presentation/commerce/my_orders_screen.dart';
+import '../../features/store/presentation/commerce/order_placed_screen.dart';
+import '../../features/store/presentation/commerce/seller_orders_screen.dart';
+import '../../features/store/presentation/commerce/seller_products_screen.dart';
+import '../../features/store/presentation/commerce/shop_home_screen.dart';
+import '../../features/store/presentation/commerce/shop_product_editor_screen.dart';
+import '../../features/store/presentation/commerce/shop_product_screen.dart';
+import '../../features/profile/presentation/my_profile_screen.dart';
 import 'app_pages.dart';
 import 'app_routes.dart';
 import 'router_refresh_stream.dart';
@@ -94,7 +103,11 @@ class AppRouter {
     navigatorKey: rootNavigatorKey,
     initialLocation: AppRoutes.splash,
     debugLogDiagnostics: kDebugMode,
-    refreshListenable: RouterRefreshStream(_authBloc.stream),
+    // Re-check redirects only when something routing depends on changes
+    // (signed in/out, role, profile status…) — not on every profile refresh.
+    // Refreshing the router on every pull-to-refresh rebuilt the bottom-bar
+    // frame mid-frame and crashed with "Duplicate GlobalKey".
+    refreshListenable: RouterRefreshStream(_authBloc.stream.map(_routeKey).distinct()),
     redirect: _redirect,
     routes: [
       GoRoute(
@@ -233,6 +246,18 @@ class AppRouter {
     _page(AppRoutes.products, (s) => ProductsScreen(initialCategory: s.uri.queryParameters['category'])),
     _page(AppRoutes.meetDetailPath, (s) => MeetDetailScreen(meetId: s.pathParameters['id']!)),
     _page(AppRoutes.meetRoom, (s) => s.extra is MeetRoomArgs ? MeetRoomScreen(args: s.extra! as MeetRoomArgs) : const MeetsScreen()),
+    // Fanitt Store — physical products
+    _page(AppRoutes.shop, (s) => ShopHomeScreen(storeId: s.uri.queryParameters['store'], storeName: s.uri.queryParameters['name'], initialCategory: s.uri.queryParameters['category'])),
+    _page(AppRoutes.shopCart, (_) => const CartScreen()),
+    _page(AppRoutes.shopCheckout, (s) => CheckoutScreen(args: s.extra is CheckoutArgs ? s.extra! as CheckoutArgs : const CheckoutArgs())),
+    _page(AppRoutes.shopOrderPlaced, (s) => s.extra is OrderPlacedArgs ? OrderPlacedScreen(args: s.extra! as OrderPlacedArgs) : const MyShopOrdersScreen()),
+    _page(AppRoutes.shopOrders, (_) => const MyShopOrdersScreen()),
+    _page(AppRoutes.shopOrderPath, (s) => ShopOrderDetailScreen(orderId: s.pathParameters['id']!)),
+    _page(AppRoutes.shopProductPath, (s) => ShopProductScreen(productId: s.pathParameters['id']!)),
+    _page(AppRoutes.shopProductEditorPath, (s) => ShopProductEditorScreen(productId: s.uri.queryParameters['id'])),
+    _page(AppRoutes.sellerShopProducts, (_) => const SellerProductsScreen()),
+    _page(AppRoutes.sellerShopOrders, (s) => SellerOrdersScreen(initialTab: int.tryParse(s.uri.queryParameters['tab'] ?? '') ?? 0)),
+    _page(AppRoutes.sellerShopOrderPath, (s) => SellerOrderDetailScreen(orderId: s.pathParameters['id']!)),
     // fanitt://open/store — the redirect below sends each role to the right place.
     GoRoute(path: AppRoutes.storeLink, redirect: (_, _) => AppRoutes.splash),
     // Shared links — open the shared item on top of the user's home.
@@ -243,6 +268,20 @@ class AppRouter {
     // Privacy Policy / Terms — open with or without an account.
     GoRoute(path: AppRoutes.legalPath, builder: (_, s) => LegalScreen(slug: s.pathParameters['slug'] ?? 'privacy-policy')),
   ];
+
+  /// Everything [_redirect] looks at, as one string. Same string = no
+  /// reason to re-run the redirects.
+  static String _routeKey(AuthState auth) => switch (auth) {
+    AuthAuthenticated(:final user) => [
+      'in',
+      user.id,
+      user.role.name,
+      user.profileStatus?.name ?? '-',
+      user.onboardingCompleted,
+      needsProfileCompletion(user),
+    ].join('|'),
+    _ => auth.runtimeType.toString(),
+  };
 
   String? _redirect(BuildContext context, GoRouterState state) {
     final auth = _authBloc.state;
@@ -313,9 +352,12 @@ class AppRouter {
 
   static StatefulShellRoute _shell(List<ShellDestination> destinations, List<StatefulShellBranch> branches) {
     return StatefulShellRoute.indexedStack(
-      pageBuilder: (context, state, navigationShell) => AppPages.fade(
-        state,
-        RoleShell(navigationShell: navigationShell, destinations: destinations),
+      // One fixed page key and no transition: when the router redirects back
+      // to a tab, the existing bottom-bar frame is reused instead of a second
+      // copy being built (that crashed with "Duplicate GlobalKey").
+      pageBuilder: (context, state, navigationShell) => NoTransitionPage<void>(
+        key: const ValueKey('role-shell'),
+        child: RoleShell(navigationShell: navigationShell, destinations: destinations),
       ),
       branches: branches,
     );
@@ -327,14 +369,14 @@ class AppRouter {
       ShellDestination('Feed', AppIcons.feed, AppIcons.feedFilled),
       ShellDestination('Campaigns', AppIcons.campaigns, AppIcons.campaignsFilled),
       ShellDestination('Messages', AppIcons.messages, AppIcons.messagesFilled),
-      ShellDestination('Account', AppIcons.account, AppIcons.accountFilled),
+      ShellDestination('Profile', AppIcons.account, AppIcons.accountFilled),
     ],
     [
       _branch(AppRoutes.creatorHome, const CreatorHomeScreen()),
       _branch(AppRoutes.creatorFeed, const ProfileGatedTab(title: 'Feed', child: FeedScreen())),
       _branch(AppRoutes.creatorCampaigns, const CreatorCampaignsScreen()),
       _branch(AppRoutes.creatorMessages, const ProfileGatedTab(title: 'Messages', child: ConversationsScreen())),
-      _branch(AppRoutes.creatorAccount, const AccountScreen()),
+      _branch(AppRoutes.creatorAccount, const MyProfileScreen()),
     ],
   );
 
@@ -344,14 +386,14 @@ class AppRouter {
       ShellDestination('Campaigns', AppIcons.campaigns, AppIcons.campaignsFilled),
       ShellDestination('Creators', AppIcons.creators, AppIcons.creatorsFilled),
       ShellDestination('Messages', AppIcons.messages, AppIcons.messagesFilled),
-      ShellDestination('Account', AppIcons.account, AppIcons.accountFilled),
+      ShellDestination('Profile', AppIcons.account, AppIcons.accountFilled),
     ],
     [
       _branch(AppRoutes.brandHome, const BrandHomeScreen()),
       _branch(AppRoutes.brandCampaigns, const BrandCampaignsScreen()),
       _branch(AppRoutes.brandCreators, const ProfileGatedTab(title: 'Creators', child: CreatorsScreen())),
       _branch(AppRoutes.brandMessages, const ProfileGatedTab(title: 'Messages', child: ConversationsScreen())),
-      _branch(AppRoutes.brandAccount, const AccountScreen()),
+      _branch(AppRoutes.brandAccount, const MyProfileScreen()),
     ],
   );
 
@@ -361,14 +403,14 @@ class AppRouter {
       ShellDestination('Feed', AppIcons.feed, AppIcons.feedFilled),
       ShellDestination('Library', AppIcons.library, AppIcons.libraryFilled),
       ShellDestination('Messages', AppIcons.messages, AppIcons.messagesFilled),
-      ShellDestination('Account', AppIcons.account, AppIcons.accountFilled),
+      ShellDestination('Profile', AppIcons.account, AppIcons.accountFilled),
     ],
     [
       _branch(AppRoutes.fanHome, const StoreDiscoverScreen()),
       _branch(AppRoutes.fanFeed, const FeedScreen()),
       _branch(AppRoutes.fanLibrary, const LibraryScreen(showBack: false)),
       _branch(AppRoutes.fanMessages, const ConversationsScreen()),
-      _branch(AppRoutes.fanAccount, const AccountScreen()),
+      _branch(AppRoutes.fanAccount, const MyProfileScreen()),
     ],
   );
 
@@ -377,13 +419,13 @@ class AppRouter {
       ShellDestination('Dashboard', AppIcons.dashboard, AppIcons.dashboardFilled),
       ShellDestination('Network', AppIcons.network, AppIcons.networkFilled),
       ShellDestination('Earnings', AppIcons.wallet, AppIcons.walletFilled),
-      ShellDestination('Account', AppIcons.account, AppIcons.accountFilled),
+      ShellDestination('Profile', AppIcons.account, AppIcons.accountFilled),
     ],
     [
       _branch(AppRoutes.agencyHome, const AgencyHomeScreen()),
       _branch(AppRoutes.agencyNetwork, const AgencyNetworkScreen()),
       _branch(AppRoutes.agencyEarnings, const WalletScreen(title: 'Earnings')),
-      _branch(AppRoutes.agencyAccount, const AccountScreen()),
+      _branch(AppRoutes.agencyAccount, const MyProfileScreen()),
     ],
   );
 }

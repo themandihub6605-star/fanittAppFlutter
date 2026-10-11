@@ -83,6 +83,10 @@ class _NotificationsView extends StatelessWidget {
         context.push(AppRoutes.liveDetail(id));
       case 'StoreOrder':
         context.push(item.type == 'store_sale' ? AppRoutes.storeSales : AppRoutes.library);
+      case 'ShopOrder':
+        context.push(item.type == 'store_sale' ? AppRoutes.sellerShopOrder(id) : AppRoutes.shopOrder(id));
+      case 'ShopProduct':
+        context.push(AppRoutes.sellerShopProducts);
       case 'Store':
         context.push(AppRoutes.store);
     }

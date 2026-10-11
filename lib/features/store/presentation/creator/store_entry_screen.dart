@@ -1,4 +1,3 @@
-import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_animate/flutter_animate.dart';
@@ -24,12 +23,15 @@ import '../../../../core/widgets/app_snackbar.dart';
 import '../../../../core/widgets/app_text_field.dart';
 import '../../../../core/widgets/async_view.dart';
 import '../../../../core/widgets/image_upload_box.dart';
+import '../../data/shop_repository.dart';
 import '../../data/store_repository.dart';
+import '../commerce/shop_widgets.dart';
 import '../widgets/store_widgets.dart';
 import 'store_setup_screen.dart';
 
 /// Creator's way into Fanitt Store: setup until the store is approved,
-/// then the Store Home dashboard with the seven tools.
+/// then the Store Home dashboard — shop (physical products & orders),
+/// tools (Meet, Live, Community, Affiliate) and more.
 class StoreEntryScreen extends StatelessWidget {
   const StoreEntryScreen({super.key});
 
@@ -42,6 +44,7 @@ class StoreEntryScreen extends StatelessWidget {
         BlocProvider(create: (_) => LoadCubit<StoreConfig>(repo.config)),
         // Only loaded once the store is live (the dashboard reads it).
         BlocProvider(create: (_) => LoadCubit<StoreSummary>(repo.summary)),
+        BlocProvider(create: (_) => LoadCubit<SellerShopSummary>(ShopRepository.i.sellerSummary)),
       ],
       child: Builder(
         builder: (context) {
@@ -73,6 +76,10 @@ class _StoreHome extends StatelessWidget {
     final palette = context.palette;
     final config = context.watch<LoadCubit<StoreConfig>>().state.data;
     final summary = context.watch<LoadCubit<StoreSummary>>().state.data;
+    final shop = context.watch<LoadCubit<SellerShopSummary>>().state.data;
+    // Tools the admin switched off are hidden (all show until settings load).
+    bool enabled(String key) => config == null || config.toolCards.any((c) => c.key == key);
+    final tools = [for (final t in _tools) if (enabled(t.key)) t];
 
     return Scaffold(
       appBar: AppBar(
@@ -94,77 +101,59 @@ class _StoreHome extends StatelessWidget {
             context.read<LoadCubit<MyStore>>().refresh(),
             context.read<LoadCubit<StoreConfig>>().refresh(),
             context.read<LoadCubit<StoreSummary>>().refresh(),
+            context.read<LoadCubit<SellerShopSummary>>().refresh(),
           ]);
         },
         child: CustomScrollView(
           physics: const AlwaysScrollableScrollPhysics(),
           slivers: [
+            // Store: logo, name, open / closed
             SliverPadding(
               padding: const EdgeInsets.fromLTRB(AppSpacing.gutter, AppSpacing.xs, AppSpacing.gutter, 0),
               sliver: SliverToBoxAdapter(child: _StoreHeader(store: store, onEdit: () => _editStore(context, store))),
             ),
 
-            // Earnings hero
-            SliverPadding(
-              padding: const EdgeInsets.fromLTRB(AppSpacing.gutter, AppSpacing.md, AppSpacing.gutter, 0),
-              sliver: SliverToBoxAdapter(child: _EarningsHero(store: store, summary: summary).animate().fadeIn(duration: 350.ms).slideY(begin: 0.06)),
-            ),
-
-            // Small numbers
+            // Earnings + numbers
             SliverPadding(
               padding: const EdgeInsets.fromLTRB(AppSpacing.gutter, AppSpacing.sm, AppSpacing.gutter, 0),
-              sliver: SliverToBoxAdapter(
-                child: Row(
-                  children: [
-                    Expanded(child: _MiniStat(icon: AppIcons.receipt, value: Fmt.compact(store.stats.orders), label: 'Orders', color: AppColors.primary)),
-                    const SizedBox(width: 10),
-                    Expanded(child: _MiniStat(icon: AppIcons.eye, value: Fmt.compact(store.stats.views), label: 'Store views', color: AppColors.info)),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: _MiniStat(
-                        icon: AppIcons.chartLine,
-                        value: store.stats.views == 0 ? '—' : '${((store.stats.orders / store.stats.views) * 100).clamp(0, 100).toStringAsFixed(1)}%',
-                        label: 'Conversion',
-                        color: AppColors.success,
-                      ),
-                    ),
-                  ],
-                ).animate().fadeIn(delay: 100.ms, duration: 350.ms),
-              ),
+              sliver: SliverToBoxAdapter(child: _EarningsCard(store: store, summary: summary).animate().fadeIn(delay: 60.ms, duration: 300.ms)),
+            ),
+
+            // Shop — physical products & orders
+            SliverPadding(
+              padding: const EdgeInsets.fromLTRB(AppSpacing.gutter, AppSpacing.sm, AppSpacing.gutter, 0),
+              sliver: SliverToBoxAdapter(child: _ShopCard(summary: shop).animate().fadeIn(delay: 150.ms, duration: 350.ms)),
             ),
 
             // Tools
             SliverPadding(
-              padding: const EdgeInsets.fromLTRB(AppSpacing.gutter, AppSpacing.xl, AppSpacing.gutter, AppSpacing.sm),
+              padding: const EdgeInsets.fromLTRB(AppSpacing.gutter, AppSpacing.lg, AppSpacing.gutter, AppSpacing.sm),
               sliver: SliverToBoxAdapter(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text('Your tools', style: context.text.titleLarge?.copyWith(fontSize: 18, fontWeight: FontWeight.w700)),
+                    Text('Grow with your fans', style: context.text.titleLarge?.copyWith(fontSize: 18, fontWeight: FontWeight.w700)),
                     const SizedBox(height: 2),
-                    Text('Everything you can sell and run from your store', style: context.text.bodySmall),
+                    Text('Go live, host meets, build a community and share picks', style: context.text.bodySmall),
                   ],
                 ),
               ),
             ),
-            if (config == null)
-              const SliverToBoxAdapter(child: Padding(padding: EdgeInsets.all(AppSpacing.xl), child: Center(child: CircularProgressIndicator())))
-            else
-              SliverPadding(
-                padding: const EdgeInsets.symmetric(horizontal: AppSpacing.gutter),
-                sliver: SliverGrid.builder(
-                  gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: 2, mainAxisSpacing: 12, crossAxisSpacing: 12, mainAxisExtent: 150),
-                  itemCount: config.toolCards.length,
-                  itemBuilder: (context, i) => _ToolTile(card: config.toolCards[i], index: i),
-                ),
+            SliverPadding(
+              padding: const EdgeInsets.symmetric(horizontal: AppSpacing.gutter),
+              sliver: SliverGrid.builder(
+                gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: 2, mainAxisSpacing: 10, crossAxisSpacing: 10, mainAxisExtent: 116),
+                itemCount: tools.length,
+                itemBuilder: (context, i) => _ToolTile(tool: tools[i], index: i),
               ),
+            ),
 
             // Manage
             SliverPadding(
-              padding: const EdgeInsets.fromLTRB(AppSpacing.gutter, AppSpacing.xl, AppSpacing.gutter, AppSpacing.huge),
+              padding: const EdgeInsets.fromLTRB(AppSpacing.gutter, AppSpacing.lg, AppSpacing.gutter, AppSpacing.xxl),
               sliver: SliverList.list(
                 children: [
-                  Text('Manage', style: context.text.titleLarge?.copyWith(fontSize: 18, fontWeight: FontWeight.w700)),
+                  Text('More', style: context.text.titleLarge?.copyWith(fontSize: 18, fontWeight: FontWeight.w700)),
                   const SizedBox(height: AppSpacing.sm),
                   Container(
                     decoration: BoxDecoration(color: palette.surface, borderRadius: BorderRadius.circular(18), border: Border.all(color: palette.border)),
@@ -172,8 +161,14 @@ class _StoreHome extends StatelessWidget {
                     child: Column(
                       children: [
                         _ManageTile(icon: AppIcons.chartLine, color: const Color(0xFF00A3A3), title: 'Analytics', subtitle: 'Views, sales, lives, calls and more', onTap: () => context.push(AppRoutes.storeAnalytics)),
-                        _ManageTile(icon: AppIcons.receipt, color: AppColors.primary, title: 'Sales & orders', subtitle: 'Everyone who bought from you', onTap: () => context.push(AppRoutes.storeSales)),
-                        _ManageTile(icon: AppIcons.package, color: const Color(0xFF7C4DFF), title: 'My products', subtitle: 'Create and edit digital products', onTap: () => context.push(AppRoutes.storeProducts)),
+                        if (enabled('digital_products'))
+                          _ManageTile(icon: AppIcons.download, color: const Color(0xFF7C4DFF), title: 'Digital products', subtitle: 'Courses, ebooks, templates — instant download', onTap: () => context.push(AppRoutes.storeProducts)),
+                        if (enabled('digital_products'))
+                          _ManageTile(icon: AppIcons.receipt, color: AppColors.primary, title: 'Digital sales', subtitle: 'Everyone who bought a digital product', onTap: () => context.push(AppRoutes.storeSales)),
+                        if (enabled('chat_calls'))
+                          _ManageTile(icon: AppIcons.phone, color: const Color(0xFF1E88E5), title: 'Paid calls', subtitle: 'Audio & video calls with fans, per minute', onTap: () => context.push(AppRoutes.storeCalls)),
+                        if (enabled('fanbox'))
+                          _ManageTile(icon: AppIcons.gift, color: const Color(0xFFEC2A78), title: 'FanBox', subtitle: 'Tips your fans sent you', onTap: () => context.push(AppRoutes.storeFanbox)),
                         _ManageTile(icon: AppIcons.wallet, color: AppColors.success, title: 'Wallet & withdrawals', subtitle: 'Store earnings land in your Fanitt wallet', onTap: () => context.push(AppRoutes.wallet)),
                         _ManageTile(icon: AppIcons.gear, color: palette.textSecondary, title: 'Store settings', subtitle: 'Name, logo, banner and opening', onTap: () => _editStore(context, store), last: true),
                       ],
@@ -234,146 +229,123 @@ class _StoreHeaderState extends State<_StoreHeader> {
   Widget build(BuildContext context) {
     final store = widget.store;
     final palette = context.palette;
+    final open = store.isOpen;
     return Container(
-      decoration: BoxDecoration(color: palette.surface, borderRadius: BorderRadius.circular(20), border: Border.all(color: palette.border)),
-      clipBehavior: Clip.antiAlias,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(color: palette.surface, borderRadius: BorderRadius.circular(18), border: Border.all(color: palette.border)),
+      child: Row(
         children: [
-          // Same shop-front card buyers see on Home.
-          AspectRatio(
-            aspectRatio: ImageSlot.storeBanner.aspectRatio,
-            child: GestureDetector(
-              onTap: () => context.push(AppRoutes.storePage(store.slug)),
-              child: StorefrontPreview(
-                banner: store.bannerUrl.isEmpty ? StorefrontPreview.placeholder() : StoreImage(url: store.bannerUrl),
-                name: store.name,
-                tagline: store.tagline,
-                logoUrl: store.logoUrl,
-                sold: store.stats.orders,
-                logoHeroTag: 'store-logo-${store.id}',
-                topRight: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                  decoration: BoxDecoration(color: Colors.black.withValues(alpha: 0.45), borderRadius: BorderRadius.circular(AppRadius.pill)),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Container(width: 7, height: 7, decoration: BoxDecoration(color: store.isOpen ? const Color(0xFF34D399) : const Color(0xFFFBBF24), shape: BoxShape.circle))
-                          .animate(onPlay: (c) => c.repeat(reverse: true))
-                          .fade(begin: 1, end: 0.3, duration: 900.ms),
-                      const SizedBox(width: 5),
-                      Text(store.isOpen ? 'Live' : 'Closed', style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.w800)),
-                    ],
-                  ),
-                ),
-              ),
-            ),
+          GestureDetector(
+            onTap: widget.onEdit,
+            child: Hero(tag: 'store-logo-${store.id}', child: StoreLogo(name: store.name, url: store.logoUrl, size: 52)),
           ),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(14, 10, 12, 12),
-            child: Row(
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Expanded(
-                  child: Text(
-                    store.isOpen ? 'Taking orders — buyers can purchase now' : 'Closed — buyers can see your store but not buy',
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: context.text.bodySmall?.copyWith(fontSize: 12.5, color: palette.textSecondary),
-                  ),
-                ),
-                const SizedBox(width: 10),
-                // Taking orders switch
-                GestureDetector(
-                  onTap: _busy ? null : _toggleOpen,
-                  child: AnimatedContainer(
-                    duration: const Duration(milliseconds: 220),
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                    decoration: BoxDecoration(
-                      color: store.isOpen ? AppColors.primary.withValues(alpha: 0.12) : palette.surfaceMuted,
-                      borderRadius: BorderRadius.circular(AppRadius.pill),
-                      border: Border.all(color: store.isOpen ? AppColors.primary.withValues(alpha: 0.3) : palette.border),
+                Text(store.name, maxLines: 1, overflow: TextOverflow.ellipsis, style: context.text.titleMedium?.copyWith(fontWeight: FontWeight.w800)),
+                const SizedBox(height: 3),
+                Row(
+                  children: [
+                    Container(width: 7, height: 7, decoration: BoxDecoration(color: open ? AppColors.success : AppColors.warning, shape: BoxShape.circle)),
+                    const SizedBox(width: 6),
+                    Flexible(
+                      child: Text(
+                        open ? 'Open · taking orders' : 'Closed · not taking orders',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: context.text.bodySmall?.copyWith(fontSize: 12.5, color: palette.textSecondary),
+                      ),
                     ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        _busy
-                            ? const SizedBox(width: 12, height: 12, child: CircularProgressIndicator(strokeWidth: 1.8))
-                            : Icon(store.isOpen ? AppIcons.storeFilled : AppIcons.lock, size: 13, color: store.isOpen ? AppColors.primary : palette.textSecondary),
-                        const SizedBox(width: 5),
-                        Text(
-                          store.isOpen ? 'Open' : 'Closed',
-                          style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: store.isOpen ? AppColors.primary : palette.textSecondary),
-                        ),
-                      ],
-                    ),
-                  ),
+                  ],
                 ),
               ],
             ),
           ),
+          const SizedBox(width: 8),
+          _busy
+              ? const SizedBox(width: 48, height: 24, child: Center(child: SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))))
+              : Switch.adaptive(value: open, activeTrackColor: AppColors.primary, onChanged: (_) => _toggleOpen()),
         ],
       ),
-    ).animate().fadeIn(duration: 300.ms);
+    ).animate().fadeIn(duration: 250.ms);
   }
 }
 
-/// Dark card: what the store earned, with a 30-day line.
-class _EarningsHero extends StatelessWidget {
-  const _EarningsHero({required this.store, required this.summary});
+/// Light card: total earned, last 30 days, three numbers and two actions.
+class _EarningsCard extends StatelessWidget {
+  const _EarningsCard({required this.store, required this.summary});
 
   final StoreInfo store;
   final StoreSummary? summary;
 
   @override
   Widget build(BuildContext context) {
-    final last30 = summary?.last30Days ?? const [];
-    final monthNet = last30.fold<int>(0, (s, d) => s + d.net);
+    final palette = context.palette;
+    final monthNet = (summary?.last30Days ?? const []).fold<int>(0, (s, d) => s + d.net);
+    final stats = store.stats;
+    final conversion = stats.views == 0 ? '—' : '${((stats.orders / stats.views) * 100).clamp(0, 100).toStringAsFixed(1)}%';
     return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(20),
-        gradient: const LinearGradient(begin: Alignment.topLeft, end: Alignment.bottomRight, colors: [Color(0xFF14141F), Color(0xFF2A1320)]),
-        boxShadow: [BoxShadow(color: const Color(0xFFF4511E).withValues(alpha: 0.18), blurRadius: 24, offset: const Offset(0, 10))],
-      ),
+      padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
+      decoration: BoxDecoration(color: palette.surface, borderRadius: BorderRadius.circular(18), border: Border.all(color: palette.border)),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             children: [
-              const Text('You earned', style: TextStyle(color: Colors.white70, fontSize: 13)),
+              Text('Total earned', style: context.text.bodySmall?.copyWith(color: palette.textSecondary)),
               const Spacer(),
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(AppRadius.pill)),
-                child: Text('Last 30 days ${Fmt.money(monthNet)}', style: const TextStyle(color: AppColors.sunrise, fontSize: 11, fontWeight: FontWeight.w700)),
+                decoration: BoxDecoration(color: AppColors.success.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(AppRadius.pill)),
+                child: Text('30 days ${Fmt.money(monthNet)}', style: const TextStyle(color: AppColors.success, fontSize: 11, fontWeight: FontWeight.w700)),
               ),
             ],
           ),
-          const SizedBox(height: 4),
-          TweenAnimationBuilder<double>(
-            tween: Tween(begin: 0, end: store.stats.netEarnings.toDouble()),
-            duration: const Duration(milliseconds: 900),
-            curve: Curves.easeOutCubic,
-            builder: (context, v, _) => Text(
-              Fmt.money(v.round()),
-              style: const TextStyle(color: Colors.white, fontSize: 26, fontWeight: FontWeight.w800, letterSpacing: -0.5),
+          const SizedBox(height: 2),
+          Text(Fmt.money(stats.netEarnings), style: context.text.headlineSmall?.copyWith(fontWeight: FontWeight.w800, letterSpacing: -0.5)),
+          const SizedBox(height: 12),
+          Container(
+            padding: const EdgeInsets.symmetric(vertical: 10),
+            decoration: BoxDecoration(color: palette.surfaceMuted, borderRadius: BorderRadius.circular(12)),
+            child: IntrinsicHeight(
+              child: Row(
+                children: [
+                  _Stat(value: Fmt.compact(stats.orders), label: 'Orders'),
+                  VerticalDivider(width: 1, thickness: 1, color: palette.border),
+                  _Stat(value: Fmt.compact(stats.views), label: 'Views'),
+                  VerticalDivider(width: 1, thickness: 1, color: palette.border),
+                  _Stat(value: conversion, label: 'Conversion'),
+                ],
+              ),
             ),
           ),
-          const SizedBox(height: 2),
-          Text(
-            'Sales ${Fmt.money(store.stats.grossSales)} · Fees ${Fmt.money(store.stats.feesPaid)}',
-            style: const TextStyle(color: Colors.white54, fontSize: 12),
-          ),
-          if (last30.length > 1) ...[
-            const SizedBox(height: 14),
-            SizedBox(height: 36, width: double.infinity, child: CustomPaint(painter: _SparkPainter(values: [for (final d in last30) d.net.toDouble()]))),
-          ],
-          const SizedBox(height: 14),
+          const SizedBox(height: 12),
           Row(
             children: [
-              Expanded(child: _HeroButton(icon: AppIcons.wallet, label: 'Withdraw', onTap: () => context.push(AppRoutes.wallet), filled: true)),
+              Expanded(
+                child: FilledButton.icon(
+                  onPressed: () => context.push(AppRoutes.wallet),
+                  style: FilledButton.styleFrom(backgroundColor: AppColors.primary, minimumSize: const Size.fromHeight(42), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
+                  icon: const Icon(AppIcons.wallet, size: 17),
+                  label: const Text('Withdraw', style: TextStyle(fontWeight: FontWeight.w700)),
+                ),
+              ),
               const SizedBox(width: 10),
-              Expanded(child: _HeroButton(icon: AppIcons.chartLine, label: 'Analytics', onTap: () => context.push(AppRoutes.storeAnalytics))),
+              Expanded(
+                child: OutlinedButton.icon(
+                  onPressed: () => context.push(AppRoutes.storeAnalytics),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: palette.textPrimary,
+                    minimumSize: const Size.fromHeight(42),
+                    side: BorderSide(color: palette.border),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  ),
+                  icon: const Icon(AppIcons.chartLine, size: 17),
+                  label: const Text('Analytics', style: TextStyle(fontWeight: FontWeight.w700)),
+                ),
+              ),
             ],
           ),
         ],
@@ -382,118 +354,49 @@ class _EarningsHero extends StatelessWidget {
   }
 }
 
-class _SparkPainter extends CustomPainter {
-  const _SparkPainter({required this.values});
+class _Stat extends StatelessWidget {
+  const _Stat({required this.value, required this.label});
 
-  final List<double> values;
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final maxV = values.fold<double>(0, (m, v) => v > m ? v : m);
-    final step = size.width / (values.length - 1);
-    final points = [
-      for (var i = 0; i < values.length; i++) Offset(i * step, size.height - (maxV == 0 ? 0 : values[i] / maxV) * (size.height - 4) - 2),
-    ];
-    final line = Path()..moveTo(points.first.dx, points.first.dy);
-    for (var i = 1; i < points.length; i++) {
-      final prev = points[i - 1];
-      final cur = points[i];
-      final mid = (prev.dx + cur.dx) / 2;
-      line.cubicTo(mid, prev.dy, mid, cur.dy, cur.dx, cur.dy);
-    }
-    final fill = Path.from(line)
-      ..lineTo(size.width, size.height)
-      ..lineTo(0, size.height)
-      ..close();
-    canvas.drawPath(
-      fill,
-      Paint()
-        ..shader = const LinearGradient(begin: Alignment.topCenter, end: Alignment.bottomCenter, colors: [Color(0x66F4511E), Color(0x00F4511E)]).createShader(Offset.zero & size),
-    );
-    canvas.drawPath(
-      line,
-      Paint()
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 2.2
-        ..strokeCap = StrokeCap.round
-        ..shader = const LinearGradient(colors: [Color(0xFFF4511E), Color(0xFFEC2A78)]).createShader(Offset.zero & size),
-    );
-  }
-
-  @override
-  bool shouldRepaint(covariant _SparkPainter old) => old.values != values;
-}
-
-class _HeroButton extends StatelessWidget {
-  const _HeroButton({required this.icon, required this.label, required this.onTap, this.filled = false});
-
-  final IconData icon;
-  final String label;
-  final VoidCallback onTap;
-  final bool filled;
-
-  @override
-  Widget build(BuildContext context) {
-    return Material(
-      color: Colors.transparent,
-      borderRadius: BorderRadius.circular(12),
-      clipBehavior: Clip.antiAlias,
-      child: Ink(
-        decoration: BoxDecoration(
-          gradient: filled ? const LinearGradient(colors: [Color(0xFFF4511E), Color(0xFFEC2A78)]) : null,
-          color: filled ? null : Colors.white.withValues(alpha: 0.1),
-        ),
-        child: InkWell(
-          onTap: onTap,
-          child: SizedBox(
-            height: 42,
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Icon(icon, color: Colors.white, size: 18),
-                const SizedBox(width: 6),
-                Text(label, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700)),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _MiniStat extends StatelessWidget {
-  const _MiniStat({required this.icon, required this.value, required this.label, required this.color});
-
-  final IconData icon;
   final String value;
   final String label;
-  final Color color;
 
   @override
   Widget build(BuildContext context) {
-    final palette = context.palette;
-    return Container(
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(color: palette.surface, borderRadius: BorderRadius.circular(16), border: Border.all(color: palette.border)),
+    return Expanded(
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(icon, size: 18, color: color),
-          const SizedBox(height: 8),
-          FittedBox(fit: BoxFit.scaleDown, alignment: Alignment.centerLeft, child: Text(value, style: context.text.titleLarge?.copyWith(fontWeight: FontWeight.w800))),
-          Text(label, maxLines: 1, overflow: TextOverflow.ellipsis, style: context.text.bodySmall?.copyWith(fontSize: 11.5)),
+          FittedBox(fit: BoxFit.scaleDown, child: Text(value, style: context.text.titleMedium?.copyWith(fontWeight: FontWeight.w800))),
+          const SizedBox(height: 1),
+          Text(label, style: context.text.bodySmall?.copyWith(fontSize: 11.5)),
         ],
       ),
     );
   }
 }
 
-/// One of the seven tools; image and text come from the admin panel.
-class _ToolTile extends StatefulWidget {
-  const _ToolTile({required this.card, required this.index});
+class _Tool {
+  const _Tool({required this.key, required this.title, required this.subtitle, required this.icon, required this.colors, required this.route});
 
-  final ToolCard card;
+  final String key;
+  final String title;
+  final String subtitle;
+  final IconData icon;
+  final List<Color> colors;
+  final String route;
+}
+
+const _tools = [
+  _Tool(key: 'virtual_meet', title: 'Virtual Meet', subtitle: 'Webinars & 1:1 sessions', icon: AppIcons.videoCamera, colors: [Color(0xFF7C4DFF), Color(0xFFB388FF)], route: AppRoutes.sessions),
+  _Tool(key: 'stream_live', title: 'Stream Live', subtitle: 'Go live — free or paid', icon: AppIcons.broadcast, colors: [Color(0xFFE53935), Color(0xFFFF7043)], route: AppRoutes.storeLives),
+  _Tool(key: 'community', title: 'Community', subtitle: 'Free or paid groups', icon: AppIcons.users, colors: [Color(0xFF00A3A3), Color(0xFF26C6DA)], route: AppRoutes.communities),
+  _Tool(key: 'affiliate', title: 'Affiliate store', subtitle: 'Share links you love', icon: AppIcons.link, colors: [Color(0xFFF59E0B), Color(0xFFFFCA28)], route: AppRoutes.storeAffiliate),
+];
+
+/// One tool — drawn in the app (icon + gradient), no uploaded images.
+class _ToolTile extends StatefulWidget {
+  const _ToolTile({required this.tool, required this.index});
+
+  final _Tool tool;
   final int index;
 
   @override
@@ -503,149 +406,226 @@ class _ToolTile extends StatefulWidget {
 class _ToolTileState extends State<_ToolTile> {
   bool _down = false;
 
-  static const _icons = <String, IconData>{
-    'virtual_meet': AppIcons.videoCamera,
-    'stream_live': AppIcons.broadcast,
-    'chat_calls': AppIcons.phone,
-    'digital_products': AppIcons.package,
-    'community': AppIcons.users,
-    'affiliate': AppIcons.link,
-    'fanbox': AppIcons.gift,
-  };
-
-  static const _accents = <String, Color>{
-    'virtual_meet': Color(0xFF7C4DFF),
-    'stream_live': Color(0xFFE53935),
-    'chat_calls': Color(0xFF1E88E5),
-    'digital_products': Color(0xFFF4511E),
-    'community': Color(0xFF00A3A3),
-    'affiliate': Color(0xFFF59E0B),
-    'fanbox': Color(0xFFEC2A78),
-  };
-
-  void _open(BuildContext context) {
-    HapticFeedback.selectionClick();
-    switch (widget.card.key) {
-      case 'digital_products':
-        context.push(AppRoutes.storeProducts);
-      case 'virtual_meet':
-        context.push(AppRoutes.sessions);
-      case 'community':
-        context.push(AppRoutes.communities);
-      case 'fanbox':
-        context.push(AppRoutes.storeFanbox);
-      case 'affiliate':
-        context.push(AppRoutes.storeAffiliate);
-      case 'stream_live':
-        context.push(AppRoutes.storeLives);
-      case 'chat_calls':
-        context.push(AppRoutes.storeCalls);
-      default:
-        _comingSoon(context, widget.card.title);
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
-    final card = widget.card;
-    final icon = _icons[card.key] ?? AppIcons.store;
-    final accent = _accents[card.key] ?? AppColors.primary;
+    final t = widget.tool;
     final palette = context.palette;
     return GestureDetector(
       onTapDown: (_) => setState(() => _down = true),
       onTapCancel: () => setState(() => _down = false),
       onTapUp: (_) => setState(() => _down = false),
-      onTap: () => _open(context),
+      onTap: () {
+        HapticFeedback.selectionClick();
+        context.push(t.route);
+      },
       child: AnimatedScale(
-        scale: _down ? 0.95 : 1,
+        scale: _down ? 0.96 : 1,
         duration: const Duration(milliseconds: 120),
         child: Container(
-          decoration: BoxDecoration(color: palette.surface, borderRadius: BorderRadius.circular(18), border: Border.all(color: palette.border)),
-          clipBehavior: Clip.antiAlias,
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            color: palette.surface,
+            borderRadius: BorderRadius.circular(18),
+            border: Border.all(color: palette.border),
+          ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // Picture area — the whole image is shown (never cropped).
-              Expanded(
-                child: Container(
-                  width: double.infinity,
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(begin: Alignment.topLeft, end: Alignment.bottomRight, colors: [accent.withValues(alpha: 0.16), accent.withValues(alpha: 0.06)]),
-                  ),
-                  child: Stack(
-                    fit: StackFit.expand,
-                    children: [
-                      if (card.imageUrl.isNotEmpty)
-                        Padding(
-                          padding: const EdgeInsets.all(6),
-                          child: CachedNetworkImage(
-                            imageUrl: card.imageUrl,
-                            fit: BoxFit.contain,
-                            placeholder: (_, _) => const SizedBox.shrink(),
-                            errorWidget: (_, _, _) => Center(child: Icon(icon, size: 34, color: accent)),
-                          ),
-                        )
-                      else
-                        Center(child: Icon(icon, size: 34, color: accent)),
-                      Positioned(
-                        left: 8,
-                        top: 8,
-                        child: Container(
-                          width: 28,
-                          height: 28,
-                          decoration: BoxDecoration(color: accent, borderRadius: BorderRadius.circular(9)),
-                          child: Icon(icon, color: Colors.white, size: 15),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
+              Container(
+                width: 40,
+                height: 40,
+                decoration: BoxDecoration(color: t.colors.first.withValues(alpha: 0.12), borderRadius: BorderRadius.circular(12)),
+                child: Icon(t.icon, color: t.colors.first, size: 20),
               ),
-              Padding(
-                padding: const EdgeInsets.fromLTRB(10, 8, 8, 10),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(card.title, maxLines: 1, overflow: TextOverflow.ellipsis, style: context.text.titleSmall?.copyWith(fontWeight: FontWeight.w800)),
-                          Text(card.description, maxLines: 1, overflow: TextOverflow.ellipsis, style: context.text.bodySmall?.copyWith(fontSize: 11)),
-                        ],
-                      ),
-                    ),
-                    Icon(AppIcons.chevronRight, size: 16, color: palette.textTertiary),
-                  ],
-                ),
+              const Spacer(),
+              Row(
+                children: [
+                  Expanded(child: Text(t.title, maxLines: 1, overflow: TextOverflow.ellipsis, style: context.text.titleSmall?.copyWith(fontWeight: FontWeight.w800))),
+                  Icon(AppIcons.chevronRight, size: 15, color: palette.textTertiary),
+                ],
               ),
+              const SizedBox(height: 1),
+              Text(t.subtitle, maxLines: 1, overflow: TextOverflow.ellipsis, style: context.text.bodySmall?.copyWith(fontSize: 11.5)),
             ],
           ),
         ),
       ),
-    ).animate(delay: (50 * widget.index).ms).fadeIn(duration: 280.ms).scaleXY(begin: 0.95, curve: Curves.easeOutBack);
+    ).animate(delay: (60 * widget.index).ms).fadeIn(duration: 280.ms).slideY(begin: 0.08, curve: Curves.easeOutCubic);
   }
 }
 
-void _comingSoon(BuildContext context, String title) {
-  showAppSheet<void>(
-    context,
-    builder: (ctx) => SheetBody(
-      title: title,
-      subtitle: 'Coming in the next Fanitt update',
+/// Opens a shop screen and refreshes the shop numbers on the way back.
+Future<void> _open(BuildContext context, String route) async {
+  await context.push(route);
+  if (context.mounted) context.read<LoadCubit<SellerShopSummary>>().refresh();
+}
+
+/// Physical products: what needs doing now + quick actions.
+class _ShopCard extends StatelessWidget {
+  const _ShopCard({required this.summary});
+
+  final SellerShopSummary? summary;
+
+  @override
+  Widget build(BuildContext context) {
+    final s = summary;
+    final palette = context.palette;
+    final pending = s?.needsAction ?? 0;
+    return Container(
+      decoration: BoxDecoration(
+        color: palette.surface,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: pending > 0 ? AppColors.primary.withValues(alpha: 0.45) : palette.border),
+      ),
+      clipBehavior: Clip.antiAlias,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          const Icon(AppIcons.sparkle, size: 44, color: AppColors.primary)
-              .animate(onPlay: (c) => c.repeat(reverse: true))
-              .scaleXY(begin: 0.9, end: 1.1, duration: 900.ms),
-          const SizedBox(height: AppSpacing.md),
-          Text('We’re putting the final touches on this. Keep your app updated — you’ll see it here soon.', textAlign: TextAlign.center, style: context.text.bodyMedium),
-          const SizedBox(height: AppSpacing.lg),
-          AppButton(label: 'Got it', onPressed: () => Navigator.of(ctx).pop()),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 14, 12, 2),
+            child: Row(
+              children: [
+                Container(
+                  width: 40,
+                  height: 40,
+                  decoration: BoxDecoration(color: AppColors.primary.withValues(alpha: 0.12), borderRadius: BorderRadius.circular(12)),
+                  child: const Icon(ShopIcons.bag, color: AppColors.primary, size: 20),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('Your shop', style: context.text.titleMedium?.copyWith(fontWeight: FontWeight.w800)),
+                      Text(
+                        s == null
+                            ? 'Sell clothes, merch & more'
+                            : s.productsTotal == 0
+                            ? 'Sell clothes, merch & more — COD or online'
+                            : '${s.productsLive} live · ${Fmt.money(s.earnings)} earned',
+                        style: context.text.bodySmall,
+                      ),
+                    ],
+                  ),
+                ),
+                if (pending > 0)
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
+                    decoration: BoxDecoration(color: AppColors.primary, borderRadius: BorderRadius.circular(AppRadius.pill)),
+                    child: Text('$pending to do', style: const TextStyle(color: Colors.white, fontSize: 11.5, fontWeight: FontWeight.w800)),
+                  ),
+              ],
+            ),
+          ),
+          if (s != null && (s.newOrders + s.toShip + s.shipped) > 0)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(12, 12, 12, 0),
+              child: Row(
+                children: [
+                  Expanded(child: _OrderCount(label: 'New', value: s.newOrders, highlight: true, tab: 0)),
+                  const SizedBox(width: 8),
+                  Expanded(child: _OrderCount(label: 'To ship', value: s.toShip, tab: 1)),
+                  const SizedBox(width: 8),
+                  Expanded(child: _OrderCount(label: 'Shipped', value: s.shipped, tab: 2)),
+                ],
+              ),
+            ),
+          Padding(
+            padding: const EdgeInsets.all(12),
+            child: Row(
+              children: [
+                Expanded(child: _ShopAction(icon: AppIcons.plus, label: 'Add product', filled: true, onTap: () => _open(context, AppRoutes.shopProductEditor()))),
+                const SizedBox(width: 8),
+                Expanded(child: _ShopAction(icon: ShopIcons.bag, label: 'Products', onTap: () => _open(context, AppRoutes.sellerShopProducts))),
+                const SizedBox(width: 8),
+                Expanded(child: _ShopAction(icon: ShopIcons.orders, label: 'Orders', badge: pending, onTap: () => _open(context, AppRoutes.sellerShopOrders))),
+              ],
+            ),
+          ),
         ],
       ),
-    ),
-  );
+    );
+  }
+}
+
+class _OrderCount extends StatelessWidget {
+  const _OrderCount({required this.label, required this.value, required this.tab, this.highlight = false});
+
+  final String label;
+  final int value;
+  final int tab;
+  final bool highlight;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.palette;
+    final hot = highlight && value > 0;
+    return Material(
+      color: hot ? AppColors.primary.withValues(alpha: 0.08) : palette.surfaceMuted,
+      borderRadius: BorderRadius.circular(12),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(12),
+        onTap: () => _open(context, '${AppRoutes.sellerShopOrders}?tab=$tab'),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 10),
+          child: Column(
+            children: [
+              Text('$value', style: context.text.titleLarge?.copyWith(fontWeight: FontWeight.w800, color: hot ? AppColors.primary : null)),
+              Text(label, style: context.text.bodySmall?.copyWith(fontSize: 11.5)),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _ShopAction extends StatelessWidget {
+  const _ShopAction({required this.icon, required this.label, required this.onTap, this.filled = false, this.badge = 0});
+
+  final IconData icon;
+  final String label;
+  final VoidCallback onTap;
+  final bool filled;
+  final int badge;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.palette;
+    return Material(
+      color: Colors.transparent,
+      borderRadius: BorderRadius.circular(12),
+      clipBehavior: Clip.antiAlias,
+      child: Ink(
+        decoration: BoxDecoration(
+          gradient: filled ? shopGradient : null,
+          color: filled ? null : palette.surfaceMuted,
+        ),
+        child: InkWell(
+          onTap: () {
+            HapticFeedback.selectionClick();
+            onTap();
+          },
+          child: SizedBox(
+            height: 58,
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Badge(
+                  isLabelVisible: badge > 0,
+                  backgroundColor: AppColors.primary,
+                  label: Text('$badge', style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.w800)),
+                  child: Icon(icon, size: 20, color: filled ? Colors.white : palette.textPrimary),
+                ),
+                const SizedBox(height: 4),
+                Text(label, style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: filled ? Colors.white : palette.textPrimary)),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
 }
 
 class _ManageTile extends StatelessWidget {

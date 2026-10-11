@@ -87,13 +87,7 @@ class _Body extends StatelessWidget {
       physics: const AlwaysScrollableScrollPhysics(),
       padding: const EdgeInsets.fromLTRB(AppSpacing.gutter, 0, AppSpacing.gutter, AppSpacing.huge),
       children: [
-        GridView.count(
-          crossAxisCount: 2,
-          shrinkWrap: true,
-          physics: const NeverScrollableScrollPhysics(),
-          mainAxisSpacing: AppSpacing.sm,
-          crossAxisSpacing: AppSpacing.sm,
-          childAspectRatio: 1.45,
+        _StatGrid(
           children: [
             StoreStat(label: 'You earned', value: Fmt.money(a.totals.net), icon: AppIcons.rupee, color: AppColors.success),
             StoreStat(label: 'Sales (gross)', value: Fmt.money(a.totals.gross), icon: AppIcons.chartLine),
@@ -172,13 +166,7 @@ class _Body extends StatelessWidget {
           ),
         ],
         const SizedBox(height: AppSpacing.lg),
-        GridView.count(
-          crossAxisCount: 2,
-          shrinkWrap: true,
-          physics: const NeverScrollableScrollPhysics(),
-          mainAxisSpacing: AppSpacing.sm,
-          crossAxisSpacing: AppSpacing.sm,
-          childAspectRatio: 1.45,
+        _StatGrid(
           children: [
             StoreStat(label: '${a.liveCount} lives · peak ${a.livePeak}', value: '${a.liveJoins} joins', icon: AppIcons.broadcast, color: AppColors.error),
             StoreStat(label: '${a.callsCompleted} calls · ${Fmt.money(a.callEarnings)}', value: '${a.callMinutes} min', icon: AppIcons.phone, color: AppColors.info),
@@ -186,6 +174,35 @@ class _Body extends StatelessWidget {
             StoreStat(label: 'Affiliate · ${Fmt.money(a.affiliateConfirmed)} confirmed', value: '${a.affiliateClicks} clicks', icon: AppIcons.link, color: AppColors.warning),
           ],
         ),
+      ],
+    );
+  }
+}
+
+/// Two boxes per row. Each row is as tall as its tallest box, so long
+/// labels or large system font sizes never overflow (no fixed ratio).
+class _StatGrid extends StatelessWidget {
+  const _StatGrid({required this.children});
+
+  final List<Widget> children;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        for (var i = 0; i < children.length; i += 2) ...[
+          if (i > 0) const SizedBox(height: AppSpacing.sm),
+          IntrinsicHeight(
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Expanded(child: children[i]),
+                const SizedBox(width: AppSpacing.sm),
+                Expanded(child: i + 1 < children.length ? children[i + 1] : const SizedBox()),
+              ],
+            ),
+          ),
+        ],
       ],
     );
   }

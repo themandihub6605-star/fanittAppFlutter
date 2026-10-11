@@ -1,5 +1,6 @@
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
@@ -27,6 +28,7 @@ import '../../creators/data/creators_repository.dart';
 import '../../profile/data/profile_models.dart';
 import '../../store/data/store_repository.dart';
 import '../../store/presentation/live/live_poster_card.dart';
+import '../../store/presentation/commerce/shop_home_section.dart';
 import '../../store/presentation/meet/meet_detail_screen.dart';
 import '../../store/presentation/widgets/store_widgets.dart';
 
@@ -297,13 +299,20 @@ class _HomeRailState<T> extends State<HomeRail<T>> with AutomaticKeepAliveClient
   Future<List<T>> _safeLoad() async {
     try {
       return await widget.load();
-    } catch (_) {
+    } catch (error, stack) {
+      // The rail hides itself on failure — log why, so a missing section is easy to trace.
+      debugPrint('[home] "${widget.title}" failed to load: $error');
+      debugPrintStack(stackTrace: stack, maxFrames: 6);
       return <T>[];
     }
   }
 
   void _reload() {
-    if (mounted) setState(() => _future = _safeLoad());
+    if (!mounted) return;
+    // setState must not return the Future, so assign inside a block.
+    setState(() {
+      _future = _safeLoad();
+    });
   }
 
   @override
@@ -476,8 +485,8 @@ class CreatorsRail extends StatelessWidget {
     return HomeRail<CreatorProfile>(
       title: title,
       subtitle: subtitle,
-      height: 244,
-      itemWidth: 160,
+      height: 222,
+      itemWidth: 152,
       onSeeAll: () => context.push(AppRoutes.creatorsDirectory),
       load: () => pinnedFirst<CreatorProfile>(
         pinned: pinned,
@@ -491,8 +500,8 @@ class CreatorsRail extends StatelessWidget {
   }
 }
 
-/// Creator = a portrait profile card: their photo fills the whole card,
-/// with name, niche and followers on a soft glass strip at the bottom.
+/// Creator = a light profile card: soft colour band, round photo with the
+/// brand ring, name, niche, followers and a Follow button.
 class _CreatorCard extends StatefulWidget {
   const _CreatorCard({required this.creator});
 
@@ -527,175 +536,140 @@ class _CreatorCardState extends State<_CreatorCard> {
 
   @override
   Widget build(BuildContext context) {
+    final palette = context.palette;
     final verified = c.verificationStatus == VerificationStatus.verified;
-    final hasPhoto = c.avatarUrl != null && c.avatarUrl!.isNotEmpty;
-    final initial = c.name.trim().isEmpty ? '?' : c.name.trim()[0].toUpperCase();
-
-    return GestureDetector(
-      onTap: () {
-        HapticFeedback.selectionClick();
-        context.push(AppRoutes.creatorProfile(c.slug));
-      },
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(18),
-        child: Stack(
-          fit: StackFit.expand,
-          children: [
-            // Full photo (or their initial on the brand gradient)
-            if (hasPhoto)
-              CachedNetworkImage(
-                imageUrl: c.avatarUrl!,
-                fit: BoxFit.cover,
-                alignment: Alignment.topCenter,
-                placeholder: (_, _) => const DecoratedBox(decoration: BoxDecoration(gradient: _brandGradient)),
-                errorWidget: (_, _, _) => const DecoratedBox(decoration: BoxDecoration(gradient: _brandGradient)),
-              )
-            else
-              DecoratedBox(
-                decoration: const BoxDecoration(gradient: _brandGradient),
-                child: Center(child: Text(initial, style: const TextStyle(color: Colors.white, fontSize: 56, fontWeight: FontWeight.w800))),
+    return _RailCard(
+      onTap: () => context.push(AppRoutes.creatorProfile(c.slug)),
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          // Soft brand band behind the photo.
+          Positioned(
+            left: 0,
+            right: 0,
+            top: 0,
+            height: 46,
+            child: DecoratedBox(decoration: BoxDecoration(gradient: LinearGradient(colors: [AppColors.primary.withValues(alpha: 0.14), const Color(0xFFEC2A78).withValues(alpha: 0.10)]))),
+          ),
+          if (c.isProPlan)
+            Positioned(
+              right: 8,
+              top: 8,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                decoration: BoxDecoration(gradient: _brandGradient, borderRadius: BorderRadius.circular(6)),
+                child: const Text('PRO', style: TextStyle(color: Colors.white, fontSize: 9, fontWeight: FontWeight.w800)),
               ),
-            // Black fade at the bottom so the name and details stand out.
-            const Positioned(
-              left: 0,
-              right: 0,
-              bottom: 0,
-              height: 132,
-              child: DecoratedBox(
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.topCenter,
-                    end: Alignment.bottomCenter,
-                    colors: [Color(0x00000000), Color(0xB3000000), Color(0xF2000000)],
-                    stops: [0, 0.55, 1],
-                  ),
+            ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(10, 14, 10, 10),
+            child: Column(
+              children: [
+                Stack(
+                  clipBehavior: Clip.none,
+                  children: [
+                    _avatar(c.avatarUrl, c.name, 64, ring: true, borderColor: palette.surface),
+                    if (c.isAvailableForWork)
+                      Positioned(
+                        right: 4,
+                        bottom: 4,
+                        child: Container(width: 13, height: 13, decoration: BoxDecoration(color: AppColors.success, shape: BoxShape.circle, border: Border.all(color: palette.surface, width: 2))),
+                      ),
+                  ],
                 ),
-              ),
-            ),
-            // Top badges
-            Positioned(
-              left: 10,
-              right: 10,
-              top: 10,
-              child: Row(
-                children: [
-                  if (c.isAvailableForWork)
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
-                      decoration: BoxDecoration(color: Colors.black.withValues(alpha: 0.45), borderRadius: BorderRadius.circular(AppRadius.pill)),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Container(width: 6, height: 6, decoration: const BoxDecoration(color: Color(0xFF34D399), shape: BoxShape.circle)),
-                          const SizedBox(width: 4),
-                          const Text('Available', style: TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.w700)),
-                        ],
-                      ),
-                    ),
-                  const Spacer(),
-                  if (c.isProPlan)
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                      decoration: BoxDecoration(gradient: _brandGradient, borderRadius: BorderRadius.circular(6)),
-                      child: const Text('PRO', style: TextStyle(color: Colors.white, fontSize: 9, fontWeight: FontWeight.w800)),
-                    ),
-                  const SizedBox(width: 6),
-                  ShareIconButton(
-                    onDark: true,
-                    size: 28,
-                    message: () => ShareService.creator(slug: c.slug, name: c.name, category: c.category?.label ?? ''),
-                  ),
-                ],
-              ),
-            ),
-            // Name, niche, followers — compact, right on the dark fade.
-            Positioned(
-              left: 10,
-              right: 10,
-              bottom: 10,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Row(
-                    children: [
-                      Flexible(
-                        child: Text(c.name, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.w800)),
-                      ),
-                      if (verified) ...[
-                        const SizedBox(width: 4),
-                        const Icon(AppIcons.sealCheck, size: 14, color: Color(0xFF60A5FA)),
-                      ],
+                const SizedBox(height: 8),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Flexible(child: Text(c.name, maxLines: 1, overflow: TextOverflow.ellipsis, style: context.text.titleSmall?.copyWith(fontWeight: FontWeight.w800))),
+                    if (verified) ...[
+                      const SizedBox(width: 3),
+                      const Icon(AppIcons.sealCheck, size: 14, color: AppColors.info),
                     ],
-                  ),
-                  Text(
-                    c.category?.label ?? (c.title.isEmpty ? 'Creator' : c.title),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(color: Colors.white70, fontSize: 11.5),
-                  ),
-                  const SizedBox(height: 5),
-                  Row(
-                    children: [
-                      const Icon(AppIcons.users, size: 12, color: Colors.white),
-                      const SizedBox(width: 4),
-                      Text(Fmt.compact(c.followerCount), style: const TextStyle(color: Colors.white, fontSize: 11.5, fontWeight: FontWeight.w700)),
-                      if (c.reviewCount > 0) ...[
-                        const SizedBox(width: 8),
-                        const Icon(AppIcons.starFilled, size: 12, color: AppColors.sunrise),
-                        const SizedBox(width: 3),
-                        Text(c.averageRating.toStringAsFixed(1), style: const TextStyle(color: Colors.white, fontSize: 11.5, fontWeight: FontWeight.w700)),
-                      ],
+                  ],
+                ),
+                Text(
+                  c.category?.label ?? (c.title.isEmpty ? 'Creator' : c.title),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: context.text.bodySmall?.copyWith(fontSize: 11.5),
+                ),
+                const SizedBox(height: 6),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(AppIcons.users, size: 12, color: palette.textSecondary),
+                    const SizedBox(width: 3),
+                    Text(Fmt.compact(c.followerCount), style: context.text.labelSmall?.copyWith(fontWeight: FontWeight.w700, color: palette.textSecondary)),
+                    if (c.reviewCount > 0) ...[
+                      const SizedBox(width: 8),
+                      const Icon(AppIcons.starFilled, size: 12, color: AppColors.sunrise),
+                      const SizedBox(width: 2),
+                      Text(c.averageRating.toStringAsFixed(1), style: context.text.labelSmall?.copyWith(fontWeight: FontWeight.w700, color: palette.textSecondary)),
                     ],
-                  ),
-                  const SizedBox(height: 8),
-                  _FollowChip(following: c.isFollowing, onTap: _toggleFollow),
-                ],
-              ),
+                  ],
+                ),
+                const Spacer(),
+                _LightButton(
+                  label: c.isFollowing ? 'Following' : 'Follow',
+                  icon: c.isFollowing ? AppIcons.check : AppIcons.plus,
+                  filled: !c.isFollowing,
+                  height: 32,
+                  onTap: _toggleFollow,
+                ),
+              ],
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
 }
 
-/// Slim full-width button on creator cards: gradient "Follow", glassy "Following".
-class _FollowChip extends StatelessWidget {
-  const _FollowChip({required this.following, required this.onTap});
+/// Button for light cards: brand gradient when filled, soft outline otherwise.
+class _LightButton extends StatelessWidget {
+  const _LightButton({required this.label, required this.icon, required this.onTap, this.filled = true, this.busy = false, this.height = 36});
 
-  final bool following;
+  final String label;
+  final IconData icon;
   final VoidCallback onTap;
+  final bool filled;
+  final bool busy;
+  final double height;
 
   @override
   Widget build(BuildContext context) {
+    final palette = context.palette;
+    final fg = filled ? Colors.white : palette.textPrimary;
     return GestureDetector(
       // Own tap target so the card doesn't open.
       behavior: HitTestBehavior.opaque,
-      onTap: onTap,
+      onTap: busy
+          ? null
+          : () {
+        HapticFeedback.selectionClick();
+        onTap();
+      },
       child: AnimatedContainer(
-        duration: const Duration(milliseconds: 220),
-        curve: Curves.easeOutCubic,
-        height: 28,
+        duration: const Duration(milliseconds: 200),
+        height: height,
         width: double.infinity,
         decoration: BoxDecoration(
-          gradient: following ? null : _brandGradient,
-          color: following ? Colors.white.withValues(alpha: 0.18) : null,
-          borderRadius: BorderRadius.circular(999),
-          border: Border.all(color: following ? Colors.white.withValues(alpha: 0.45) : Colors.transparent),
-          boxShadow: following ? null : const [BoxShadow(color: Color(0x55EC2A78), blurRadius: 8, offset: Offset(0, 2))],
+          gradient: filled ? _brandGradient : null,
+          color: filled ? null : palette.surfaceMuted,
+          borderRadius: BorderRadius.circular(kHomeButtonRadius),
         ),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            AnimatedSwitcher(
-              duration: const Duration(milliseconds: 200),
-              transitionBuilder: (child, a) => ScaleTransition(scale: a, child: child),
-              child: Icon(following ? AppIcons.check : AppIcons.plus, key: ValueKey(following), size: 12, color: Colors.white),
-            ),
-            const SizedBox(width: 4),
-            Text(following ? 'Following' : 'Follow', style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w800)),
-          ],
+        child: Center(
+          child: busy
+              ? SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: fg))
+              : Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(icon, size: 14, color: fg),
+              const SizedBox(width: 5),
+              Flexible(child: Text(label, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(color: fg, fontWeight: FontWeight.w800, fontSize: 12.5))),
+            ],
+          ),
         ),
       ),
     );
@@ -1205,8 +1179,8 @@ class MeetsRail extends StatelessWidget {
     return HomeRail<StoreMeet>(
       title: title,
       subtitle: subtitle,
-      height: 192,
-      itemWidth: 300,
+      height: 266,
+      itemWidth: 256,
       onSeeAll: () => context.push(AppRoutes.meets),
       load: () => pinnedFirst<StoreMeet>(
         pinned: pinned,
@@ -1221,8 +1195,8 @@ class MeetsRail extends StatelessWidget {
   }
 }
 
-/// Meet = an "event poster": full photo, a calendar date tile, and a
-/// Book / Join / Start button right on the card.
+/// Meet = photo on top (date tile + LIVE badge on it), then title, host,
+/// time and a Book / Join / Start button on a light card.
 class _MeetPoster extends StatelessWidget {
   const _MeetPoster({required this.meet});
 
@@ -1253,146 +1227,105 @@ class _MeetPoster extends StatelessWidget {
       onCta = open;
     }
 
-    return GestureDetector(
+    final palette = context.palette;
+    return _RailCard(
       onTap: open,
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(kHomeCardRadius),
-        child: Stack(
-          fit: StackFit.expand,
-          children: [
-            m.coverUrl.isEmpty
-                ? const DecoratedBox(
-              decoration: BoxDecoration(gradient: LinearGradient(begin: Alignment.topLeft, end: Alignment.bottomRight, colors: [Color(0xFF3B1E5E), Color(0xFF1B1B3A)])),
-              child: Center(child: Icon(AppIcons.videoCamera, size: 56, color: Colors.white24)),
-            )
-                : _netImage(m.coverUrl, icon: AppIcons.videoCamera),
-            const DecoratedBox(
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.topCenter,
-                  end: Alignment.bottomCenter,
-                  colors: [Color(0x33000000), Color(0x00000000), Color(0xE6000000)],
-                  stops: [0, 0.35, 1],
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Photo
+          SizedBox(
+            height: 126,
+            width: double.infinity,
+            child: Stack(
+              fit: StackFit.expand,
+              children: [
+                _coverOrGradient(m.coverUrl, icon: AppIcons.videoCamera, colors: const [Color(0xFF7C4DFF), Color(0xFFB388FF)]),
+                // Light top shade so the badges read on any photo.
+                const DecoratedBox(
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(begin: Alignment.topCenter, end: Alignment.center, colors: [Color(0x40000000), Color(0x00000000)]),
+                  ),
                 ),
-              ),
-            ),
-            // Calendar tile
-            Positioned(
-              left: 12,
-              top: 12,
-              child: Container(
-                width: 46,
-                padding: const EdgeInsets.symmetric(vertical: 5),
-                decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(10)),
-                child: Column(
-                  children: [
-                    Text(when == null ? 'SOON' : _months[when.month - 1], style: const TextStyle(color: AppColors.error, fontSize: 10, fontWeight: FontWeight.w800, letterSpacing: 0.6)),
-                    Text(when == null ? '—' : '${when.day}', style: const TextStyle(color: Color(0xFF111111), fontSize: 19, fontWeight: FontWeight.w800, height: 1.1)),
-                  ],
+                Positioned(
+                  left: 10,
+                  top: 10,
+                  child: Container(
+                    width: 42,
+                    padding: const EdgeInsets.symmetric(vertical: 4),
+                    decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(10)),
+                    child: Column(
+                      children: [
+                        Text(when == null ? 'SOON' : _months[when.month - 1], style: const TextStyle(color: AppColors.error, fontSize: 9.5, fontWeight: FontWeight.w800, letterSpacing: 0.5)),
+                        Text(when == null ? '—' : '${when.day}', style: const TextStyle(color: Color(0xFF111111), fontSize: 17, fontWeight: FontWeight.w800, height: 1.1)),
+                      ],
+                    ),
+                  ),
                 ),
-              ),
-            ),
-            // Share
-            Positioned(
-              right: 12,
-              top: 44,
-              child: ShareIconButton(
-                onDark: true,
-                size: 30,
-                message: () => ShareService.session(id: m.id, title: m.title, host: m.hostName, when: m.scheduledAt, price: m.price, mine: m.isHost),
-              ),
-            ),
-            // Live / type badge
-            Positioned(
-              right: 12,
-              top: 12,
-              child: m.isLive
-                  ? Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                decoration: BoxDecoration(color: AppColors.error, borderRadius: BorderRadius.circular(6)),
-                child: const Text('LIVE', style: TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.w800)),
-              ).animate(onPlay: (c) => c.repeat(reverse: true)).fade(begin: 1, end: 0.55, duration: 800.ms)
-                  : Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                decoration: BoxDecoration(color: Colors.black.withValues(alpha: 0.45), borderRadius: BorderRadius.circular(6)),
-                child: const Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(AppIcons.videoCamera, size: 12, color: Colors.white),
-                    SizedBox(width: 4),
-                    Text('Online session', style: TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.w700)),
-                  ],
+                Positioned(
+                  right: 10,
+                  top: 10,
+                  child: m.isLive
+                      ? Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+                    decoration: BoxDecoration(color: AppColors.error, borderRadius: BorderRadius.circular(6)),
+                    child: const Text('LIVE', style: TextStyle(color: Colors.white, fontSize: 10.5, fontWeight: FontWeight.w800)),
+                  ).animate(onPlay: (c) => c.repeat(reverse: true)).fade(begin: 1, end: 0.55, duration: 800.ms)
+                      : const _GlassChip(label: 'Online', icon: AppIcons.videoCamera, solid: Color(0x73000000)),
                 ),
-              ),
+                if (m.spotsLeft != null && !m.isHost)
+                  Positioned(
+                    right: 10,
+                    bottom: 10,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+                      decoration: BoxDecoration(color: m.spotsLeft! <= 3 ? AppColors.error : Colors.black.withValues(alpha: 0.55), borderRadius: BorderRadius.circular(6)),
+                      child: Text(
+                        m.spotsLeft! <= 0 ? 'Full' : (m.spotsLeft! <= 3 ? 'Only ${m.spotsLeft} left' : '${m.spotsLeft} spots left'),
+                        style: const TextStyle(color: Colors.white, fontSize: 10.5, fontWeight: FontWeight.w700),
+                      ),
+                    ),
+                  ),
+              ],
             ),
-            // Title, host, button
-            Positioned(
-              left: 12,
-              right: 12,
-              bottom: 12,
+          ),
+          Expanded(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(12, 10, 12, 12),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  if (m.spotsLeft != null && !m.isHost)
-                    Padding(
-                      padding: const EdgeInsets.only(bottom: 6),
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
-                        decoration: BoxDecoration(
-                          color: (m.spotsLeft! <= 3 ? AppColors.error : Colors.white).withValues(alpha: m.spotsLeft! <= 3 ? 0.9 : 0.2),
-                          borderRadius: BorderRadius.circular(6),
-                        ),
-                        child: Text(
-                          m.spotsLeft! <= 0 ? 'Full' : (m.spotsLeft! <= 3 ? 'Only ${m.spotsLeft} left' : '${m.spotsLeft} spots left'),
-                          style: const TextStyle(color: Colors.white, fontSize: 10.5, fontWeight: FontWeight.w700),
-                        ),
-                      ),
-                    ),
-                  Text(m.title, maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.w700, height: 1.25)),
-                  const SizedBox(height: 6),
-                  // Host on the left, a small action pill on the right.
+                  Text(m.title, maxLines: 2, overflow: TextOverflow.ellipsis, style: context.text.titleSmall?.copyWith(fontWeight: FontWeight.w800, height: 1.25)),
+                  const SizedBox(height: 8),
+                  // Host · time · length
                   Row(
                     children: [
-                      _avatar(m.hostAvatarUrl, m.hostName, 18),
+                      _avatar(m.hostAvatarUrl, m.hostName, 20),
                       const SizedBox(width: 6),
                       Expanded(
                         child: Text(
                           '${m.isHost ? 'You' : m.hostName}${when == null ? '' : ' · ${TimeOfDay.fromDateTime(when).format(context)}'} · ${m.durationMinutes} min',
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(color: Colors.white70, fontSize: 11.5),
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      Material(
-                        color: m.booked && !m.isLive && !m.isHost ? Colors.white.withValues(alpha: 0.2) : Colors.white,
-                        borderRadius: BorderRadius.circular(AppRadius.pill),
-                        child: InkWell(
-                          borderRadius: BorderRadius.circular(AppRadius.pill),
-                          onTap: () {
-                            HapticFeedback.selectionClick();
-                            onCta();
-                          },
-                          child: Padding(
-                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
-                            child: Text(
-                              cta,
-                              style: TextStyle(
-                                color: m.booked && !m.isLive && !m.isHost ? Colors.white : const Color(0xFF111111),
-                                fontWeight: FontWeight.w800,
-                                fontSize: 12,
-                              ),
-                            ),
-                          ),
+                          style: context.text.bodySmall?.copyWith(fontSize: 11.5, color: palette.textSecondary),
                         ),
                       ),
                     ],
                   ),
+                  const Spacer(),
+                  // Full-width button — long labels always fit.
+                  _LightButton(
+                    label: cta,
+                    icon: m.isHost || m.isLive ? AppIcons.videoCamera : (m.booked ? AppIcons.check : AppIcons.calendar),
+                    filled: !(m.booked && !m.isLive && !m.isHost),
+                    height: 34,
+                    onTap: onCta,
+                  ),
                 ],
               ),
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
@@ -1546,14 +1479,36 @@ class _ProductCard extends StatelessWidget {
                   style: const TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.w800, height: 1.22, letterSpacing: -0.2),
                 ),
                 const SizedBox(height: 8),
-                Row(
-                  children: [
-                    StoreLogo(name: p.storeName, url: p.storeLogoUrl, size: 20),
-                    const SizedBox(width: 6),
-                    Expanded(
-                      child: Text(p.storeName, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.white70, fontSize: 11.5, fontWeight: FontWeight.w700)),
-                    ),
-                  ],
+                // Store — its own tap target: opens the store, not the product.
+                GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onTap: p.storeSlug.isEmpty
+                      ? null
+                      : () {
+                    HapticFeedback.selectionClick();
+                    context.push(AppRoutes.storePage(p.storeSlug));
+                  },
+                  child: Row(
+                    children: [
+                      StoreLogo(name: p.storeName, url: p.storeLogoUrl, size: 20),
+                      const SizedBox(width: 6),
+                      Expanded(
+                        child: Text(p.storeName, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.white70, fontSize: 11.5, fontWeight: FontWeight.w700)),
+                      ),
+                      if (p.storeSlug.isNotEmpty) ...[
+                        const SizedBox(width: 6),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+                          decoration: BoxDecoration(
+                            color: Colors.white.withValues(alpha: 0.16),
+                            borderRadius: BorderRadius.circular(999),
+                            border: Border.all(color: Colors.white.withValues(alpha: 0.25)),
+                          ),
+                          child: const Text('Visit store ›', style: TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.w800)),
+                        ),
+                      ],
+                    ],
+                  ),
                 ),
                 const SizedBox(height: 8),
                 Container(height: 1, color: Colors.white.withValues(alpha: 0.14)),
@@ -1954,13 +1909,17 @@ class _HomeListSectionState<T> extends State<HomeListSection<T>> with AutomaticK
   Future<List<T>> _safeLoad() async {
     try {
       return (await widget.load()).take(widget.max).toList();
-    } catch (_) {
+    } catch (error) {
+      debugPrint('[home] list section failed to load: $error');
       return <T>[];
     }
   }
 
   void _reload() {
-    if (mounted) setState(() => _future = _safeLoad());
+    if (!mounted) return;
+    setState(() {
+      _future = _safeLoad();
+    });
   }
 
   @override
@@ -2079,8 +2038,8 @@ class CommunitiesList extends StatelessWidget {
     return HomeRail<Community>(
       title: title,
       subtitle: subtitle,
-      height: 286,
-      itemWidth: 236,
+      height: 268,
+      itemWidth: 248,
       onSeeAll: () => context.push(AppRoutes.communities),
       load: () => pinnedFirst<Community>(
         pinned: pinned,
@@ -2131,96 +2090,116 @@ class _CommunityCardState extends State<_CommunityCard> {
   Widget build(BuildContext context) {
     final joined = _status == MembershipStatus.active;
     final pending = _status == MembershipStatus.pending;
-    final label = c.needsPlan
-        ? (c.isExpired ? 'Renew · ${communityPriceLabel(c)}' : 'Join · ${communityPriceLabel(c)}')
-        : joined
-        ? 'Joined'
-        : pending
-        ? 'Requested'
-        : (c.isPrivate ? 'Request to join' : 'Join community');
     final about = c.description.isNotEmpty ? c.description : (c.category?.label.isNotEmpty == true ? c.category!.label : 'A Fanitt community');
 
-    return _ImmersiveCard(
+    final palette = context.palette;
+    final category = c.category?.label ?? '';
+    return _RailCard(
       onTap: () => context.push(AppRoutes.communityDetail(c.slug)),
-      child: Stack(
-        fit: StackFit.expand,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _coverOrGradient(c.coverImageUrl, icon: AppIcons.users, colors: const [Color(0xFF6D5DFC), Color(0xFFB13CC4), Color(0xFFEC2A78)]),
-          _bottomShade,
-          // Top: category + private
-          Positioned(
-            left: 12,
-            right: 12,
-            top: 12,
-            child: Row(
+          // Cover, with the icon sitting half on it and Join beside the icon.
+          SizedBox(
+            height: 156,
+            child: Stack(
+              clipBehavior: Clip.none,
               children: [
-                if (c.category?.label.isNotEmpty == true) Flexible(child: _GlassChip(label: c.category!.label)) else const Spacer(),
-                if (c.isPaid) ...[
-                  const SizedBox(width: 6),
-                  const _GlassChip(label: 'Paid', icon: AppIcons.crown, solid: Color(0xFFEC2A78)),
-                ] else if (c.isPrivate) ...[
-                  const SizedBox(width: 6),
-                  const _GlassChip(label: 'Private', icon: AppIcons.lock),
-                ],
+                Positioned(
+                  left: 0,
+                  right: 0,
+                  top: 0,
+                  height: 124,
+                  child: Stack(
+                    fit: StackFit.expand,
+                    children: [
+                      _coverOrGradient(c.coverImageUrl, icon: AppIcons.users, colors: const [Color(0xFF6D5DFC), Color(0xFFB13CC4), Color(0xFFEC2A78)]),
+                      const DecoratedBox(
+                        decoration: BoxDecoration(gradient: LinearGradient(begin: Alignment.topCenter, end: Alignment.center, colors: [Color(0x40000000), Color(0x00000000)])),
+                      ),
+                    ],
+                  ),
+                ),
+                Positioned(
+                  left: 10,
+                  right: 10,
+                  top: 10,
+                  child: Row(
+                    children: [
+                      if (category.isNotEmpty) Flexible(child: _GlassChip(label: category, solid: const Color(0x73000000))) else const Spacer(),
+                      if (c.isPaid || c.isPrivate) ...[
+                        const SizedBox(width: 6),
+                        _GlassChip(label: c.isPaid ? 'Paid' : 'Private', icon: c.isPaid ? AppIcons.crown : AppIcons.lock, solid: c.isPaid ? const Color(0xFFEC2A78) : const Color(0x73000000)),
+                      ],
+                    ],
+                  ),
+                ),
+                Positioned(
+                  left: 12,
+                  top: 98,
+                  child: Container(
+                    padding: const EdgeInsets.all(3),
+                    decoration: BoxDecoration(
+                      color: palette.surface,
+                      borderRadius: BorderRadius.circular(16),
+                      boxShadow: const [BoxShadow(color: Color(0x1A101828), blurRadius: 8, offset: Offset(0, 2))],
+                    ),
+                    child: ClipRRect(borderRadius: BorderRadius.circular(13), child: SizedBox(width: 50, height: 50, child: _netImage(c.iconUrl, icon: AppIcons.users))),
+                  ),
+                ),
+                Positioned(
+                  right: 12,
+                  top: 130,
+                  child: SizedBox(
+                    width: 108,
+                    child: _LightButton(
+                      label: c.needsPlan ? (c.isExpired ? 'Renew' : 'Join') : (joined ? 'Joined' : pending ? 'Requested' : (c.isPrivate ? 'Request' : 'Join')),
+                      icon: c.needsPlan ? AppIcons.crown : joined ? AppIcons.check : pending ? AppIcons.hourglass : AppIcons.plus,
+                      filled: c.needsPlan || !(joined || pending),
+                      busy: _busy,
+                      height: 30,
+                      onTap: _join,
+                    ),
+                  ),
+                ),
               ],
             ),
           ),
-          // Bottom: icon, name, about, stats, join
-          Positioned(
-            left: 12,
-            right: 12,
-            bottom: 12,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Row(
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.all(2),
-                      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(14)),
-                      child: ClipRRect(borderRadius: BorderRadius.circular(12), child: SizedBox(width: 40, height: 40, child: _netImage(c.iconUrl, icon: AppIcons.users))),
-                    ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: Row(
-                        children: [
-                          Flexible(
-                            child: Text(
-                              c.name,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w900, letterSpacing: -0.3),
-                            ),
-                          ),
-                          if (c.isVerified) ...[
-                            const SizedBox(width: 4),
-                            const Icon(AppIcons.sealCheck, size: 16, color: Color(0xFF60A5FA)),
-                          ],
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 8),
-                Text(about, maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.white70, fontSize: 12, height: 1.35, fontWeight: FontWeight.w500)),
-                const SizedBox(height: 10),
-                Row(
-                  children: [
-                    _OnImageStat(icon: AppIcons.users, value: Fmt.compact(c.memberCount), label: 'members'),
-                    const SizedBox(width: 12),
-                    Flexible(child: _OnImageStat(icon: AppIcons.messages, value: Fmt.compact(c.discussionCount), label: 'posts')),
-                  ],
-                ),
-                const SizedBox(height: 10),
-                _CardButton(
-                  label: label,
-                  icon: c.needsPlan ? AppIcons.crown : joined ? AppIcons.check : pending ? AppIcons.hourglass : AppIcons.plus,
-                  filled: c.needsPlan || !(joined || pending),
-                  busy: _busy,
-                  onTap: _join,
-                ),
-              ],
+          Expanded(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Flexible(child: Text(c.name, maxLines: 1, overflow: TextOverflow.ellipsis, style: context.text.titleSmall?.copyWith(fontWeight: FontWeight.w800, fontSize: 15))),
+                      if (c.isVerified) ...[
+                        const SizedBox(width: 3),
+                        const Icon(AppIcons.sealCheck, size: 15, color: AppColors.info),
+                      ],
+                    ],
+                  ),
+                  const SizedBox(height: 3),
+                  Text(about, maxLines: 2, overflow: TextOverflow.ellipsis, style: context.text.bodySmall?.copyWith(fontSize: 12, height: 1.35)),
+                  const Spacer(),
+                  Row(
+                    children: [
+                      Icon(AppIcons.users, size: 13, color: palette.textSecondary),
+                      const SizedBox(width: 4),
+                      Text('${Fmt.compact(c.memberCount)} members', style: context.text.labelSmall?.copyWith(color: palette.textSecondary, fontWeight: FontWeight.w700)),
+                      const SizedBox(width: 10),
+                      Icon(AppIcons.messages, size: 13, color: palette.textSecondary),
+                      const SizedBox(width: 4),
+                      Flexible(child: Text('${Fmt.compact(c.discussionCount)} posts', maxLines: 1, overflow: TextOverflow.ellipsis, style: context.text.labelSmall?.copyWith(color: palette.textSecondary, fontWeight: FontWeight.w700))),
+                      if (c.needsPlan) ...[
+                        const Spacer(),
+                        Text(communityPriceLabel(c), style: context.text.labelSmall?.copyWith(color: AppColors.primary, fontWeight: FontWeight.w800)),
+                      ],
+                    ],
+                  ),
+                ],
+              ),
             ),
           ),
         ],
@@ -2360,57 +2339,6 @@ class _OnImageStat extends StatelessWidget {
   }
 }
 
-/// Full-width button for the bottom of an immersive card.
-class _CardButton extends StatelessWidget {
-  const _CardButton({required this.label, required this.icon, required this.onTap, this.filled = true, this.busy = false});
-
-  final String label;
-  final IconData icon;
-  final VoidCallback onTap;
-  final bool filled;
-  final bool busy;
-
-  @override
-  Widget build(BuildContext context) {
-    return Material(
-      color: Colors.transparent,
-      borderRadius: BorderRadius.circular(kHomeButtonRadius),
-      clipBehavior: Clip.antiAlias,
-      child: Ink(
-        decoration: BoxDecoration(
-          gradient: filled ? _brandGradient : null,
-          color: filled ? null : Colors.white.withValues(alpha: 0.16),
-          borderRadius: BorderRadius.circular(kHomeButtonRadius),
-          border: filled ? null : Border.all(color: Colors.white.withValues(alpha: 0.3)),
-        ),
-        child: InkWell(
-          onTap: busy
-              ? null
-              : () {
-            HapticFeedback.selectionClick();
-            onTap();
-          },
-          child: SizedBox(
-            height: 38,
-            child: Center(
-              child: busy
-                  ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                  : Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(icon, size: 15, color: Colors.white),
-                  const SizedBox(width: 6),
-                  Text(label, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 13.5)),
-                ],
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
 // ---------------------------------------------------------------------------
 // Small pieces used by the cards above
 // ---------------------------------------------------------------------------
@@ -2528,10 +2456,39 @@ class _SectionConfig {
 /// All discover sections, in the order (and with the titles and pinned
 /// items) set in the admin panel → App home screen. Falls back to the
 /// built-in order if the layout can't load.
+/// The admin's "brands" section (title / pinned), shared with [HomeBrandsSlot].
+/// null = brands are hidden in the admin panel.
+final ValueNotifier<_SectionConfig?> _brandsSection = ValueNotifier<_SectionConfig?>(null);
+
+/// Put this where the "Brands on Fanitt" logo strip should sit when the
+/// screen uses `HomeSections(showBrands: false)` — e.g. just above a
+/// card at the very bottom of the home.
+class HomeBrandsSlot extends StatelessWidget {
+  const HomeBrandsSlot({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return ValueListenableBuilder<_SectionConfig?>(
+      valueListenable: _brandsSection,
+      builder: (context, c, _) => c == null
+          ? const SizedBox.shrink()
+          : BrandLogoStrip(
+        key: ValueKey('brands-${c.title}-${c.onlyPinned}-${c.pinned.join(',')}'),
+        title: c.title.isEmpty ? 'Brands on Fanitt' : c.title,
+        pinned: c.pinned,
+        onlyPinned: c.onlyPinned,
+      ),
+    );
+  }
+}
+
 class HomeSections extends StatefulWidget {
-  const HomeSections({super.key, this.campaignsSeeAll});
+  const HomeSections({super.key, this.campaignsSeeAll, this.showBrands = true});
 
   final VoidCallback? campaignsSeeAll;
+
+  /// false = the screen places [HomeBrandsSlot] itself (lower down).
+  final bool showBrands;
 
   @override
   State<HomeSections> createState() => _HomeSectionsState();
@@ -2567,6 +2524,7 @@ class _HomeSectionsState extends State<HomeSections> {
         setState(() => _sections = [for (final k in _fallback) _SectionConfig(key: k, title: '', subtitle: '', pinned: const [])]);
       }
     }
+    _brandsSection.value = _sections?.where((c) => c.key == 'brands').firstOrNull;
   }
 
   Widget _build(_SectionConfig c) {
@@ -2577,10 +2535,12 @@ class _HomeSectionsState extends State<HomeSections> {
       'creators' => CreatorsRail(title: t('Top creators'), subtitle: sub('Discover creators to work with'), pinned: c.pinned, onlyPinned: c.onlyPinned),
       'campaigns' => CampaignsRail(title: t('Open campaigns'), subtitle: sub('Paid & barter collaborations'), pinned: c.pinned, onlyPinned: c.onlyPinned, onSeeAll: widget.campaignsSeeAll),
       'meets' => MeetsRail(title: t('Virtual Meets'), subtitle: sub('Webinars & 1:1 sessions — join in the app'), pinned: c.pinned, onlyPinned: c.onlyPinned),
-      'brands' => BrandsRail(title: t('Brands on Fanitt'), subtitle: sub('Companies hiring creators'), pinned: c.pinned, onlyPinned: c.onlyPinned),
+    // Brands now show as a moving logo strip at the bottom (see build).
+      'brands' => const SizedBox.shrink(),
       'communities' => CommunitiesList(title: t('Trending communities'), subtitle: sub('Join the conversation'), pinned: c.pinned, onlyPinned: c.onlyPinned),
       'products' => ProductsRail(title: t('Digital products'), subtitle: sub('Courses, ebooks, templates — instant download'), pinned: c.pinned, onlyPinned: c.onlyPinned),
-      'stores' => StoresRail(title: t('Creator stores'), subtitle: sub('Courses, ebooks, templates & more'), pinned: c.pinned, onlyPinned: c.onlyPinned),
+    // Creator stores are reached from their products ("Visit store").
+      'stores' => const SizedBox.shrink(),
       _ => const SizedBox.shrink(),
     };
   }
@@ -2589,12 +2549,257 @@ class _HomeSectionsState extends State<HomeSections> {
   Widget build(BuildContext context) {
     final sections = _sections;
     if (sections == null) return const SizedBox.shrink();
+    final brands = sections.where((c) => c.key == 'brands').firstOrNull;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         // Keyed by the layout so a changed order or pin list rebuilds the rails.
-        for (final c in sections) KeyedSubtree(key: ValueKey('${c.key}-${c.title}-${c.onlyPinned}-${c.pinned.join(',')}'), child: _build(c)),
+        for (final c in sections) ...[
+          // Fanitt Store (physical products) sits just before Digital products.
+          if (c.key == 'products') ShopHomeSection(refresh: homeRefreshTick),
+          if (c.key != 'brands' && c.key != 'stores')
+            KeyedSubtree(key: ValueKey('${c.key}-${c.title}-${c.onlyPinned}-${c.pinned.join(',')}'), child: _build(c)),
+        ],
+        if (!sections.any((c) => c.key == 'products')) ShopHomeSection(refresh: homeRefreshTick),
+        // Brands: a slow, endless logo strip at the very bottom.
+        if (brands != null && widget.showBrands)
+          BrandLogoStrip(
+            key: ValueKey('brands-${brands.title}-${brands.onlyPinned}-${brands.pinned.join(',')}'),
+            title: brands.title.isEmpty ? 'Brands on Fanitt' : brands.title,
+            pinned: brands.pinned,
+            onlyPinned: brands.onlyPinned,
+          ),
       ],
+    );
+  }
+}
+
+/// Brands on Fanitt — round logos with the name under each, sliding
+/// slowly and endlessly. Touch to pause / drag, tap a logo to open the brand.
+class BrandLogoStrip extends StatefulWidget {
+  const BrandLogoStrip({super.key, this.title = 'Brands on Fanitt', this.pinned = const [], this.onlyPinned = false});
+
+  final String title;
+  final List<String> pinned;
+  final bool onlyPinned;
+
+  @override
+  State<BrandLogoStrip> createState() => _BrandLogoStripState();
+}
+
+class _BrandLogoStripState extends State<BrandLogoStrip> with SingleTickerProviderStateMixin {
+  static const _speed = 30.0; // pixels per second
+  static const _itemWidth = 104.0;
+
+  final _scroll = ScrollController();
+  late final Ticker _ticker = createTicker(_tick);
+  List<BrandListItem> _brands = const [];
+  bool _held = false;
+  Duration _last = Duration.zero;
+
+  /// Fewer logos than this don't fill the screen — show them still.
+  bool get _moving => _brands.length >= 4;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+    homeRefreshTick.addListener(_load);
+  }
+
+  @override
+  void dispose() {
+    homeRefreshTick.removeListener(_load);
+    _ticker.dispose();
+    _scroll.dispose();
+    super.dispose();
+  }
+
+  /// Only the brands marked in the admin panel (Home screen sections →
+  /// Brands → pinned), in that order, at most this many.
+  static const _maxBrands = 10;
+
+  Future<void> _load() async {
+    if (widget.pinned.isEmpty) {
+      if (mounted) setState(() => _brands = const []);
+      return;
+    }
+    try {
+      final ids = widget.pinned.take(_maxBrands).toList();
+      final order = {for (var i = 0; i < ids.length; i++) ids[i]: i};
+      final brands = [...(await sl<BrandsRepository>().list(ids: ids)).items]
+        ..sort((a, b) => (order[a.profile.id] ?? 999).compareTo(order[b.profile.id] ?? 999));
+      if (!mounted) return;
+      setState(() => _brands = brands);
+      if (_moving && !_ticker.isActive) {
+        _last = Duration.zero;
+        _ticker.start();
+      }
+    } catch (_) {
+      // No strip when brands can't load.
+    }
+  }
+
+  void _tick(Duration elapsed) {
+    final dt = (elapsed - _last).inMicroseconds / 1e6;
+    _last = elapsed;
+    if (_held || !_scroll.hasClients || !_moving) return;
+    _scroll.jumpTo(_scroll.offset + _speed * dt);
+  }
+
+  void _open(BrandListItem b) {
+    if (b.profile.slug.isEmpty) return;
+    HapticFeedback.selectionClick();
+    context.push(AppRoutes.brandProfile(b.profile.slug));
+  }
+
+  Widget _logo(BrandListItem b) {
+    final palette = context.palette;
+    final name = b.profile.companyName.trim().isEmpty ? 'Brand' : b.profile.companyName.trim();
+    final verified = b.profile.verificationStatus == VerificationStatus.verified;
+    final fallback = DecoratedBox(
+      decoration: const BoxDecoration(gradient: _brandGradient),
+      child: Center(child: Text(name[0].toUpperCase(), style: const TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.w800))),
+    );
+    return GestureDetector(
+      onTap: () => _open(b),
+      child: SizedBox(
+        width: _itemWidth,
+        child: Column(
+          children: [
+            // Logo tile — white rounded square, like a partner wall.
+            Stack(
+              clipBehavior: Clip.none,
+              children: [
+                Container(
+                  width: 80,
+                  height: 80,
+                  padding: const EdgeInsets.all(7),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(22),
+                    border: Border.all(color: context.isDark ? Colors.white.withValues(alpha: 0.08) : const Color(0xFFECEDF2)),
+                    boxShadow: context.isDark ? null : const [BoxShadow(color: Color(0x14101828), blurRadius: 16, offset: Offset(0, 6))],
+                  ),
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(16),
+                    child: SizedBox.expand(
+                      child: (b.logoUrl ?? '').isEmpty
+                          ? fallback
+                          : CachedNetworkImage(
+                        imageUrl: b.logoUrl!,
+                        fit: BoxFit.cover,
+                        placeholder: (_, _) => const ColoredBox(color: Color(0xFFF3F4F7)),
+                        errorWidget: (_, _, _) => fallback,
+                      ),
+                    ),
+                  ),
+                ),
+                if (verified)
+                  Positioned(
+                    right: -4,
+                    top: -4,
+                    child: Container(
+                      padding: const EdgeInsets.all(1.5),
+                      decoration: BoxDecoration(shape: BoxShape.circle, color: palette.background),
+                      child: const Icon(AppIcons.sealCheck, size: 16, color: Color(0xFF3B82F6)),
+                    ),
+                  ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 4),
+              child: Text(
+                name,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                textAlign: TextAlign.center,
+                style: context.text.labelSmall?.copyWith(fontSize: 12.5, fontWeight: FontWeight.w700, color: palette.textSecondary, letterSpacing: 0.1),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_brands.isEmpty) return const SizedBox.shrink();
+    final palette = context.palette;
+    final strip = SizedBox(
+      height: 122,
+      child: _moving
+          ? Listener(
+        onPointerDown: (_) => _held = true,
+        onPointerUp: (_) => _held = false,
+        onPointerCancel: (_) => _held = false,
+        child: ListView.builder(
+          controller: _scroll,
+          scrollDirection: Axis.horizontal,
+          padding: const EdgeInsets.only(top: 6),
+          // Endless: the same brands repeat forever.
+          itemBuilder: (context, i) => _logo(_brands[i % _brands.length]),
+        ),
+      )
+          : Center(
+        child: ListView(
+          shrinkWrap: true,
+          scrollDirection: Axis.horizontal,
+          padding: const EdgeInsets.only(top: 6),
+          children: [for (final b in _brands) _logo(b)],
+        ),
+      ),
+    );
+
+    return Padding(
+      padding: const EdgeInsets.only(top: AppSpacing.xl),
+      child: Container(
+        padding: const EdgeInsets.fromLTRB(0, 20, 0, 8),
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: context.isDark
+                ? [Colors.white.withValues(alpha: 0.03), Colors.white.withValues(alpha: 0.0)]
+                : [const Color(0xFFFFF4EF), palette.background],
+          ),
+        ),
+        child: Column(
+          children: [
+            // "— BRANDS ON FANITT —"
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: AppSpacing.gutter),
+              child: Row(
+                children: [
+                  Expanded(child: Container(height: 1, decoration: BoxDecoration(gradient: LinearGradient(colors: [palette.border.withValues(alpha: 0), palette.border])))),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 12),
+                    child: Text(
+                      widget.title.toUpperCase(),
+                      style: context.text.labelSmall?.copyWith(fontSize: 11, fontWeight: FontWeight.w800, letterSpacing: 1.6, color: palette.textSecondary),
+                    ),
+                  ),
+                  Expanded(child: Container(height: 1, decoration: BoxDecoration(gradient: LinearGradient(colors: [palette.border, palette.border.withValues(alpha: 0)])))),
+                ],
+              ),
+            ),
+            const SizedBox(height: 4),
+            Text('Trusted by brands working with creators', style: context.text.bodySmall?.copyWith(fontSize: 12)),
+            const SizedBox(height: 14),
+            // Logos fade out at both edges.
+            ShaderMask(
+              blendMode: BlendMode.dstIn,
+              shaderCallback: (r) => const LinearGradient(
+                colors: [Colors.transparent, Colors.black, Colors.black, Colors.transparent],
+                stops: [0, 0.08, 0.92, 1],
+              ).createShader(r),
+              child: strip,
+            ),
+          ],
+        ),
+      ),
     );
   }
 }

@@ -112,6 +112,31 @@ abstract final class AppRoutes {
   /// Target of the `fanitt://open/store` link (website banner).
   static const String storeLink = '/store';
 
+  // Fanitt Store — physical products (cart, checkout, orders)
+  static const String shop = '/app/shop';
+  static const String shopCart = '/app/shop/cart';
+  static const String shopCheckout = '/app/shop/checkout';
+  static const String shopOrderPlaced = '/app/shop/order-placed';
+  static const String shopOrders = '/app/shop/orders';
+  static const String shopOrderPath = '/app/shop/orders/:id';
+  static const String shopProductPath = '/app/shop/p/:id';
+  static const String shopProductEditorPath = '/app/store/shop-product-editor';
+  static const String sellerShopProducts = '/app/store/shop-products';
+  static const String sellerShopOrders = '/app/store/shop-orders';
+  static const String sellerShopOrderPath = '/app/store/shop-orders/:id';
+  static String shopProduct(String id) => '/app/shop/p/$id';
+  static String shopOrder(String id) => '/app/shop/orders/$id';
+  static String sellerShopOrder(String id) => '/app/store/shop-orders/$id';
+  static String shopProductEditor([String? id]) => id == null ? shopProductEditorPath : '$shopProductEditorPath?id=$id';
+  static String shopBrowse({String? storeId, String? storeName, String? category}) {
+    final query = {
+      if (storeId != null && storeId.isNotEmpty) 'store': storeId,
+      if (storeName != null && storeName.isNotEmpty) 'name': storeName,
+      if (category != null && category.isNotEmpty) 'category': category,
+    };
+    return query.isEmpty ? shop : Uri(path: shop, queryParameters: query).toString();
+  }
+
   static String campaignDetail(String id) => '/app/campaigns/$id';
   static String manageCampaign(String id) => '/app/manage/$id';
   static String chat(String id) => '/app/chat/$id';

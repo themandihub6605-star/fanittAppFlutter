@@ -11,7 +11,6 @@ import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_icons.dart';
 import '../../../core/theme/app_palette.dart';
 import '../../../core/theme/app_spacing.dart';
-import '../../../core/utils/formatters.dart';
 import '../../../core/widgets/app_card.dart';
 import '../../../core/widgets/app_update_banner.dart';
 import '../../../core/widgets/async_view.dart';
@@ -88,8 +87,6 @@ class _CreatorHomeView extends StatelessWidget {
         onRetry: cubit.load,
         builder: (data) {
           final d = data.dashboard;
-          final sub = data.subscription;
-          final limit = sub.plan.proposalLimit;
           return AppRefresh(
             onRefresh: () async {
               context.read<AuthBloc>().add(const AuthRefreshRequested());
@@ -107,7 +104,7 @@ class _CreatorHomeView extends StatelessWidget {
                 // Build the whole home once so sections don't reload or re-animate while scrolling.
                 cacheExtent: 4000,
                 // The hero draws under the status bar itself.
-                padding: const EdgeInsets.only(bottom: AppSpacing.huge),
+                padding: const EdgeInsets.only(bottom: AppSpacing.md),
                 children: [
                   // Full-bleed slider + header (greeting header when no banners).
                   HomeHeroSlider(topInset: MediaQuery.paddingOf(context).top),
@@ -116,20 +113,8 @@ class _CreatorHomeView extends StatelessWidget {
                   const HomeSearchBar(hint: 'Search creators, brands, stores…'),
                   const SizedBox(height: AppSpacing.lg),
 
-                  HomeStatsRow(
-                    stats: [
-                      (label: 'Followers', value: Fmt.compact(d.followerCount), icon: AppIcons.users, color: AppColors.primary),
-                      (label: 'Profile views', value: Fmt.compact(d.profileViews), icon: AppIcons.eye, color: AppColors.info),
-                      (
-                      label: d.reviewCount == 0 ? 'No reviews yet' : '${d.reviewCount} reviews',
-                      value: d.reviewCount == 0 ? '—' : d.averageRating.toStringAsFixed(1),
-                      icon: AppIcons.star,
-                      color: AppColors.warning,
-                      ),
-                    ],
-                  ),
+                  // Followers / profile views / reviews moved to the Profile tab.
                   // Quick actions
-                  homeGap,
                   const HomeSectionHeader(title: 'Quick actions'),
                   const SizedBox(height: AppSpacing.sm),
                   HomeQuickActions(
@@ -145,7 +130,8 @@ class _CreatorHomeView extends StatelessWidget {
                     ],
                   ),
 
-                  const Padding(padding: EdgeInsets.fromLTRB(AppSpacing.gutter, AppSpacing.xl, AppSpacing.gutter, 0), child: StorePromoBanner()),
+                  // Store banner — wider than the cards (12px side margins) and taller.
+                  const Padding(padding: EdgeInsets.fromLTRB(12, AppSpacing.xl, 12, 0), child: StorePromoBanner()),
 
                   // Picked for you
                   homeGap,
@@ -181,39 +167,8 @@ class _CreatorHomeView extends StatelessWidget {
                   ),
 
                   // Discover sections — order, titles and pinned items come from the admin panel.
-                  HomeSections(campaignsSeeAll: () => context.go(AppRoutes.creatorCampaigns)),
+                  HomeSections(campaignsSeeAll: () => context.go(AppRoutes.creatorCampaigns), showBrands: false),
 
-                  if (d.upcomingSessions.isNotEmpty) ...[
-                    homeGap,
-                    HomeSectionHeader(title: 'Your upcoming sessions', onSeeAll: () => context.push(AppRoutes.sessions)),
-                    const SizedBox(height: AppSpacing.sm),
-                    for (final s in d.upcomingSessions.take(3))
-                      Padding(
-                        padding: const EdgeInsets.fromLTRB(AppSpacing.gutter, 0, AppSpacing.gutter, AppSpacing.xs),
-                        child: AppCard(
-                          onTap: () => context.push(AppRoutes.sessions),
-                          child: Row(
-                            children: [
-                              Container(
-                                padding: const EdgeInsets.all(10),
-                                decoration: BoxDecoration(color: AppColors.primary.withValues(alpha: 0.12), borderRadius: BorderRadius.circular(AppRadius.md)),
-                                child: const Icon(AppIcons.videoCamera, color: AppColors.primary, size: 20),
-                              ),
-                              const SizedBox(width: AppSpacing.sm),
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(s.title, style: context.text.titleSmall),
-                                    Text('${Fmt.weekdayDateTime(s.scheduledAt)} · ${s.bookedCount} booked', style: context.text.bodySmall),
-                                  ],
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                  ],
                   if (d.recentTransactions.isNotEmpty) ...[
                     homeGap,
                     HomeSectionHeader(title: 'Recent earnings', onSeeAll: () => context.push(AppRoutes.wallet)),
@@ -234,164 +189,14 @@ class _CreatorHomeView extends StatelessWidget {
                     ),
                   ],
 
-                  // Earnings card — at the bottom of the home.
-                  homeGap,
-                  HomeHero(
-                    label: 'Total earnings',
-                    value: Fmt.money(d.totalEarnings),
-                    caption: 'This month ${Fmt.money(d.thisMonthEarnings)}',
-                    trailing: _PlanChip(name: sub.plan.name, isFree: sub.plan.isFree),
-                    // One clear call to action.
-                    primaryAction: Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        _HeroButton(icon: AppIcons.wallet, label: 'View wallet & withdraw', filled: true, onTap: () => context.push(AppRoutes.wallet)),
-                        // Plan usage sits inside the same card.
-                        if (limit != null) ...[
-                          const SizedBox(height: AppSpacing.md),
-                          _ProposalMeter(used: sub.proposalsUsed, limit: limit, isFree: sub.plan.isFree),
-                        ],
-                      ],
-                    ),
-                  ),
+                  // Brands on Fanitt — sliding logos at the very bottom.
+                  // (Earnings now live in the Account tab.)
+                  const HomeBrandsSlot(),
                 ],
               ),
             ),
           );
         },
-      ),
-    );
-  }
-}
-
-class _PlanChip extends StatelessWidget {
-  const _PlanChip({required this.name, required this.isFree});
-
-  final String name;
-  final bool isFree;
-
-  @override
-  Widget build(BuildContext context) {
-    return InkWell(
-      borderRadius: BorderRadius.circular(AppRadius.pill),
-      onTap: () => context.push(AppRoutes.plans),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-        decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.12), borderRadius: BorderRadius.circular(AppRadius.pill)),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Icon(AppIcons.crown, size: 14, color: AppColors.sunrise),
-            const SizedBox(width: 4),
-            Text(isFree ? '$name · Upgrade' : name, style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w700)),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-/// "3 of 10 proposals used" + bar, styled for the dark earnings card.
-class _ProposalMeter extends StatelessWidget {
-  const _ProposalMeter({required this.used, required this.limit, required this.isFree});
-
-  final int used;
-  final int limit;
-  final bool isFree;
-
-  @override
-  Widget build(BuildContext context) {
-    final share = limit == 0 ? 0.0 : (used / limit).clamp(0.0, 1.0).toDouble();
-    return Material(
-      color: Colors.white.withValues(alpha: 0.08),
-      borderRadius: BorderRadius.circular(AppRadius.md),
-      clipBehavior: Clip.antiAlias,
-      child: InkWell(
-        onTap: () => context.push(AppRoutes.plans),
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(12, 10, 12, 12),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  const Icon(AppIcons.paperPlane, size: 15, color: Colors.white70),
-                  const SizedBox(width: 6),
-                  Expanded(
-                    child: Text.rich(
-                      TextSpan(
-                        children: [
-                          TextSpan(text: '$used', style: const TextStyle(fontWeight: FontWeight.w800, color: Colors.white)),
-                          TextSpan(text: ' of $limit proposals used'),
-                        ],
-                      ),
-                      style: const TextStyle(color: Colors.white70, fontSize: 12.5, fontWeight: FontWeight.w600),
-                    ),
-                  ),
-                  Text(isFree ? 'Upgrade' : 'Manage', style: const TextStyle(color: AppColors.sunrise, fontSize: 12.5, fontWeight: FontWeight.w800)),
-                  const Icon(AppIcons.chevronRight, size: 14, color: AppColors.sunrise),
-                ],
-              ),
-              const SizedBox(height: 8),
-              ClipRRect(
-                borderRadius: BorderRadius.circular(AppRadius.pill),
-                child: TweenAnimationBuilder<double>(
-                  tween: Tween(begin: 0, end: share),
-                  duration: const Duration(milliseconds: 700),
-                  curve: Curves.easeOutCubic,
-                  builder: (context, v, _) => Stack(
-                    children: [
-                      Container(height: 6, color: Colors.white.withValues(alpha: 0.14)),
-                      FractionallySizedBox(
-                        widthFactor: v,
-                        child: Container(height: 6, decoration: const BoxDecoration(gradient: LinearGradient(colors: [Color(0xFFF4511E), Color(0xFFEC2A78)]))),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _HeroButton extends StatelessWidget {
-  const _HeroButton({required this.icon, required this.label, required this.onTap, this.filled = false});
-
-  final IconData icon;
-  final String label;
-  final VoidCallback onTap;
-  final bool filled;
-
-  @override
-  Widget build(BuildContext context) {
-    return Material(
-      color: Colors.transparent,
-      borderRadius: BorderRadius.circular(AppRadius.md),
-      clipBehavior: Clip.antiAlias,
-      child: Ink(
-        decoration: BoxDecoration(
-          gradient: filled ? const LinearGradient(colors: [Color(0xFFF4511E), Color(0xFFEC2A78)]) : null,
-          color: filled ? null : Colors.white.withValues(alpha: 0.1),
-          borderRadius: BorderRadius.circular(AppRadius.md),
-        ),
-        child: InkWell(
-          onTap: onTap,
-          child: Padding(
-            padding: const EdgeInsets.symmetric(vertical: 12),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Icon(icon, color: Colors.white, size: 18),
-                const SizedBox(width: 6),
-                Text(label, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700)),
-              ],
-            ),
-          ),
-        ),
       ),
     );
   }

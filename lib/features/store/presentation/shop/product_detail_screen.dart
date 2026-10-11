@@ -101,19 +101,38 @@ class _Body extends StatelessWidget {
         const SizedBox(height: AppSpacing.sm),
         Text(p.title, style: context.text.headlineSmall),
         const SizedBox(height: AppSpacing.sm),
-        InkWell(
+        // Sold by — tap anywhere or "Visit store" to open the shop.
+        AppCard(
           onTap: () => context.push(AppRoutes.storePage(page.store.slug)),
-          borderRadius: BorderRadius.circular(AppRadius.md),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(vertical: AppSpacing.xs),
-            child: Row(
-              children: [
-                StoreLogo(name: page.store.name, url: page.store.logoUrl, size: 32),
-                const SizedBox(width: AppSpacing.sm),
-                Expanded(child: Text(page.store.name, style: context.text.titleSmall)),
-                Icon(AppIcons.chevronRight, size: 16, color: palette.textTertiary),
-              ],
-            ),
+          padding: const EdgeInsets.all(AppSpacing.sm),
+          child: Row(
+            children: [
+              StoreLogo(name: page.store.name, url: page.store.logoUrl, size: 44),
+              const SizedBox(width: AppSpacing.sm),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('Sold by', style: context.text.bodySmall?.copyWith(fontSize: 11)),
+                    Text(page.store.name, maxLines: 1, overflow: TextOverflow.ellipsis, style: context.text.titleSmall?.copyWith(fontWeight: FontWeight.w700)),
+                    if (page.store.tagline.isNotEmpty)
+                      Text(page.store.tagline, maxLines: 1, overflow: TextOverflow.ellipsis, style: context.text.bodySmall),
+                  ],
+                ),
+              ),
+              const SizedBox(width: AppSpacing.xs),
+              FilledButton.tonalIcon(
+                onPressed: () => context.push(AppRoutes.storePage(page.store.slug)),
+                icon: const Icon(AppIcons.store, size: 16),
+                label: const Text('Visit store'),
+                style: FilledButton.styleFrom(
+                  foregroundColor: AppColors.primary,
+                  backgroundColor: AppColors.primary.withValues(alpha: 0.10),
+                  padding: const EdgeInsets.symmetric(horizontal: 12),
+                  minimumSize: const Size(0, 38),
+                ),
+              ),
+            ],
           ),
         ),
         const SizedBox(height: AppSpacing.md),

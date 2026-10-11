@@ -1,3 +1,7 @@
+import 'dart:convert';
+import 'dart:typed_data';
+import 'dart:ui' as ui;
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_animate/flutter_animate.dart';
@@ -60,11 +64,12 @@ class _DetailLoader extends StatelessWidget {
       );
     }
     // Posts are recreated when the viewer's access changes (e.g. joined a
-    // private community).
+    // private community). Paid community without a plan: the server sends
+    // only the free preview posts.
     return BlocProvider(
       key: ValueKey('${community.id}-${community.canView}'),
       create: (_) => PagedCubit<CommunityPost>(
-            (page) => community.canView
+            (page) => community.canView || (community.isPaid && !community.isBanned)
             ? sl<CommunityRepository>().posts(community.id, page: page)
             : Future.value(const Paged<CommunityPost>(items: [], page: 1, pages: 1, total: 0)),
       ),
@@ -300,51 +305,56 @@ class _DetailViewState extends State<_DetailView> {
                 ),
               if (_section == _Section.about)
                 SliverToBoxAdapter(child: _about(context))
+              else if (!c.canView && c.isPaid && !c.isBanned)
+                ..._previewSlivers(context, posts, myId)
               else if (!c.canView)
-                SliverToBoxAdapter(child: _locked(context))
-              else ...[
-                  if (posts.state.isFirstLoad)
-                    const SliverToBoxAdapter(child: Padding(padding: EdgeInsets.all(AppSpacing.xxl), child: Center(child: CircularProgressIndicator())))
-                  else if (posts.state.items.isEmpty && posts.state.errorMessage != null)
-                    SliverToBoxAdapter(child: ErrorView(message: posts.state.errorMessage!, onRetry: posts.refresh))
-                  else if (posts.state.items.isEmpty)
-                      SliverToBoxAdapter(
-                        child: Padding(
-                          padding: const EdgeInsets.all(AppSpacing.xl),
-                          child: MessageView(
-                            icon: AppIcons.messages,
-                            title: 'No posts yet',
-                            message: c.canPost ? 'Start the first discussion.' : 'Check back soon.',
+                  SliverToBoxAdapter(child: _locked(context))
+                else ...[
+                    if (posts.state.isFirstLoad)
+                      const SliverToBoxAdapter(child: Padding(padding: EdgeInsets.all(AppSpacing.xxl), child: Center(child: CircularProgressIndicator())))
+                    else if (posts.state.items.isEmpty && posts.state.errorMessage != null)
+                      SliverToBoxAdapter(child: ErrorView(message: posts.state.errorMessage!, onRetry: posts.refresh))
+                    else if (posts.state.items.isEmpty)
+                        SliverToBoxAdapter(
+                          child: Padding(
+                            padding: const EdgeInsets.all(AppSpacing.xl),
+                            child: MessageView(
+                              icon: AppIcons.messages,
+                              title: 'No posts yet',
+                              message: c.canPost ? 'Start the first discussion.' : 'Check back soon.',
+                            ),
+                          ),
+                        )
+                      else
+                        SliverPadding(
+                          padding: const EdgeInsets.fromLTRB(AppSpacing.gutter, 0, AppSpacing.gutter, 110),
+                          sliver: SliverList.separated(
+                            itemCount: posts.state.items.length + (posts.state.hasMore ? 1 : 0),
+                            separatorBuilder: (_, _) => const SizedBox(height: AppSpacing.md),
+                            itemBuilder: (context, i) {
+                              if (i == posts.state.items.length) {
+                                return const Padding(
+                                  padding: EdgeInsets.all(AppSpacing.md),
+                                  child: Center(child: SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))),
+                                );
+                              }
+                              final post = posts.state.items[i];
+                              return CommunityPostCard(
+                                key: ValueKey(post.id),
+                                post: post,
+                                myUserId: myId,
+                                canInteract: c.isMember,
+                                canModerate: c.canModerate,
+                                // Free tag: only owner / moderators see it here — paying members don't need it.
+                                showFreeTag: c.isPaid && c.canModerate,
+                                canMarkFree: c.isPaid && c.canModerate,
+                                onChanged: (updated) => posts.updateItem((p) => p.id == updated.id, (_) => updated),
+                                onDeleted: () => posts.removeItem((p) => p.id == post.id),
+                              );
+                            },
                           ),
                         ),
-                      )
-                    else
-                      SliverPadding(
-                        padding: const EdgeInsets.fromLTRB(AppSpacing.gutter, 0, AppSpacing.gutter, 110),
-                        sliver: SliverList.separated(
-                          itemCount: posts.state.items.length + (posts.state.hasMore ? 1 : 0),
-                          separatorBuilder: (_, _) => const SizedBox(height: AppSpacing.md),
-                          itemBuilder: (context, i) {
-                            if (i == posts.state.items.length) {
-                              return const Padding(
-                                padding: EdgeInsets.all(AppSpacing.md),
-                                child: Center(child: SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))),
-                              );
-                            }
-                            final post = posts.state.items[i];
-                            return CommunityPostCard(
-                              key: ValueKey(post.id),
-                              post: post,
-                              myUserId: myId,
-                              canInteract: c.isMember,
-                              canModerate: c.canModerate,
-                              onChanged: (updated) => posts.updateItem((p) => p.id == updated.id, (_) => updated),
-                              onDeleted: () => posts.removeItem((p) => p.id == post.id),
-                            );
-                          },
-                        ),
-                      ),
-                ],
+                  ],
             ],
           ),
         ),
@@ -503,6 +513,204 @@ class _DetailViewState extends State<_DetailView> {
     );
   }
 
+  /// Paid community, no plan: the free posts first, then the plans card.
+  /// Paid community, no plan: free posts first, then 2 locked previews,
+  /// then the plans card.
+  List<Widget> _previewSlivers(BuildContext context, PagedCubit<CommunityPost> posts, String? myId) {
+    final free = posts.state.items.where((p) => !p.isLocked).toList();
+    final teasers = posts.state.items.where((p) => p.isLocked).toList();
+    final shown = free.length + teasers.length;
+    final rest = c.discussionCount > shown ? c.discussionCount - shown : 0;
+    return [
+      if (posts.state.isFirstLoad)
+        const SliverToBoxAdapter(child: Padding(padding: EdgeInsets.all(AppSpacing.xxl), child: Center(child: CircularProgressIndicator())))
+      else ...[
+        if (free.isNotEmpty) ...[
+          SliverToBoxAdapter(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(AppSpacing.gutter, AppSpacing.xs, AppSpacing.gutter, AppSpacing.sm),
+              child: Row(
+                children: [
+                  const Icon(AppIcons.globe, size: 16, color: AppColors.success),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Text(
+                      free.length == 1 ? 'Free post — read it without a plan' : '${free.length} free posts — read them without a plan',
+                      style: context.text.labelLarge?.copyWith(fontWeight: FontWeight.w700),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          SliverPadding(
+            padding: const EdgeInsets.symmetric(horizontal: AppSpacing.gutter),
+            sliver: SliverList.separated(
+              itemCount: free.length,
+              separatorBuilder: (_, _) => const SizedBox(height: AppSpacing.md),
+              itemBuilder: (context, i) {
+                final post = free[i];
+                return CommunityPostCard(
+                  key: ValueKey(post.id),
+                  post: post,
+                  myUserId: myId,
+                  canInteract: false,
+                  canModerate: false,
+                  showFreeTag: true,
+                  onChanged: (updated) => posts.updateItem((p) => p.id == updated.id, (_) => updated),
+                  onDeleted: () => posts.removeItem((p) => p.id == post.id),
+                );
+              },
+            ),
+          ),
+        ],
+        if (teasers.isNotEmpty) ...[
+          SliverToBoxAdapter(
+            child: Padding(
+              padding: EdgeInsets.fromLTRB(AppSpacing.gutter, free.isEmpty ? AppSpacing.xs : AppSpacing.lg, AppSpacing.gutter, AppSpacing.sm),
+              child: Row(
+                children: [
+                  const Icon(AppIcons.lock, size: 16, color: AppColors.primary),
+                  const SizedBox(width: 6),
+                  Expanded(child: Text('Members-only posts', style: context.text.labelLarge?.copyWith(fontWeight: FontWeight.w700))),
+                ],
+              ),
+            ),
+          ),
+          SliverPadding(
+            padding: const EdgeInsets.symmetric(horizontal: AppSpacing.gutter),
+            sliver: SliverList.separated(
+              itemCount: teasers.length,
+              separatorBuilder: (_, _) => const SizedBox(height: AppSpacing.md),
+              itemBuilder: (context, i) => _LockedPostCard(post: teasers[i], onTap: _buyPlan)
+                  .animate(delay: (80 * i).ms)
+                  .fadeIn(duration: 300.ms)
+                  .slideY(begin: 0.05),
+            ),
+          ),
+        ],
+      ],
+      SliverToBoxAdapter(
+        child: Padding(
+          padding: const EdgeInsets.only(bottom: 110),
+          child: shown == 0 || c.isExpired
+              ? _paidLocked(context)
+              : _unlockCard(context, rest: rest, paidTotal: c.discussionCount > free.length ? c.discussionCount - free.length : teasers.length),
+        ),
+      ),
+    ];
+  }
+
+  /// After the locked previews: how much more is waiting, what the
+  /// community offers, and the plans.
+  Widget _unlockCard(BuildContext context, {required int rest, required int paidTotal}) {
+    final palette = context.palette;
+    const gradient = LinearGradient(colors: [Color(0xFFF4511E), Color(0xFFEC2A78)]);
+    final cheapest = c.cheapestPlan;
+    final highlights = <({IconData icon, String value, String label})>[
+      (icon: AppIcons.users, value: Fmt.compact(c.memberCount), label: 'members'),
+      (icon: AppIcons.feed, value: Fmt.compact(paidTotal), label: 'member posts'),
+      if (c.chatEnabled) (icon: AppIcons.messages, value: 'Live', label: 'group chat'),
+      (icon: AppIcons.videoCamera, value: 'All', label: 'community lives'),
+    ];
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(AppSpacing.gutter, AppSpacing.lg, AppSpacing.gutter, 0),
+      child: Container(
+        padding: const EdgeInsets.all(1.6),
+        decoration: BoxDecoration(
+          gradient: gradient,
+          borderRadius: BorderRadius.circular(22),
+          boxShadow: [BoxShadow(color: const Color(0xFFEC2A78).withValues(alpha: 0.18), blurRadius: 24, offset: const Offset(0, 10))],
+        ),
+        child: Container(
+          padding: const EdgeInsets.fromLTRB(AppSpacing.md, AppSpacing.lg, AppSpacing.md, AppSpacing.md),
+          decoration: BoxDecoration(color: palette.surface, borderRadius: BorderRadius.circular(20.4)),
+          child: Column(
+            children: [
+              // Big "+28 more posts"
+              ShaderMask(
+                shaderCallback: (r) => gradient.createShader(r),
+                child: Text(
+                  rest > 0 ? '+${Fmt.compact(rest)}' : Fmt.compact(paidTotal),
+                  style: const TextStyle(color: Colors.white, fontSize: 44, fontWeight: FontWeight.w900, letterSpacing: -1.5, height: 1),
+                ),
+              ),
+              const SizedBox(height: 6),
+              Text(
+                rest > 0 ? 'more ${rest == 1 ? 'post' : 'posts'} unlock with a plan' : 'members-only ${paidTotal == 1 ? 'post' : 'posts'} unlock with a plan',
+                textAlign: TextAlign.center,
+                style: context.text.titleMedium?.copyWith(fontWeight: FontWeight.w800),
+              ),
+              const SizedBox(height: 2),
+              Text(
+                'Read every post, join the chat and watch the lives in ${c.name}.',
+                textAlign: TextAlign.center,
+                style: context.text.bodySmall,
+              ),
+              const SizedBox(height: AppSpacing.md),
+
+              // What you get
+              Container(
+                padding: const EdgeInsets.symmetric(vertical: 12),
+                decoration: BoxDecoration(color: palette.surfaceMuted, borderRadius: BorderRadius.circular(16)),
+                child: Row(
+                  children: [
+                    for (final (i, h) in highlights.indexed) ...[
+                      if (i > 0) Container(width: 1, height: 34, color: palette.border),
+                      Expanded(
+                        child: Column(
+                          children: [
+                            Icon(h.icon, size: 18, color: AppColors.primary),
+                            const SizedBox(height: 4),
+                            Text(h.value, maxLines: 1, style: context.text.titleSmall?.copyWith(fontWeight: FontWeight.w800)),
+                            Text(h.label, maxLines: 1, overflow: TextOverflow.ellipsis, style: context.text.bodySmall?.copyWith(fontSize: 10.5)),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+              const SizedBox(height: AppSpacing.md),
+
+              // Plans
+              if (c.plans.isNotEmpty) ...[
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  alignment: WrapAlignment.center,
+                  children: [
+                    for (final p in c.plans)
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+                        decoration: BoxDecoration(
+                          color: p == cheapest ? AppColors.primary.withValues(alpha: 0.12) : palette.surfaceMuted,
+                          borderRadius: BorderRadius.circular(999),
+                          border: Border.all(color: p == cheapest ? AppColors.primary.withValues(alpha: 0.4) : palette.border),
+                        ),
+                        child: Text(
+                          '${p.key.label} · ${Fmt.money(p.price)}${p.key == CommunityPlanKey.lifetime ? '' : p.key.suffix}',
+                          style: context.text.labelMedium?.copyWith(color: p == cheapest ? AppColors.primary : palette.textPrimary, fontWeight: FontWeight.w800),
+                        ),
+                      ),
+                  ],
+                ),
+                const SizedBox(height: AppSpacing.md),
+              ],
+              if (!c.isBanned)
+                AppButton(
+                  label: cheapest == null ? 'Unlock everything' : 'Unlock from ${Fmt.money(cheapest.price)}',
+                  icon: AppIcons.lock,
+                  onPressed: _buyPlan,
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   Widget _locked(BuildContext context) {
     if (c.isPaid) return _paidLocked(context);
     return Padding(
@@ -528,7 +736,7 @@ class _DetailViewState extends State<_DetailView> {
   }
 
   /// Paid community, viewer has no plan: what they get + the plans.
-  Widget _paidLocked(BuildContext context) {
+  Widget _paidLocked(BuildContext context, {int lockedCount = 0}) {
     final palette = context.palette;
     return Padding(
       padding: const EdgeInsets.all(AppSpacing.gutter),
@@ -551,7 +759,15 @@ class _DetailViewState extends State<_DetailView> {
               child: const Icon(AppIcons.crown, size: 28, color: Colors.white),
             ),
             const SizedBox(height: AppSpacing.md),
-            Text(c.isExpired ? 'Your membership ended' : 'Members-only community', style: context.text.titleMedium?.copyWith(fontWeight: FontWeight.w800)),
+            Text(
+              c.isExpired
+                  ? 'Your membership ended'
+                  : lockedCount > 0
+                  ? '$lockedCount more ${lockedCount == 1 ? 'post' : 'posts'} for members'
+                  : 'Members-only community',
+              textAlign: TextAlign.center,
+              style: context.text.titleMedium?.copyWith(fontWeight: FontWeight.w800),
+            ),
             const SizedBox(height: 4),
             Text(
               c.isExpired ? 'Renew to get back into the posts, chat and lives.' : 'Get a plan to read posts, join the chat and watch community lives.',
@@ -767,6 +983,160 @@ class _CommunityLivesState extends State<_CommunityLives> {
           ),
         );
       },
+    );
+  }
+}
+
+/// A paid post seen without a plan: who and when, the first line fading
+/// out, a blurred picture with a lock, and the counts. Tap → plans.
+class _LockedPostCard extends StatelessWidget {
+  const _LockedPostCard({required this.post, required this.onTap});
+
+  final CommunityPost post;
+  final VoidCallback onTap;
+
+  Uint8List? get _image {
+    final raw = post.teaserImage;
+    final comma = raw.indexOf(',');
+    if (!raw.startsWith('data:image') || comma < 0) return null;
+    try {
+      return base64Decode(raw.substring(comma + 1));
+    } catch (_) {
+      return null;
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.palette;
+    final image = _image;
+    final hasMedia = post.mediaCount > 0;
+    return Material(
+      color: palette.surface,
+      borderRadius: BorderRadius.circular(AppRadius.lg),
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: onTap,
+        child: Container(
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(AppRadius.lg),
+            border: Border.all(color: palette.border),
+          ),
+          padding: const EdgeInsets.all(AppSpacing.md),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  UserAvatar(initials: post.author.initials, imageUrl: post.author.avatarUrl, size: 40),
+                  const SizedBox(width: AppSpacing.sm),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(post.author.name, maxLines: 1, overflow: TextOverflow.ellipsis, style: context.text.titleSmall),
+                        Text(Fmt.relative(post.createdAt), style: context.text.bodySmall),
+                      ],
+                    ),
+                  ),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    decoration: BoxDecoration(color: AppColors.primary.withValues(alpha: 0.10), borderRadius: BorderRadius.circular(999)),
+                    child: const Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(AppIcons.lock, size: 11, color: AppColors.primary),
+                        SizedBox(width: 3),
+                        Text('Members only', style: TextStyle(color: AppColors.primary, fontSize: 11, fontWeight: FontWeight.w800)),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+              if (post.text.isNotEmpty) ...[
+                const SizedBox(height: AppSpacing.sm),
+                // First line, fading out.
+                ShaderMask(
+                  blendMode: BlendMode.dstIn,
+                  shaderCallback: (r) => const LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    colors: [Colors.black, Colors.transparent],
+                    stops: [0.35, 1],
+                  ).createShader(r),
+                  child: Text(post.text, maxLines: 2, overflow: TextOverflow.clip, style: context.text.bodyMedium?.copyWith(color: palette.textPrimary, height: 1.4)),
+                ),
+              ],
+              if (hasMedia || post.hasPoll) ...[
+                const SizedBox(height: AppSpacing.sm),
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(AppRadius.md),
+                  child: SizedBox(
+                    height: 150,
+                    width: double.infinity,
+                    child: Stack(
+                      fit: StackFit.expand,
+                      children: [
+                        if (image != null)
+                          ImageFiltered(
+                            imageFilter: ui.ImageFilter.blur(sigmaX: 14, sigmaY: 14),
+                            child: Image.memory(image, fit: BoxFit.cover, gaplessPlayback: true),
+                          )
+                        else
+                          const DecoratedBox(decoration: BoxDecoration(gradient: LinearGradient(colors: [Color(0xFFFFE1D3), Color(0xFFFFD9E8)]))),
+                        Container(color: Colors.black.withValues(alpha: 0.25)),
+                        Center(
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Container(
+                                width: 52,
+                                height: 52,
+                                decoration: BoxDecoration(
+                                  shape: BoxShape.circle,
+                                  color: Colors.white.withValues(alpha: 0.92),
+                                  boxShadow: const [BoxShadow(color: Color(0x33000000), blurRadius: 14, offset: Offset(0, 4))],
+                                ),
+                                child: const Icon(AppIcons.lock, color: AppColors.primary, size: 24),
+                              ),
+                              const SizedBox(height: 8),
+                              Text(
+                                post.hasPoll && !hasMedia
+                                    ? 'Poll for members'
+                                    : post.hasVideo
+                                    ? 'Video for members'
+                                    : post.mediaCount > 1
+                                    ? '${post.mediaCount} photos for members'
+                                    : 'Photo for members',
+                                style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 13, shadows: [Shadow(color: Color(0x66000000), blurRadius: 6)]),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+              const SizedBox(height: AppSpacing.sm),
+              Row(
+                children: [
+                  Icon(AppIcons.heart, size: 16, color: palette.textSecondary),
+                  const SizedBox(width: 4),
+                  Text(Fmt.compact(post.likeCount), style: context.text.bodySmall),
+                  const SizedBox(width: AppSpacing.md),
+                  Icon(AppIcons.messages, size: 16, color: palette.textSecondary),
+                  const SizedBox(width: 4),
+                  Text(Fmt.compact(post.commentCount), style: context.text.bodySmall),
+                  const Spacer(),
+                  Text('Join to read', style: context.text.labelMedium?.copyWith(color: AppColors.primary, fontWeight: FontWeight.w800)),
+                  const Icon(AppIcons.chevronRight, size: 16, color: AppColors.primary),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }

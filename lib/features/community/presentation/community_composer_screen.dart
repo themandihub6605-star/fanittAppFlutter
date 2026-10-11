@@ -58,6 +58,10 @@ class _ComposerViewState extends State<_ComposerView> {
   bool _showPoll = false;
   int _pollDays = 3;
   bool _announcement = false;
+  bool _free = false;
+
+  /// Paid community, owner / moderator: can open this post to everyone.
+  bool get _canMakeFree => widget.community.isPaid && widget.community.canModerate;
 
   @override
   void dispose() {
@@ -106,6 +110,7 @@ class _ComposerViewState extends State<_ComposerView> {
       pollOptions: _showPoll ? options : const [],
       pollDays: _pollDays,
       isAnnouncement: _announcement,
+      isFree: _canMakeFree && _free,
       // Only people still named in the text.
       mentionIds: _mentions.where((m) => text.contains('@${m.name}')).map((m) => m.id).toList(),
     );
@@ -255,6 +260,25 @@ class _ComposerViewState extends State<_ComposerView> {
                     ),
                   ),
                 ],
+                if (_free) ...[
+                  const SizedBox(height: AppSpacing.md),
+                  AppCard(
+                    color: AppColors.success.withValues(alpha: 0.08),
+                    borderColor: AppColors.success.withValues(alpha: 0.3),
+                    child: Row(
+                      children: [
+                        const Icon(AppIcons.globe, color: AppColors.success, size: 18),
+                        const SizedBox(width: AppSpacing.sm),
+                        Expanded(
+                          child: Text(
+                            'Free post — anyone can read it without a plan. It shows first to people who haven’t joined. Up to 3 free posts.',
+                            style: context.text.bodySmall?.copyWith(color: palette.textPrimary),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
                 if (_announcement) ...[
                   const SizedBox(height: AppSpacing.md),
                   AppCard(
@@ -286,6 +310,8 @@ class _ComposerViewState extends State<_ComposerView> {
                 _Tool(icon: AppIcons.at, label: 'Tag a member', onTap: _tagMember),
                 if (widget.community.canModerate)
                   _Tool(icon: AppIcons.campaigns, label: 'Announcement', active: _announcement, onTap: () => setState(() => _announcement = !_announcement)),
+                if (_canMakeFree)
+                  _Tool(icon: AppIcons.globe, label: 'Free post (no plan needed)', active: _free, onTap: () => setState(() => _free = !_free)),
                 const Spacer(),
                 Text('${_media.length}/$_maxMedia', style: context.text.bodySmall),
                 const SizedBox(width: AppSpacing.sm),

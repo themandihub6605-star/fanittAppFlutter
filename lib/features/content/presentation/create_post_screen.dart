@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:image_cropper/image_cropper.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:video_player/video_player.dart';
 
 import '../../../core/di/injection.dart';
@@ -15,6 +16,7 @@ import '../../../core/theme/app_palette.dart';
 import '../../../core/theme/app_spacing.dart';
 import '../../../core/widgets/app_snackbar.dart';
 import '../../../core/widgets/media_aspect.dart';
+import '../../feed/data/story_repository.dart';
 import '../data/content_repository.dart';
 
 const _gradient = LinearGradient(colors: [Color(0xFFF4511E), Color(0xFFEC2A78)]);
@@ -26,6 +28,9 @@ class _Draft {
   PickedMedia media;
   double? ratio;
   VideoPlayerController? video;
+
+  /// Video length in whole seconds (0 for photos).
+  int get seconds => video == null ? 0 : (video!.value.duration.inMilliseconds / 1000).ceil();
 
   bool get isVideo => media.isVideo;
 
@@ -45,15 +50,104 @@ class _Draft {
   void dispose() => video?.dispose();
 }
 
-/// Full-screen "New post": real previews in their own shape, crop for photos,
-/// caption, share. Returns true when the post was published.
-class CreatePostScreen extends StatefulWidget {
-  const CreatePostScreen({super.key});
+/// What the creator / brand is making.
+enum CreateMode {
+  post('New post', 'Photos & videos together in one post'),
+  reel('New reel', 'One short vertical video'),
+  story('New story', 'Disappears after 24 hours');
 
-  static Future<bool> open(BuildContext context) async {
+  const CreateMode(this.title, this.hint);
+  final String title;
+  final String hint;
+}
+
+/// "Create" sheet: Post / Reel / Story. Opens the editor for the choice and
+/// returns what was published (null if nothing).
+Future<CreateMode?> showCreateChooser(BuildContext context) async {
+  final mode = await showModalBottomSheet<CreateMode>(
+    context: context,
+    showDragHandle: true,
+    builder: (ctx) => SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(AppSpacing.gutter, 0, AppSpacing.gutter, AppSpacing.lg),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Create', style: Theme.of(ctx).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w800)),
+            const SizedBox(height: AppSpacing.sm),
+            _ChoiceTile(mode: CreateMode.post, icon: AppIcons.image, color: AppColors.primary),
+            _ChoiceTile(mode: CreateMode.reel, icon: AppIcons.video, color: const Color(0xFFEC2A78)),
+            _ChoiceTile(mode: CreateMode.story, icon: AppIcons.camera, color: const Color(0xFF7C4DFF)),
+          ],
+        ),
+      ),
+    ),
+  );
+  if (mode == null || !context.mounted) return null;
+  final done = await CreatePostScreen.open(context, mode: mode);
+  return done ? mode : null;
+}
+
+class _ChoiceTile extends StatelessWidget {
+  const _ChoiceTile({required this.mode, required this.icon, required this.color});
+
+  final CreateMode mode;
+  final IconData icon;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.palette;
+    return Padding(
+      padding: const EdgeInsets.only(top: AppSpacing.xs),
+      child: Material(
+        color: palette.surface,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14), side: BorderSide(color: palette.border)),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(14),
+          onTap: () => Navigator.of(context).pop(mode),
+          child: Padding(
+            padding: const EdgeInsets.all(12),
+            child: Row(
+              children: [
+                Container(
+                  width: 42,
+                  height: 42,
+                  decoration: BoxDecoration(color: color.withValues(alpha: 0.12), borderRadius: BorderRadius.circular(12)),
+                  child: Icon(icon, color: color, size: 21),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(mode.name[0].toUpperCase() + mode.name.substring(1), style: context.text.titleSmall?.copyWith(fontWeight: FontWeight.w800)),
+                      Text(mode.hint, style: context.text.bodySmall),
+                    ],
+                  ),
+                ),
+                Icon(AppIcons.chevronRight, size: 18, color: palette.textTertiary),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Full-screen editor for a post, reel or story: real previews in their own
+/// shape, crop for photos, caption, share. Returns true when published.
+class CreatePostScreen extends StatefulWidget {
+  const CreatePostScreen({super.key, this.mode = CreateMode.post});
+
+  final CreateMode mode;
+
+  static Future<bool> open(BuildContext context, {CreateMode mode = CreateMode.post}) async {
     final created = await Navigator.of(context).push<bool>(
       PageRouteBuilder(
-        pageBuilder: (_, _, _) => const CreatePostScreen(),
+        pageBuilder: (_, _, _) => CreatePostScreen(mode: mode),
         transitionsBuilder: (_, anim, _, child) => SlideTransition(
           position: Tween(begin: const Offset(0, 0.06), end: Offset.zero).animate(CurvedAnimation(parent: anim, curve: Curves.easeOutCubic)),
           child: FadeTransition(opacity: anim, child: child),
@@ -77,6 +171,11 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
 
   _Draft? get _current => _items.isEmpty ? null : _items[_selected.clamp(0, _items.length - 1)];
 
+  CreateMode get _mode => widget.mode;
+
+  /// How many items this mode takes.
+  int get _maxItems => _mode == CreateMode.post ? ContentRepository.maxMediaPerPost : 1;
+
   @override
   void initState() {
     super.initState();
@@ -93,10 +192,26 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
     super.dispose();
   }
 
+  /// Reels: one video from the gallery.
+  Future<List<PickedMedia>> _pickReel() async {
+    final file = await ImagePicker().pickVideo(source: ImageSource.gallery, maxDuration: const Duration(seconds: ContentRepository.reelMaxSeconds));
+    return file == null ? const [] : [PickedMedia(path: file.path, name: file.name, isVideo: true)];
+  }
+
+  /// One photo or video (stories, or the last free slot of a post).
+  /// pickMultipleMedia doesn't accept a limit below 2.
+  Future<List<PickedMedia>> _pickOne() async {
+    final f = await ImagePicker().pickMedia(maxWidth: 2000, maxHeight: 2000, imageQuality: 85);
+    if (f == null) return const [];
+    final lower = f.name.toLowerCase();
+    final isVideo = lower.endsWith('.mp4') || lower.endsWith('.mov') || lower.endsWith('.webm');
+    return [PickedMedia(path: f.path, name: f.name, isVideo: isVideo)];
+  }
+
   Future<void> _add({bool closeIfEmpty = false}) async {
-    final room = ContentRepository.maxMediaPerPost - _items.length;
+    final room = _maxItems - _items.length;
     if (room <= 0) return;
-    final picked = await sl<MediaPicker>().media(limit: room);
+    final picked = _mode == CreateMode.reel ? await _pickReel() : (room == 1 ? await _pickOne() : await sl<MediaPicker>().media(limit: room));
     if (!mounted) return;
     if (picked.isEmpty) {
       if (closeIfEmpty && _items.isEmpty) Navigator.of(context).pop(false);
@@ -110,6 +225,21 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
         d.dispose();
       }
       return;
+    }
+    // Length limits: reels up to 90 s, story videos up to 60 s.
+    final limit = _mode == CreateMode.reel ? ContentRepository.reelMaxSeconds : (_mode == CreateMode.story ? StoryRepository.videoMaxSeconds : 0);
+    final tooLong = limit > 0 ? drafts.where((d) => d.isVideo && d.seconds > limit).toList() : const <_Draft>[];
+    if (tooLong.isNotEmpty) {
+      for (final d in tooLong) {
+        d.dispose();
+      }
+      drafts.removeWhere(tooLong.contains);
+      AppSnackbar.error(context, _mode == CreateMode.reel ? 'Reels can be up to $limit seconds. Post longer videos as a normal post.' : 'Story videos can be up to $limit seconds.');
+      if (drafts.isEmpty) {
+        setState(() => _preparing = false);
+        if (closeIfEmpty && _items.isEmpty) Navigator.of(context).pop(false);
+        return;
+      }
     }
     setState(() {
       _items.addAll(drafts);
@@ -201,14 +331,21 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
       d.video?.pause();
     }
     try {
-      await sl<ContentRepository>().createPost(
-        media: [for (final d in _items) d.media],
-        caption: _caption.text.trim(),
-        aspectRatios: [for (final d in _items) d.ratio],
-      );
+      if (_mode == CreateMode.story) {
+        final d = _items.first;
+        await StoryRepository.i.create(media: d.media, caption: _caption.text.trim(), duration: d.seconds);
+      } else {
+        await sl<ContentRepository>().createPost(
+          media: [for (final d in _items) d.media],
+          caption: _caption.text.trim(),
+          aspectRatios: [for (final d in _items) d.ratio],
+          durations: [for (final d in _items) d.seconds],
+          reel: _mode == CreateMode.reel,
+        );
+      }
       if (!mounted) return;
       HapticFeedback.mediumImpact();
-      AppSnackbar.success(context, 'Posted 🎉');
+      AppSnackbar.success(context, switch (_mode) { CreateMode.post => 'Posted 🎉', CreateMode.reel => 'Reel posted 🎬', CreateMode.story => 'Added to your story' });
       Navigator.of(context).pop(true);
     } on ApiException catch (e) {
       if (!mounted) return;
@@ -226,7 +363,7 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
     return Scaffold(
       appBar: AppBar(
         leading: IconButton(tooltip: 'Close', icon: const Icon(AppIcons.close), onPressed: () => Navigator.of(context).maybePop(false)),
-        title: const Text('New post'),
+        title: Text(_mode.title),
         actions: [
           Padding(
             padding: const EdgeInsets.only(right: AppSpacing.md),
@@ -243,7 +380,7 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
             Padding(
               padding: const EdgeInsets.fromLTRB(AppSpacing.gutter, AppSpacing.xs, AppSpacing.gutter, 0),
               child: current == null
-                  ? _EmptyPreview(loading: _preparing, onAdd: _add)
+                  ? _EmptyPreview(loading: _preparing, onAdd: _add, mode: _mode)
                   : _Preview(draft: current, soundOn: _soundOn, onToggleSound: () {
                 setState(() => _soundOn = !_soundOn);
                 current.video?.setVolume(_soundOn ? 1 : 0);
@@ -267,8 +404,8 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
                 ),
               ),
 
-            // Thumbnails
-            if (_items.isNotEmpty)
+            // Thumbnails (posts only — reels and stories are one item)
+            if (_items.isNotEmpty && _mode == CreateMode.post)
               SizedBox(
                 height: 92,
                 child: ListView.separated(
@@ -297,10 +434,24 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
                   },
                 ),
               ),
-            if (_items.isNotEmpty)
+            if (_items.isNotEmpty && _mode == CreateMode.post)
               Padding(
                 padding: const EdgeInsets.fromLTRB(AppSpacing.gutter, AppSpacing.xs, AppSpacing.gutter, 0),
-                child: Text('${_items.length} of ${ContentRepository.maxMediaPerPost} · tap a thumbnail to edit it', style: context.text.bodySmall?.copyWith(fontSize: 12)),
+                child: Text('${_items.length} of ${ContentRepository.maxMediaPerPost} · all show together in one post', style: context.text.bodySmall?.copyWith(fontSize: 12)),
+              ),
+            if (_items.isNotEmpty && _mode != CreateMode.post)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(AppSpacing.gutter, AppSpacing.md, AppSpacing.gutter, 0),
+                child: OutlinedButton.icon(
+                  onPressed: _preparing
+                      ? null
+                      : () async {
+                    _remove(0);
+                    await _add();
+                  },
+                  icon: const Icon(AppIcons.refresh, size: 18),
+                  label: Text(_mode == CreateMode.reel ? 'Choose another video' : 'Choose another photo or video'),
+                ),
               ),
 
             // Caption
@@ -308,12 +459,12 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
               padding: const EdgeInsets.fromLTRB(AppSpacing.gutter, AppSpacing.lg, AppSpacing.gutter, 0),
               child: TextField(
                 controller: _caption,
-                minLines: 3,
+                minLines: _mode == CreateMode.story ? 1 : 3,
                 maxLines: 8,
-                maxLength: 2200,
+                maxLength: _mode == CreateMode.story ? 200 : 500,
                 textCapitalization: TextCapitalization.sentences,
                 decoration: InputDecoration(
-                  hintText: 'Write a caption…',
+                  hintText: _mode == CreateMode.story ? 'Add text (optional)…' : 'Write a caption…',
                   filled: true,
                   fillColor: palette.surface,
                   border: OutlineInputBorder(borderRadius: BorderRadius.circular(16), borderSide: BorderSide(color: palette.border)),
@@ -386,10 +537,11 @@ class _Preview extends StatelessWidget {
 }
 
 class _EmptyPreview extends StatelessWidget {
-  const _EmptyPreview({required this.loading, required this.onAdd});
+  const _EmptyPreview({required this.loading, required this.onAdd, required this.mode});
 
   final bool loading;
   final VoidCallback onAdd;
+  final CreateMode mode;
 
   @override
   Widget build(BuildContext context) {
@@ -410,12 +562,19 @@ class _EmptyPreview extends StatelessWidget {
                 Container(
                   padding: const EdgeInsets.all(16),
                   decoration: const BoxDecoration(gradient: _gradient, shape: BoxShape.circle),
-                  child: const Icon(AppIcons.image, color: Colors.white, size: 28),
+                  child: Icon(mode == CreateMode.reel ? AppIcons.video : AppIcons.image, color: Colors.white, size: 28),
                 ),
                 const SizedBox(height: AppSpacing.md),
-                Text('Add photos or videos', style: context.text.titleMedium),
+                Text(switch (mode) { CreateMode.post => 'Add photos or videos', CreateMode.reel => 'Choose a short video', CreateMode.story => 'Add a photo or video' }, style: context.text.titleMedium),
                 const SizedBox(height: 4),
-                Text('Up to ${ContentRepository.maxMediaPerPost} · any shape', style: context.text.bodySmall),
+                Text(
+                  switch (mode) {
+                    CreateMode.post => 'Up to ${ContentRepository.maxMediaPerPost} · shown together in one post',
+                    CreateMode.reel => 'Up to ${ContentRepository.reelMaxSeconds} seconds · vertical works best',
+                    CreateMode.story => 'Videos up to ${StoryRepository.videoMaxSeconds} seconds · gone after 24 hours',
+                  },
+                  style: context.text.bodySmall,
+                ),
               ],
             ),
           ),

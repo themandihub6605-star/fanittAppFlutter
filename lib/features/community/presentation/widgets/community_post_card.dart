@@ -28,12 +28,21 @@ class CommunityPostCard extends StatefulWidget {
     required this.canModerate,
     required this.onChanged,
     required this.onDeleted,
+    this.showFreeTag = false,
+    this.canMarkFree = false,
   });
 
   final CommunityPost post;
   final String? myUserId;
   final bool canInteract;
   final bool canModerate;
+
+  /// Paid community: show the "Free" tag (visitors and moderators only —
+  /// paying members don't need it).
+  final bool showFreeTag;
+
+  /// Owner / moderator of a paid community: can open the post to everyone.
+  final bool canMarkFree;
   final ValueChanged<CommunityPost> onChanged;
   final VoidCallback onDeleted;
 
@@ -125,6 +134,14 @@ class _CommunityPostCardState extends State<CommunityPostCard> {
     if (mounted) AppSnackbar.success(context, pinned ? 'Pinned to the top' : 'Unpinned');
   });
 
+  Future<void> _toggleFree() => _run(() async {
+    final res = await _repo.setPostFree(_post.id, !_post.isFree);
+    widget.onChanged(_post.copyWith(isFree: res.isFree));
+    if (mounted) {
+      AppSnackbar.success(context, res.isFree ? 'Free post — anyone can read it (${res.freeCount}/3)' : 'Members only now');
+    }
+  });
+
   Future<void> _delete() async {
     final ok = await confirmAction(
       context,
@@ -150,6 +167,13 @@ class _CommunityPostCardState extends State<CommunityPostCard> {
           children: [
             if (_isAuthor && _post.text.isNotEmpty)
               ListTile(leading: const Icon(AppIcons.pencil), title: const Text('Edit'), onTap: () { Navigator.pop(ctx); _edit(); }),
+            if (widget.canMarkFree)
+              ListTile(
+                leading: Icon(_post.isFree ? AppIcons.lock : AppIcons.globe),
+                title: Text(_post.isFree ? 'Make members only' : 'Make free for everyone'),
+                subtitle: Text(_post.isFree ? 'Only people with a plan can read it' : 'Anyone can read it without a plan · max 3'),
+                onTap: () { Navigator.pop(ctx); _toggleFree(); },
+              ),
             if (widget.canModerate)
               ListTile(
                 leading: const Icon(AppIcons.pushPin),
@@ -179,12 +203,13 @@ class _CommunityPostCardState extends State<CommunityPostCard> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          if (post.isPinned || post.isAnnouncement)
+          if (post.isPinned || post.isAnnouncement || (widget.showFreeTag && post.isFree))
             Padding(
               padding: const EdgeInsets.only(bottom: AppSpacing.sm),
               child: Wrap(
                 spacing: AppSpacing.xs,
                 children: [
+                  if (widget.showFreeTag && post.isFree) const _Tag(icon: AppIcons.globe, label: 'Free post', color: AppColors.success),
                   if (post.isPinned) _Tag(icon: AppIcons.pushPin, label: 'Pinned', color: palette.textSecondary),
                   if (post.isAnnouncement) const _Tag(icon: AppIcons.campaigns, label: 'Announcement', color: AppColors.primary),
                 ],

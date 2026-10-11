@@ -10,16 +10,24 @@ import '../../../core/services/media_picker.dart';
 import '../../../core/utils/json.dart';
 
 class PostMedia extends Equatable {
-  const PostMedia({required this.url, required this.isVideo, this.aspectRatio});
+  const PostMedia({required this.url, required this.isVideo, this.aspectRatio, this.thumbnailUrl = '', this.duration = 0});
 
   factory PostMedia.fromJson(Map<String, dynamic> json) => PostMedia(
     url: J.str(json, 'url'),
     isVideo: J.str(json, 'type') == 'video',
     aspectRatio: (json['aspectRatio'] as num?)?.toDouble(),
+    thumbnailUrl: J.str(json, 'thumbnailUrl'),
+    duration: J.integer(json, 'duration'),
   );
 
   final String url;
   final bool isVideo;
+
+  /// Poster frame for videos (empty for photos / old posts).
+  final String thumbnailUrl;
+
+  /// Video length in seconds (0 when unknown).
+  final int duration;
 
   /// Width ÷ height saved at upload (null for older posts).
   final double? aspectRatio;
@@ -44,11 +52,39 @@ class Post extends Equatable {
     this.creatorSlug,
     this.isFollowingCreator = false,
     this.isSaved = false,
+    this.isReel = false,
+    this.viewCount = 0,
+    this.isBrand = false,
+    this.verified = false,
   });
 
   factory Post.fromJson(Map<String, dynamic> json) {
     final creator = J.map(json, 'creator');
     final creatorUser = creator == null ? null : J.map(creator, 'user');
+    // New API: one `author` for creators and brands. Old API: only `creator`.
+    final author = J.map(json, 'author');
+    if (author != null) {
+      return Post(
+        id: J.id(json),
+        media: J.list(json, 'mediaItems', PostMedia.fromJson),
+        caption: J.str(json, 'caption'),
+        likeCount: J.integer(json, 'likeCount'),
+        createdAt: J.date(json, 'createdAt') ?? DateTime.now(),
+        likedBy: (json['likedBy'] as List<dynamic>? ?? const []).map((e) => e.toString()).toSet(),
+        likePreview: J.list(json, 'likePreview', UserLite.fromJson),
+        creatorId: J.strOrNull(author, 'profileId'),
+        creatorUserId: J.strOrNull(author, '_id'),
+        creatorName: J.strOrNull(author, 'name'),
+        creatorAvatarUrl: J.strOrNull(author, 'avatarUrl'),
+        creatorSlug: J.strOrNull(author, 'slug'),
+        isFollowingCreator: J.boolean(author, 'isFollowing'),
+        isSaved: J.boolean(json, 'isSaved'),
+        isReel: J.str(json, 'kind') == 'reel',
+        viewCount: J.integer(json, 'viewCount'),
+        isBrand: J.str(author, 'role') == 'brand',
+        verified: J.boolean(author, 'verified'),
+      );
+    }
     return Post(
       id: J.id(json),
       media: J.list(json, 'mediaItems', PostMedia.fromJson),
@@ -90,6 +126,19 @@ class Post extends Equatable {
   /// The current user saved this post.
   final bool isSaved;
 
+  /// A reel (one short vertical video) instead of a normal post.
+  final bool isReel;
+  final int viewCount;
+
+  /// Posted by a brand — [creatorId]/[creatorSlug] are then the brand's.
+  final bool isBrand;
+  final bool verified;
+
+  /// Opens the author's profile (creator or brand).
+  String? get authorRoute => creatorSlug == null ? null : (isBrand ? '/app/brands/$creatorSlug' : '/app/creators/$creatorSlug');
+
+  PostMedia? get cover => media.isEmpty ? null : media.first;
+
   bool likedByUser(String userId) => likedBy.contains(userId);
 
   Post copyWith({
@@ -114,6 +163,10 @@ class Post extends Equatable {
         creatorSlug: creatorSlug,
         isFollowingCreator: isFollowingCreator ?? this.isFollowingCreator,
         isSaved: isSaved ?? this.isSaved,
+        isReel: isReel,
+        viewCount: viewCount,
+        isBrand: isBrand,
+        verified: verified,
       );
 
   /// Local like/unlike, keeping the "Liked by" preview in step.
@@ -231,18 +284,30 @@ class ContentRepository {
 
   final ApiClient _api;
 
-  static const maxPosts = 5;
-  static const maxMediaPerPost = 5;
+  static const maxPosts = 50;
+  static const maxReels = 50;
+  static const maxMediaPerPost = 10;
+  static const reelMaxSeconds = 90;
 
   Future<List<Post>> myPosts() async => (await _api.get('/posts/me', parser: (d) => J.listOf(d, Post.fromJson))).data;
 
   Future<List<Post>> creatorPosts(String creatorProfileId) async =>
       (await _api.get('/posts/creator/$creatorProfileId', parser: (d) => J.listOf(d, Post.fromJson))).data;
 
-  Future<Post> createPost({required List<PickedMedia> media, String caption = '', List<double?> aspectRatios = const []}) async {
+  /// Posts a normal post (1-10 photos/videos) or a reel (one short video).
+  /// [durations] are video lengths in seconds, in the same order as [media].
+  Future<Post> createPost({
+    required List<PickedMedia> media,
+    String caption = '',
+    List<double?> aspectRatios = const [],
+    List<int> durations = const [],
+    bool reel = false,
+  }) async {
     final form = FormData.fromMap({
       'caption': caption,
+      'kind': reel ? 'reel' : 'post',
       if (aspectRatios.isNotEmpty) 'aspectRatios': jsonEncode(aspectRatios),
+      if (durations.isNotEmpty) 'durations': jsonEncode(durations),
     });
     for (final item in media) {
       form.files.add(MapEntry('media', await multipartFrom(item)));
@@ -327,8 +392,32 @@ class ContentRepository {
     await _api.patch('/sessions/$id/end-live', parser: (_) => null);
   }
 
-  Future<List<Post>> feed({int limit = 30}) async =>
-      (await _api.get('/posts/feed', query: {'limit': limit}, parser: (d) => J.listOf(d, Post.fromJson))).data;
+  /// Normal posts (reels come from [reels]).
+  Future<List<Post>> feed({int page = 1, int limit = 15}) async =>
+      (await _api.get('/posts/feed', query: {'page': page, 'limit': limit}, parser: (d) => J.listOf(d, Post.fromJson))).data;
+
+  /// Latest reels. [start] (a reel id) is returned first — for opening the player on it.
+  Future<({List<Post> items, bool hasMore})> reels({int page = 1, int limit = 10, String? start}) async =>
+      (await _api.get(
+        '/posts/reels',
+        query: {'page': page, 'limit': limit, if (start != null) 'start': start},
+        parser: (d) {
+          final m = J.asMap(d);
+          return (items: J.list(m, 'items', Post.fromJson), hasMore: J.boolean(m, 'hasMore'));
+        },
+      ))
+          .data;
+
+  /// Counts one view of a reel (fire and forget).
+  Future<void> viewReel(String id) async {
+    try {
+      await _api.post('/posts/$id/view', parser: (_) => null);
+    } catch (_) {}
+  }
+
+  /// A brand's posts and reels.
+  Future<List<Post>> brandPosts(String brandProfileId) async =>
+      (await _api.get('/posts/brand/$brandProfileId', parser: (d) => J.listOf(d, Post.fromJson))).data;
 
   /// One post (opened from a shared link).
   Future<Post> post(String id) async => (await _api.get('/posts/$id', parser: (d) => Post.fromJson(J.asMap(d)))).data;

@@ -122,6 +122,7 @@ class NewCommunityPost {
     this.pollOptions = const [],
     this.pollDays = 3,
     this.isAnnouncement = false,
+    this.isFree = false,
     this.mentionIds = const [],
   });
 
@@ -131,6 +132,9 @@ class NewCommunityPost {
   final List<String> pollOptions;
   final int pollDays;
   final bool isAnnouncement;
+
+  /// Paid communities: anyone can read it without a plan (max 3).
+  final bool isFree;
   final List<String> mentionIds;
 
   bool get hasPoll => pollOptions.length >= 2;
@@ -235,7 +239,8 @@ class CommunityRepository {
     parser: (d) {
       final m = J.asMap(d);
       return Paged(
-        items: J.list(m, 'posts', CommunityPost.fromJson),
+        // Without a plan the server adds up to 2 locked previews after the free posts.
+        items: [...J.list(m, 'posts', CommunityPost.fromJson), ...J.list(m, 'locked', CommunityPost.fromJson)],
         page: J.integer(m, 'page', 1),
         pages: J.integer(m, 'pages', 1),
         total: J.integer(m, 'total'),
@@ -250,6 +255,7 @@ class CommunityRepository {
       if (input.hasPoll)
         'poll': jsonEncode({'question': input.pollQuestion, 'options': input.pollOptions, 'durationHours': input.pollDays * 24}),
       if (input.isAnnouncement) 'isAnnouncement': 'true',
+      if (input.isFree) 'isFree': 'true',
       if (input.mentionIds.isNotEmpty) 'mentions': jsonEncode(input.mentionIds),
     });
     for (final item in input.media) {
@@ -281,6 +287,17 @@ class CommunityRepository {
 
   Future<bool> togglePin(String postId) async =>
       (await _api.post('/communities/posts/$postId/pin', parser: (d) => J.boolean(J.asMap(d), 'isPinned'))).data;
+
+  /// Paid communities: open a post to everyone (or back to members only).
+  Future<({bool isFree, int freeCount})> setPostFree(String postId, bool isFree) async => (await _api.post(
+    '/communities/posts/$postId/free',
+    data: {'isFree': isFree},
+    parser: (d) {
+      final m = J.asMap(d);
+      return (isFree: J.boolean(m, 'isFree'), freeCount: J.integer(m, 'freeCount'));
+    },
+  ))
+      .data;
 
   Future<PostPoll> vote(String postId, int optionIndex) async => (await _api.post(
     '/communities/posts/$postId/vote',

@@ -106,6 +106,10 @@ class _FanittAppState extends State<FanittApp> {
         _router.push(AppRoutes.liveDetail(id));
       case 'StoreOrder':
         _router.push(data['type'] == 'store_sale' ? AppRoutes.storeSales : AppRoutes.library);
+      case 'ShopOrder':
+        _router.push(data['type'] == 'store_sale' ? AppRoutes.sellerShopOrder(id) : AppRoutes.shopOrder(id));
+      case 'ShopProduct':
+        _router.push(AppRoutes.sellerShopProducts);
       case 'Store':
         _router.push(AppRoutes.store);
       default:

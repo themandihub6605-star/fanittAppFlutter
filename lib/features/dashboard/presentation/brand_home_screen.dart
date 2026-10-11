@@ -89,7 +89,7 @@ class _BrandHomeView extends StatelessWidget {
                 // Build the whole home once so sections don't reload or re-animate while scrolling.
                 cacheExtent: 4000,
                 // The hero draws under the status bar itself.
-                padding: const EdgeInsets.only(bottom: AppSpacing.huge),
+                padding: const EdgeInsets.only(bottom: AppSpacing.md),
                 children: [
                   // Full-bleed slider + header (greeting header when no banners).
                   HomeHeroSlider(topInset: MediaQuery.paddingOf(context).top),
@@ -206,7 +206,8 @@ class _BrandHomeView extends StatelessWidget {
                     ),
                   ),
 
-                  const Padding(padding: EdgeInsets.fromLTRB(AppSpacing.gutter, AppSpacing.xl, AppSpacing.gutter, 0), child: StorePromoBanner()),
+                  // Store banner — wider than the cards (12px side margins) and taller.
+                  const Padding(padding: EdgeInsets.fromLTRB(12, AppSpacing.xl, 12, 0), child: StorePromoBanner()),
                   // Discover sections — order, titles and pinned items come from the admin panel.
                   const HomeSections(),
                 ],
