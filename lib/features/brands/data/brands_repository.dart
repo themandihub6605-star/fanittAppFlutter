@@ -56,9 +56,9 @@ class BrandsRepository {
 
   final ApiClient _api;
 
-  Future<Paged<BrandListItem>> list({String? search, List<String>? ids, int page = 1}) async => (await _api.get(
+  Future<Paged<BrandListItem>> list({String? search, List<String>? ids, int page = 1, int limit = 20}) async => (await _api.get(
     '/brands',
-    query: {'page': page, 'limit': 20, if (search != null && search.isNotEmpty) 'search': search, if (ids != null && ids.isNotEmpty) 'ids': ids.join(',')},
+    query: {'page': page, 'limit': limit, if (search != null && search.isNotEmpty) 'search': search, if (ids != null && ids.isNotEmpty) 'ids': ids.join(',')},
     parser: (d) {
       final m = J.asMap(d);
       final total = J.integer(m, 'total');

@@ -1,3 +1,4 @@
+// File: lib/features/store/presentation/creator/store_entry_screen.dart
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_animate/flutter_animate.dart';
@@ -9,6 +10,7 @@ import '../../../../core/bloc/load_cubit.dart';
 import '../../../../core/di/injection.dart';
 import '../../../../core/network/api_exception.dart';
 import '../../../../core/router/app_routes.dart';
+import '../../../../core/services/feature_flags.dart';
 import '../../../../core/services/share_service.dart';
 import '../../../../core/services/media_picker.dart';
 import '../../../../core/theme/app_colors.dart';
@@ -24,6 +26,7 @@ import '../../../../core/widgets/app_text_field.dart';
 import '../../../../core/widgets/async_view.dart';
 import '../../../../core/widgets/image_upload_box.dart';
 import '../../data/shop_repository.dart';
+import '../../data/store_access.dart';
 import '../../data/store_repository.dart';
 import '../commerce/shop_widgets.dart';
 import '../widgets/store_widgets.dart';
@@ -50,6 +53,7 @@ class StoreEntryScreen extends StatelessWidget {
         builder: (context) {
           final cubit = context.watch<LoadCubit<MyStore>>();
           final data = cubit.state.data;
+          if (data != null) StoreAccess.apply(data);
           final active = data?.store?.isActive ?? false;
           return Scaffold(
             appBar: active ? null : AppBar(title: const Text('Fanitt Store')),
@@ -119,10 +123,16 @@ class _StoreHome extends StatelessWidget {
               sliver: SliverToBoxAdapter(child: _EarningsCard(store: store, summary: summary).animate().fadeIn(delay: 60.ms, duration: 300.ms)),
             ),
 
-            // Shop — physical products & orders
-            SliverPadding(
-              padding: const EdgeInsets.fromLTRB(AppSpacing.gutter, AppSpacing.sm, AppSpacing.gutter, 0),
-              sliver: SliverToBoxAdapter(child: _ShopCard(summary: shop).animate().fadeIn(delay: 150.ms, duration: 350.ms)),
+            // Shop — physical products & orders. Hidden while the admin has
+            // the Fanitt Store shop switched off.
+            ValueListenableBuilder<bool>(
+              valueListenable: FeatureFlags.store,
+              builder: (context, shopOn, _) => shopOn
+                  ? SliverPadding(
+                padding: const EdgeInsets.fromLTRB(AppSpacing.gutter, AppSpacing.sm, AppSpacing.gutter, 0),
+                sliver: SliverToBoxAdapter(child: _ShopCard(summary: shop).animate().fadeIn(delay: 150.ms, duration: 350.ms)),
+              )
+                  : const SliverToBoxAdapter(child: SizedBox.shrink()),
             ),
 
             // Tools
@@ -134,7 +144,7 @@ class _StoreHome extends StatelessWidget {
                   children: [
                     Text('Grow with your fans', style: context.text.titleLarge?.copyWith(fontSize: 18, fontWeight: FontWeight.w700)),
                     const SizedBox(height: 2),
-                    Text('Go live, host meets, build a community and share picks', style: context.text.bodySmall),
+                    Text('Go live, host live sessions, sell digital products and take paid calls', style: context.text.bodySmall),
                   ],
                 ),
               ),
@@ -162,11 +172,7 @@ class _StoreHome extends StatelessWidget {
                       children: [
                         _ManageTile(icon: AppIcons.chartLine, color: const Color(0xFF00A3A3), title: 'Analytics', subtitle: 'Views, sales, lives, calls and more', onTap: () => context.push(AppRoutes.storeAnalytics)),
                         if (enabled('digital_products'))
-                          _ManageTile(icon: AppIcons.download, color: const Color(0xFF7C4DFF), title: 'Digital products', subtitle: 'Courses, ebooks, templates — instant download', onTap: () => context.push(AppRoutes.storeProducts)),
-                        if (enabled('digital_products'))
                           _ManageTile(icon: AppIcons.receipt, color: AppColors.primary, title: 'Digital sales', subtitle: 'Everyone who bought a digital product', onTap: () => context.push(AppRoutes.storeSales)),
-                        if (enabled('chat_calls'))
-                          _ManageTile(icon: AppIcons.phone, color: const Color(0xFF1E88E5), title: 'Paid calls', subtitle: 'Audio & video calls with fans, per minute', onTap: () => context.push(AppRoutes.storeCalls)),
                         if (enabled('fanbox'))
                           _ManageTile(icon: AppIcons.gift, color: const Color(0xFFEC2A78), title: 'FanBox', subtitle: 'Tips your fans sent you', onTap: () => context.push(AppRoutes.storeFanbox)),
                         _ManageTile(icon: AppIcons.wallet, color: AppColors.success, title: 'Wallet & withdrawals', subtitle: 'Store earnings land in your Fanitt wallet', onTap: () => context.push(AppRoutes.wallet)),
@@ -386,10 +392,12 @@ class _Tool {
 }
 
 const _tools = [
-  _Tool(key: 'virtual_meet', title: 'Virtual Meet', subtitle: 'Webinars & 1:1 sessions', icon: AppIcons.videoCamera, colors: [Color(0xFF7C4DFF), Color(0xFFB388FF)], route: AppRoutes.sessions),
+  _Tool(key: 'virtual_meet', title: 'Live session', subtitle: 'Webinars & 1:1 sessions', icon: AppIcons.videoCamera, colors: [Color(0xFF7C4DFF), Color(0xFFB388FF)], route: AppRoutes.sessions),
   _Tool(key: 'stream_live', title: 'Stream Live', subtitle: 'Go live — free or paid', icon: AppIcons.broadcast, colors: [Color(0xFFE53935), Color(0xFFFF7043)], route: AppRoutes.storeLives),
   _Tool(key: 'community', title: 'Community', subtitle: 'Free or paid groups', icon: AppIcons.users, colors: [Color(0xFF00A3A3), Color(0xFF26C6DA)], route: AppRoutes.communities),
   _Tool(key: 'affiliate', title: 'Affiliate store', subtitle: 'Share links you love', icon: AppIcons.link, colors: [Color(0xFFF59E0B), Color(0xFFFFCA28)], route: AppRoutes.storeAffiliate),
+  _Tool(key: 'digital_products', title: 'Digital products', subtitle: 'Courses, ebooks & templates', icon: AppIcons.download, colors: [Color(0xFF3949AB), Color(0xFF7986CB)], route: AppRoutes.storeProducts),
+  _Tool(key: 'chat_calls', title: 'Paid calls', subtitle: 'Audio & video, per minute', icon: AppIcons.phone, colors: [Color(0xFF1E88E5), Color(0xFF64B5F6)], route: AppRoutes.storeCalls),
 ];
 
 /// One tool — drawn in the app (icon + gradient), no uploaded images.

@@ -1,9 +1,11 @@
+// File: lib/features/content/presentation/my_sessions_screen.dart
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
 import '../../../core/bloc/action_cubit.dart';
 import '../../../core/bloc/load_cubit.dart';
+import '../../../core/bloc/paged_cubit.dart';
 import '../../../core/di/injection.dart';
 import '../../../core/models/common_models.dart';
 import '../../../core/network/api_exception.dart';
@@ -22,6 +24,7 @@ import '../../../core/widgets/app_snackbar.dart';
 import '../../../core/widgets/app_text_field.dart';
 import '../../../core/widgets/async_view.dart';
 import '../../../core/widgets/form_controls.dart';
+import '../../../core/widgets/paged_list_view.dart';
 import '../../../core/widgets/image_upload_box.dart';
 import '../../../core/widgets/user_avatar.dart';
 import '../../../core/widgets/status_chip.dart';
@@ -29,6 +32,8 @@ import '../../auth/presentation/bloc/auth_bloc.dart';
 import '../../common/data/categories_repository.dart';
 import '../../dashboard/data/dashboard_repository.dart';
 import '../data/content_repository.dart';
+import '../../store/data/meet_host_api.dart';
+import '../../store/presentation/meet/attendance_sheet.dart';
 import '../../store/presentation/meet/meet_detail_screen.dart';
 import 'gifts_screen.dart';
 
@@ -62,29 +67,47 @@ class _SessionsView extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final cubit = context.watch<LoadCubit<List<LiveSession>>>();
-    return Scaffold(
-      appBar: AppBar(title: const Text('Live sessions')),
-      floatingActionButton: FloatingActionButton.extended(onPressed: () => _create(context), icon: const Icon(AppIcons.plus), label: const Text('Schedule')),
-      body: AsyncView<List<LiveSession>>(
-        state: cubit.state,
-        onRetry: cubit.load,
-        builder: (sessions) => AppRefresh(
-          onRefresh: cubit.refresh,
-          child: sessions.isEmpty
-              ? const ScrollableMessage(
-            child: MessageView(
-              icon: AppIcons.videoCamera,
-              title: 'No upcoming sessions',
-              message: 'Host free or paid live sessions and 1:1 calls with your audience — right inside the Fanitt app.',
-            ),
-          )
-              : ListView.separated(
-            physics: const AlwaysScrollableScrollPhysics(),
-            padding: const EdgeInsets.fromLTRB(AppSpacing.gutter, AppSpacing.xs, AppSpacing.gutter, 96),
-            itemCount: sessions.length,
-            separatorBuilder: (_, _) => const SizedBox(height: AppSpacing.sm),
-            itemBuilder: (context, index) => _SessionCard(session: sessions[index]),
+    final palette = context.palette;
+    return DefaultTabController(
+      length: 2,
+      child: Scaffold(
+        appBar: AppBar(
+          title: const Text('Live sessions'),
+          bottom: TabBar(
+            labelColor: AppColors.primary,
+            unselectedLabelColor: palette.textSecondary,
+            indicatorColor: AppColors.primary,
+            dividerColor: palette.border,
+            tabs: const [Tab(text: 'Upcoming'), Tab(text: 'History')],
           ),
+        ),
+        floatingActionButton: FloatingActionButton.extended(onPressed: () => _create(context), icon: const Icon(AppIcons.plus), label: const Text('Schedule')),
+        body: TabBarView(
+          children: [
+            AsyncView<List<LiveSession>>(
+              state: cubit.state,
+              onRetry: cubit.load,
+              builder: (sessions) => AppRefresh(
+                onRefresh: cubit.refresh,
+                child: sessions.isEmpty
+                    ? const ScrollableMessage(
+                  child: MessageView(
+                    icon: AppIcons.videoCamera,
+                    title: 'No upcoming sessions',
+                    message: 'Host free or paid live sessions and 1:1 calls with your audience — right inside the Fanitt app.',
+                  ),
+                )
+                    : ListView.separated(
+                  physics: const AlwaysScrollableScrollPhysics(),
+                  padding: const EdgeInsets.fromLTRB(AppSpacing.gutter, AppSpacing.md, AppSpacing.gutter, 96),
+                  itemCount: sessions.length,
+                  separatorBuilder: (_, _) => const SizedBox(height: AppSpacing.sm),
+                  itemBuilder: (context, index) => _SessionCard(session: sessions[index]),
+                ),
+              ),
+            ),
+            const _HistoryTab(),
+          ],
         ),
       ),
     );
@@ -736,6 +759,154 @@ class MeetPosterPreview extends StatelessWidget {
           ),
         ),
       ],
+    );
+  }
+}
+
+
+// ---------------------------------------------------------------------------
+// History: past sessions with how many came and how long they stayed.
+// ---------------------------------------------------------------------------
+
+class _HistoryTab extends StatefulWidget {
+  const _HistoryTab();
+
+  @override
+  State<_HistoryTab> createState() => _HistoryTabState();
+}
+
+class _HistoryTabState extends State<_HistoryTab> with AutomaticKeepAliveClientMixin {
+  late final PagedCubit<PastSession> _cubit = PagedCubit<PastSession>(MeetHostApi.sessionHistory);
+
+  @override
+  bool get wantKeepAlive => true;
+
+  @override
+  void dispose() {
+    _cubit.close();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    super.build(context);
+    return PagedListView<PastSession>(
+      cubit: _cubit,
+      padding: const EdgeInsets.fromLTRB(AppSpacing.gutter, AppSpacing.md, AppSpacing.gutter, 96),
+      empty: const MessageView(
+        icon: AppIcons.clock,
+        title: 'No past sessions yet',
+        message: 'Sessions you’ve hosted show up here, with who attended and for how long.',
+      ),
+      itemBuilder: (context, s) => _HistoryCard(session: s),
+    );
+  }
+}
+
+class _HistoryCard extends StatelessWidget {
+  const _HistoryCard({required this.session});
+
+  final PastSession session;
+
+  @override
+  Widget build(BuildContext context) {
+    final s = session;
+    final palette = context.palette;
+    final ended = s.status == 'ended';
+    final (label, color) = switch (s.status) {
+      'cancelled' => ('Cancelled', AppColors.error),
+      'missed' => ('Not started', palette.textSecondary),
+      _ => ('Ended', AppColors.success),
+    };
+    final when = s.scheduledAt == null ? '' : Fmt.weekdayDateTime(s.scheduledAt!.toLocal());
+    final price = s.isFree ? 'Free' : Fmt.money(s.price);
+
+    return AppCard(
+      onTap: ended ? () => showAttendanceSheet(context, title: s.title, load: () => MeetHostApi.meetAttendance(s.id)) : null,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              ClipRRect(
+                borderRadius: BorderRadius.circular(12),
+                child: SizedBox(
+                  width: 56,
+                  height: 56,
+                  child: s.coverUrl.isEmpty
+                      ? const DecoratedBox(
+                    decoration: BoxDecoration(gradient: LinearGradient(colors: [Color(0xFF3B1E5E), Color(0xFF1B1B3A)])),
+                    child: Center(child: Icon(AppIcons.videoCamera, color: Colors.white38, size: 22)),
+                  )
+                      : AppNetworkImage(url: s.coverUrl),
+                ),
+              ),
+              const SizedBox(width: AppSpacing.sm),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(s.title, maxLines: 2, overflow: TextOverflow.ellipsis, style: context.text.titleSmall),
+                    const SizedBox(height: 2),
+                    Text('$when · ${s.durationMinutes} min · $price', style: context.text.bodySmall),
+                  ],
+                ),
+              ),
+              const SizedBox(width: AppSpacing.xs),
+              StatusChip(label: label, color: color),
+            ],
+          ),
+          if (ended) ...[
+            const SizedBox(height: AppSpacing.sm),
+            Row(
+              children: [
+                _HistoryStat(value: s.bookedCount > 0 ? '${s.attended}/${s.bookedCount}' : '${s.attended}', label: 'Attended'),
+                const SizedBox(width: AppSpacing.xs),
+                _HistoryStat(value: s.attended == 0 ? '—' : watchTime(s.averageSeconds), label: 'Avg. time'),
+                const SizedBox(width: AppSpacing.xs),
+                _HistoryStat(value: s.watchedSeconds == 0 ? '—' : watchTime(s.watchedSeconds), label: 'Total time'),
+              ],
+            ),
+            const SizedBox(height: AppSpacing.xs),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: [
+                Text('See who attended', style: context.text.labelMedium?.copyWith(color: AppColors.primary, fontWeight: FontWeight.w700)),
+                const SizedBox(width: 2),
+                const Icon(AppIcons.chevronRight, size: 16, color: AppColors.primary),
+              ],
+            ),
+          ] else if (s.status == 'missed' && s.bookedCount > 0) ...[
+            const SizedBox(height: AppSpacing.xs),
+            Text('${s.bookedCount} people had booked this session', style: context.text.bodySmall?.copyWith(color: palette.textSecondary)),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _HistoryStat extends StatelessWidget {
+  const _HistoryStat({required this.value, required this.label});
+
+  final String value;
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return Expanded(
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+        decoration: BoxDecoration(color: context.palette.surfaceMuted, borderRadius: BorderRadius.circular(12)),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(value, maxLines: 1, overflow: TextOverflow.ellipsis, style: context.text.titleSmall?.copyWith(fontWeight: FontWeight.w800)),
+            Text(label, style: context.text.bodySmall?.copyWith(fontSize: 11)),
+          ],
+        ),
+      ),
     );
   }
 }

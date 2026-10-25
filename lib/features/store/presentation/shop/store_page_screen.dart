@@ -4,6 +4,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../../core/bloc/load_cubit.dart';
+import '../../../../core/services/feature_flags.dart';
 import '../../../../core/di/injection.dart';
 import '../../../../core/router/app_routes.dart';
 import '../../../../core/theme/app_colors.dart';
@@ -139,8 +140,9 @@ class _StoreBody extends StatelessWidget {
                     onPressed: () => showFanBoxSheet(context, storeId: store.id, creatorName: store.name, config: page.fanbox),
                   ),
                 ],
-                // Physical products (clothes, merch…) — hidden when there are none.
-                StoreShopSection(storeId: store.id, storeName: store.name),
+                // Physical products (clothes, merch…) — hidden when there are none,
+                // or while the admin has the products shop switched off.
+                StoreOnly(child: StoreShopSection(storeId: store.id, storeName: store.name)),
                 if (page.calls.enabled && !page.isOwner) ...[
                   const SizedBox(height: AppSpacing.lg),
                   _CallCard(page: page),

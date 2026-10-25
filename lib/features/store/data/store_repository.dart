@@ -351,6 +351,15 @@ class StoreRepository {
 
   static CallSession _call(dynamic d) => CallSession.fromJson(J.asMap(d));
 
+  /// Creators taking 1-to-1 calls right now (online first), each with
+  /// their audio / video rate per minute (0 = free).
+  Future<List<({StoreInfo store, CallInfo calls})>> callCreators({int page = 1}) async => (await _api.get(
+    '/store/calls/available',
+    query: {'page': page},
+    parser: (d) => J.list(J.asMap(d), 'stores', (j) => (store: StoreInfo.fromJson(j), calls: CallInfo.fromJson(J.map(j, 'calls')))),
+  ))
+      .data;
+
   Future<CallSettings> callSettings() async => (await _api.get('/store/me/calls/settings', parser: (d) => CallSettings.fromJson(J.asMap(d)))).data;
 
   Future<CallSettings> updateCallSettings({bool? enabled, bool? audioEnabled, bool? videoEnabled, int? audioRate, int? videoRate}) async => (await _api.patch(

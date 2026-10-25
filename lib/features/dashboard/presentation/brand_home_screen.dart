@@ -11,7 +11,6 @@ import '../../../core/theme/app_icons.dart';
 import '../../../core/theme/app_palette.dart';
 import '../../../core/theme/app_spacing.dart';
 import '../../../core/utils/formatters.dart';
-import '../../store/presentation/widgets/store_promo_banner.dart';
 import '../../../core/widgets/app_update_banner.dart';
 import '../../../core/widgets/app_card.dart';
 import '../../../core/widgets/async_view.dart';
@@ -206,10 +205,9 @@ class _BrandHomeView extends StatelessWidget {
                     ),
                   ),
 
-                  // Store banner — wider than the cards (12px side margins) and taller.
-                  const Padding(padding: EdgeInsets.fromLTRB(12, AppSpacing.xl, 12, 0), child: StorePromoBanner()),
                   // Discover sections — order, titles and pinned items come from the admin panel.
-                  const HomeSections(),
+                  // No "Open campaigns" here — those are other brands' campaigns.
+                  const HomeSections(showCampaigns: false),
                 ],
               ),
             ),

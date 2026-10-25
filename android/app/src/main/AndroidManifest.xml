@@ -1,3 +1,4 @@
+<!-- File: android/app/src/main/AndroidManifest.xml -->
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
     <!-- Camera hardware (optional so the app still installs on devices without one) -->
@@ -17,6 +18,9 @@
     <uses-permission android:name="android.permission.CHANGE_NETWORK_STATE" />
     <uses-permission android:name="android.permission.BLUETOOTH" android:maxSdkVersion="30" />
     <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
+
+    <!-- Keeps the screen on during live sessions -->
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
 
     <application
         android:label="Fanitt"
@@ -43,43 +47,12 @@
                 <action android:name="android.intent.action.MAIN"/>
                 <category android:name="android.intent.category.LAUNCHER"/>
             </intent-filter>
-
-            <!-- App links: lets the website banner open Fanitt Store (fanitt://open/store) -->
-            <meta-data android:name="flutter_deeplinking_enabled" android:value="true" />
-            <intent-filter>
-                <action android:name="android.intent.action.VIEW" />
-                <category android:name="android.intent.category.DEFAULT" />
-                <category android:name="android.intent.category.BROWSABLE" />
-                <data android:scheme="fanitt" android:host="open" />
-            </intent-filter>
-
-            <!-- Shared links: https://fanitt.com/open/<type>/<id> open straight in the app -->
-            <intent-filter android:autoVerify="true">
-                <action android:name="android.intent.action.VIEW" />
-                <category android:name="android.intent.category.DEFAULT" />
-                <category android:name="android.intent.category.BROWSABLE" />
-                <data android:scheme="https" android:host="fanitt.com" android:pathPrefix="/open" />
-            </intent-filter>
-
-            <!-- Same links handed over by the website (fanitt://fanitt.com/open/...) -->
-            <intent-filter>
-                <action android:name="android.intent.action.VIEW" />
-                <category android:name="android.intent.category.DEFAULT" />
-                <category android:name="android.intent.category.BROWSABLE" />
-                <data android:scheme="fanitt" android:host="fanitt.com" android:pathPrefix="/open" />
-            </intent-filter>
         </activity>
-
-        <!-- Photo crop screen (image_cropper) -->
-        <activity
-            android:name="com.yalantis.ucrop.UCropActivity"
-            android:screenOrientation="portrait"
-            android:theme="@style/Theme.AppCompat.Light.NoActionBar" />
 
         <!-- Push notifications: default channel (matches the app) and accent color -->
         <meta-data
             android:name="com.google.firebase.messaging.default_notification_channel_id"
-            android:value="fanitt_alerts" />
+            android:value="fanitt_default" />
         <meta-data
             android:name="com.google.firebase.messaging.default_notification_color"
             android:resource="@color/notification_accent" />
@@ -98,7 +71,7 @@
             <action android:name="android.intent.action.PROCESS_TEXT"/>
             <data android:mimeType="text/plain"/>
         </intent>
-        <!-- Web links, portfolios, Zoom, affiliate shops, product downloads -->
+        <!-- Web links, portfolios, Zoom -->
         <intent>
             <action android:name="android.intent.action.VIEW" />
             <data android:scheme="https" />

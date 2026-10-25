@@ -1,3 +1,4 @@
+// File: android/app/build.gradle.kts
 import java.io.FileInputStream
 import java.util.Properties
 
@@ -72,6 +73,8 @@ android {
 
 dependencies {
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.4")
+    // Google Play Integrity — the app proves it's the real Play Store build (see MainActivity.kt).
+    implementation("com.google.android.play:integrity:1.4.0")
 }
 
 flutter {

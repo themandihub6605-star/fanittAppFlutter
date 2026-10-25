@@ -1,3 +1,4 @@
+// File: lib/features/store/presentation/meet/meet_detail_screen.dart
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -22,6 +23,8 @@ import '../../../../core/widgets/user_avatar.dart';
 import '../../data/store_repository.dart';
 import '../../../../core/services/share_service.dart';
 import '../widgets/store_widgets.dart';
+import '../../data/meet_host_api.dart';
+import 'attendance_sheet.dart';
 import 'meet_room_screen.dart';
 
 /// Joins (or, for the host, starts) a meet and opens the in-app room.
@@ -165,6 +168,8 @@ class _MeetDetailScreenState extends State<MeetDetailScreen> {
         action = _Note(icon: AppIcons.checkCircle, color: palette.textSecondary, text: 'This meeting has ended.');
       case 'too_early':
         action = _Note(icon: AppIcons.clock, color: AppColors.info, text: 'You can start this meeting 30 minutes before $when.');
+      case 'locked':
+        action = _Note(icon: AppIcons.lock, color: AppColors.info, text: 'The host has locked this meeting. You can join again when they unlock it.');
       case 'not_booked':
         action = AppButton(
           label: m.isFree ? 'Book for free' : 'Book · ${Fmt.money(m.price)}',
@@ -248,6 +253,15 @@ class _MeetDetailScreenState extends State<MeetDetailScreen> {
         ],
         const SizedBox(height: AppSpacing.xl),
         action,
+        // Host: who came, and how long each person stayed.
+        if (a.isHost && (m.isLive || a.reason == 'ended')) ...[
+          const SizedBox(height: AppSpacing.sm),
+          OutlinedButton.icon(
+            onPressed: () => showAttendanceSheet(context, title: m.title, load: () => MeetHostApi.meetAttendance(m.id)),
+            icon: Icon(AppIcons.users, size: 18),
+            label: const Text('Who attended'),
+          ),
+        ],
         const SizedBox(height: AppSpacing.sm),
         Text('Meetings happen right here in the Fanitt app — no other app or passcode needed.', textAlign: TextAlign.center, style: context.text.bodySmall),
       ],

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:typed_data';
 import 'dart:ui' as ui;
@@ -11,6 +12,7 @@ import 'package:go_router/go_router.dart';
 import '../../../core/bloc/load_cubit.dart';
 import '../../../core/bloc/paged_cubit.dart';
 import '../../../core/di/injection.dart';
+import '../../../core/enums/user_role.dart';
 import '../../../core/models/common_models.dart';
 import '../../../core/network/api_exception.dart';
 import '../../../core/router/app_routes.dart';
@@ -27,6 +29,7 @@ import '../../../core/services/share_service.dart';
 import '../../../core/widgets/async_view.dart';
 import '../../../core/widgets/user_avatar.dart';
 import '../../auth/presentation/bloc/auth_bloc.dart';
+import '../../store/data/store_access.dart';
 import '../../store/data/store_models.dart';
 import '../../store/data/store_repository.dart';
 import '../../store/presentation/live/live_poster_card.dart';
@@ -93,10 +96,53 @@ class _DetailViewState extends State<_DetailView> {
   _Section _section = _Section.posts;
   bool _joinBusy = false;
 
+  /// Lives happening in this community right now (for the "Live now" bar).
+  List<LiveStream> _liveNow = const [];
+  Timer? _livePoll;
+
   Community get c => widget.community;
   CommunityRepository get _repo => sl<CommunityRepository>();
 
-  Future<void> _reload() => context.read<LoadCubit<Community>>().refresh();
+  @override
+  void initState() {
+    super.initState();
+    _loadLiveNow();
+    // A live can start while the screen is open — check now and then.
+    _livePoll = Timer.periodic(const Duration(seconds: 30), (_) => _loadLiveNow());
+  }
+
+  @override
+  void dispose() {
+    _livePoll?.cancel();
+    super.dispose();
+  }
+
+  Future<void> _loadLiveNow() async {
+    try {
+      final res = await sl<StoreRepository>().communityLives(c.id);
+      if (!mounted) return;
+      final now = res.lives.where((l) => l.isLive).toList();
+      if (now.length != _liveNow.length || !now.every((l) => _liveNow.any((o) => o.id == l.id))) {
+        setState(() => _liveNow = now);
+      }
+    } catch (_) {
+      // Keep what we had.
+    }
+  }
+
+  Future<void> _reload() async {
+    unawaited(_loadLiveNow());
+    await context.read<LoadCubit<Community>>().refresh();
+  }
+
+  /// Creators who own the community can go live just for its members.
+  bool _canGoLive(Object? auth) => c.isOwner && auth is AuthAuthenticated && auth.user.role == UserRole.creator;
+
+  /// Opens "Go live" with this community picked (needs a live Fanitt Store).
+  void _goLive(String myId) {
+    HapticFeedback.selectionClick();
+    StoreAccess.open(context, '${AppRoutes.storeLiveNew}?community=${Uri.encodeQueryComponent(c.id)}', userId: myId);
+  }
 
   /// Paid community: pick a plan and pay, then reload.
   Future<void> _buyPlan() async {
@@ -199,6 +245,17 @@ class _DetailViewState extends State<_DetailView> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
+            if (_canGoLive(context.read<AuthBloc>().state))
+              ListTile(
+                leading: const Icon(AppIcons.broadcast, color: AppColors.error),
+                title: const Text('Go live for members'),
+                subtitle: const Text('Only members of this community can watch'),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  final auth = context.read<AuthBloc>().state;
+                  _goLive(auth is AuthAuthenticated ? auth.user.id : '');
+                },
+              ),
             if (c.canModerate)
               ListTile(leading: const Icon(AppIcons.gear), title: const Text('Community settings'), onTap: () { Navigator.pop(ctx); _openSettings(); }),
             if (c.isMember)
@@ -229,7 +286,17 @@ class _DetailViewState extends State<_DetailView> {
     final posts = context.watch<PagedCubit<CommunityPost>>();
     final width = MediaQuery.sizeOf(context).width;
 
+    // "Live now" bar — stays on screen while scrolling, for members and the host.
+    final watchable = [for (final l in _liveNow) if (c.isMember || l.isHost) l];
+
     return Scaffold(
+      bottomNavigationBar: watchable.isEmpty
+          ? null
+          : _LiveNowBar(
+        live: watchable.first,
+        more: watchable.length - 1,
+        onTap: () => context.push(AppRoutes.liveDetail(watchable.first.id)).then((_) => _loadLiveNow()),
+      ),
       floatingActionButton: c.canPost
           ? FloatingActionButton.extended(
         heroTag: 'community-post',
@@ -463,6 +530,20 @@ class _DetailViewState extends State<_DetailView> {
                               _reload();
                             },
                           ),
+                        ),
+                      ),
+                    ],
+                    if (_canGoLive(context.watch<AuthBloc>().state)) ...[
+                      if (c.isMember && c.chatEnabled) const SizedBox(width: AppSpacing.sm),
+                      Expanded(
+                        child: AppButton(
+                          label: 'Go live',
+                          icon: AppIcons.broadcast,
+                          height: 44,
+                          onPressed: () {
+                            final auth = context.read<AuthBloc>().state;
+                            _goLive(auth is AuthAuthenticated ? auth.user.id : '');
+                          },
                         ),
                       ),
                     ],
@@ -895,6 +976,81 @@ class _InfoRow extends StatelessWidget {
         ],
       ),
     );
+  }
+}
+
+/// Sticky bar at the bottom while a members-only live is on.
+class _LiveNowBar extends StatelessWidget {
+  const _LiveNowBar({required this.live, required this.more, required this.onTap});
+
+  final LiveStream live;
+  final int more;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final title = live.title.trim().isEmpty ? 'Live now' : live.title.trim();
+    final sub = live.isHost ? 'You\u2019re live \u00b7 open your room' : (more > 0 ? 'Members only \u00b7 +$more more live' : 'Members only \u00b7 tap to join');
+    return SafeArea(
+      top: false,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(AppSpacing.md, AppSpacing.xs, AppSpacing.md, AppSpacing.sm),
+        child: Material(
+          color: Colors.transparent,
+          child: InkWell(
+            borderRadius: BorderRadius.circular(18),
+            onTap: () {
+              HapticFeedback.selectionClick();
+              onTap();
+            },
+            child: Ink(
+              padding: const EdgeInsets.fromLTRB(12, 10, 10, 10),
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(18),
+                gradient: const LinearGradient(colors: [Color(0xFFE11D48), Color(0xFFF4511E)]),
+                boxShadow: [BoxShadow(color: const Color(0xFFE11D48).withValues(alpha: 0.35), blurRadius: 18, offset: const Offset(0, 8))],
+              ),
+              child: Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.2), borderRadius: BorderRadius.circular(8)),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Container(width: 7, height: 7, decoration: const BoxDecoration(color: Colors.white, shape: BoxShape.circle))
+                            .animate(onPlay: (c) => c.repeat(reverse: true))
+                            .fade(begin: 1, end: 0.25, duration: 650.ms),
+                        const SizedBox(width: 5),
+                        const Text('LIVE', style: TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.w900, letterSpacing: 0.8)),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(title, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.w800)),
+                        const SizedBox(height: 1),
+                        Text(sub, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(color: Colors.white.withValues(alpha: 0.85), fontSize: 11.5, fontWeight: FontWeight.w600)),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                    decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(12)),
+                    child: Text(live.isHost ? 'Open' : 'Join', style: const TextStyle(color: Color(0xFFE11D48), fontSize: 13, fontWeight: FontWeight.w800)),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    ).animate().slideY(begin: 1, end: 0, duration: 320.ms, curve: Curves.easeOutCubic).fadeIn(duration: 200.ms);
   }
 }
 

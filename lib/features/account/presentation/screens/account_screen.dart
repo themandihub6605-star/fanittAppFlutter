@@ -1,3 +1,4 @@
+// File: lib/features/account/presentation/screens/account_screen.dart
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
@@ -8,8 +9,10 @@ import '../../../../core/di/injection.dart';
 import '../../../../core/enums/user_role.dart';
 import '../../../../core/network/api_exception.dart';
 import '../../../../core/router/app_routes.dart';
+import '../../../../core/services/app_rating.dart';
 import '../../../../core/services/share_service.dart';
 import '../../../../core/services/link_opener.dart';
+import '../../../../core/services/feature_flags.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_icons.dart';
 import '../../../../core/theme/app_palette.dart';
@@ -77,30 +80,45 @@ class AccountScreen extends StatelessWidget {
               if (role == UserRole.brand) _Tile(icon: AppIcons.image, title: 'My posts & reels', onTap: () => context.push(AppRoutes.posts)),
               if (role == UserRole.creator) ...[
                 _Tile(icon: AppIcons.image, title: 'My posts & reels', onTap: () => context.push(AppRoutes.posts)),
-              //  _Tile(icon: AppIcons.videoCamera, title: 'Live sessions', onTap: () => context.push(AppRoutes.sessions)),
+                // Hidden for now — Live sessions.
+                // _Tile(icon: AppIcons.videoCamera, title: 'Live sessions', onTap: () => context.push(AppRoutes.sessions)),
                 _Tile(icon: AppIcons.gift, title: 'FanBox gifts', onTap: () => context.push(AppRoutes.gifts)),
               ],
             ]),
             const SizedBox(height: AppSpacing.lg),
-            const _SectionLabel('Fanitt Store'),
-            _Group(children: [
-              if (role == UserRole.creator) _Tile(icon: AppIcons.store, title: 'My Fanitt Store', subtitle: 'Sell, stream and earn', onTap: () => context.push(AppRoutes.store)),
-              if (role != UserRole.fan) _Tile(icon: AppIcons.storeFilled, title: 'Explore stores', onTap: () => context.push(AppRoutes.stores)),
-              _Tile(icon: AppIcons.package, title: 'My orders', subtitle: 'Track your Fanitt Store orders', onTap: () => context.push(AppRoutes.shopOrders)),
-              _Tile(icon: AppIcons.storeFilled, title: 'Fanitt Store', subtitle: 'Merch & products from creators', onTap: () => context.push(AppRoutes.shop)),
-              _Tile(icon: AppIcons.library, title: 'My library', subtitle: 'Digital products you bought', onTap: () => context.push(AppRoutes.library)),
-             // _Tile(icon: AppIcons.videoCamera, title: 'Virtual Meets', subtitle: 'Book and join meetings in the app', onTap: () => context.push(AppRoutes.meets)),
-              _Tile(icon: AppIcons.bookmark, title: 'Saved posts', onTap: () => context.push(AppRoutes.savedPosts)),
-            ]),
-            const SizedBox(height: AppSpacing.lg),
+            // The admin can switch the physical-products shop off; then the
+            // "Fanitt Store · Merch" entry hides (everything else stays).
+            // Agencies don't shop — no store section for them.
+            if (role != UserRole.agency) ...[
+              ValueListenableBuilder<bool>(
+                valueListenable: FeatureFlags.store,
+                builder: (context, storeOn, _) => Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    const _SectionLabel('Fanitt Store'),
+                    _Group(children: [
+                      if (role == UserRole.creator) _Tile(icon: AppIcons.store, title: 'My Fanitt Store', subtitle: 'Sell, stream and earn', onTap: () => context.push(AppRoutes.store)),
+                      if (role != UserRole.fan) _Tile(icon: AppIcons.storeFilled, title: 'Explore stores', onTap: () => context.push(AppRoutes.stores)),
+                      _Tile(icon: AppIcons.package, title: 'My orders', subtitle: 'Track your Fanitt Store orders', onTap: () => context.push(AppRoutes.shopOrders)),
+                      if (storeOn) _Tile(icon: AppIcons.storeFilled, title: 'Fanitt Store', subtitle: 'Merch & products from creators', onTap: () => context.push(AppRoutes.shop)),
+                      _Tile(icon: AppIcons.library, title: 'My library', subtitle: 'Digital products you bought', onTap: () => context.push(AppRoutes.library)),
+                      // Hidden for now — Virtual Meets.
+                      // _Tile(icon: AppIcons.videoCamera, title: 'Virtual Meets', subtitle: 'Book and join meetings in the app', onTap: () => context.push(AppRoutes.meets)),
+                      _Tile(icon: AppIcons.bookmark, title: 'Saved posts', onTap: () => context.push(AppRoutes.savedPosts)),
+                    ]),
+                  ],
+                ),
+              ),
+              const SizedBox(height: AppSpacing.lg),
+            ],
             const _SectionLabel('Discover'),
             _Group(children: [
-              if (role != UserRole.creator) _Tile(icon: AppIcons.feed, title: role == UserRole.brand ? 'Feed · post, reels & stories' : 'Feed', onTap: () => context.push(AppRoutes.feed)),
+              if (role != UserRole.creator && role != UserRole.agency) _Tile(icon: AppIcons.feed, title: role == UserRole.brand ? 'Feed · post, reels & stories' : 'Feed', onTap: () => context.push(AppRoutes.feed)),
               if (role != UserRole.brand)
                 _Tile(icon: AppIcons.creators, title: 'Creators', onTap: () => context.push(AppRoutes.creatorsDirectory)),
-              if (role == UserRole.creator) _Tile(icon: AppIcons.brand, title: 'Brands', onTap: () => context.push(AppRoutes.brands)),
-              _Tile(icon: AppIcons.users, title: 'Communities', onTap: () => context.push(AppRoutes.communities)),
-              _Tile(icon: AppIcons.userPlus, title: 'Following', onTap: () => context.push(AppRoutes.following)),
+              if (role == UserRole.creator || role == UserRole.agency) _Tile(icon: AppIcons.brand, title: 'Brands', onTap: () => context.push(AppRoutes.brands)),
+              if (role != UserRole.agency) _Tile(icon: AppIcons.users, title: 'Communities', onTap: () => context.push(AppRoutes.communities)),
+              if (role != UserRole.agency) _Tile(icon: AppIcons.userPlus, title: 'Following', onTap: () => context.push(AppRoutes.following)),
             ]),
             const SizedBox(height: AppSpacing.lg),
             const _SectionLabel('Money'),
@@ -128,6 +146,7 @@ class AccountScreen extends StatelessWidget {
               _Tile(icon: AppIcons.shieldCheck, title: 'Privacy policy', onTap: () => context.push(AppRoutes.privacyPolicy)),
               _Tile(icon: AppIcons.fileText, title: 'Terms of use', onTap: () => context.push(AppRoutes.termsOfUse)),
               Builder(builder: (ctx) => _Tile(icon: AppIcons.share, title: 'Share Fanitt', subtitle: 'Invite friends to the app', onTap: () => ShareService.send(ctx, ShareService.app()))),
+              _Tile(icon: AppIcons.star, title: 'Rate Fanitt', subtitle: 'Leave a rating on Google Play', onTap: AppRating.rateNow),
             ]),
             const SizedBox(height: AppSpacing.lg),
             const _SectionLabel('Security'),
@@ -231,22 +250,28 @@ class AccountCardState extends State<AccountCard> {
     final stats = <Widget>[
       if (_isCreator)
         _Stat(
+          icon: AppIcons.chartLine,
+          color: AppColors.success,
           label: 'Earnings',
           value: _dashboard == null ? null : Fmt.money(_dashboard!.totalEarnings),
-          hint: _dashboard == null ? null : '${Fmt.money(_dashboard!.thisMonthEarnings)} this month',
-          highlight: true,
+          hint: 'Details',
+          hintColor: AppColors.primary,
           loading: !_loaded,
           onTap: () => context.push(AppRoutes.wallet),
         ),
       _Stat(
+        icon: AppIcons.wallet,
+        color: const Color(0xFFF59E0B),
         label: 'Wallet',
         value: Fmt.money(user.walletBalance),
-        hint: _isCreator ? 'Withdraw' : 'Open',
-        highlight: !_isCreator,
+        hint: _isCreator ? 'Withdraw' : 'Add money',
+        hintColor: AppColors.primary,
         onTap: () => context.push(AppRoutes.wallet),
       ),
       if (_hasPlan)
         _Stat(
+          icon: AppIcons.crown,
+          color: const Color(0xFFEAB308),
           label: 'Plan',
           value: sub?.plan.name,
           hint: sub == null ? null : (sub.plan.isFree ? 'Upgrade' : 'Manage'),
@@ -270,32 +295,35 @@ class AccountCardState extends State<AccountCard> {
           // Who you are
           Row(
             children: [
-              SizedBox(
-                width: 60,
-                height: 60,
-                child: Stack(
-                  clipBehavior: Clip.none,
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.all(2),
-                      decoration: const BoxDecoration(shape: BoxShape.circle, gradient: _gradient),
-                      child: Container(
+              GestureDetector(
+                onTap: () => context.push(AppRoutes.editProfile),
+                child: SizedBox(
+                  width: 60,
+                  height: 60,
+                  child: Stack(
+                    clipBehavior: Clip.none,
+                    children: [
+                      Container(
                         padding: const EdgeInsets.all(2),
-                        decoration: BoxDecoration(shape: BoxShape.circle, color: palette.surface),
-                        child: UserAvatar(initials: user.initials, imageUrl: user.avatarUrl, size: 52),
-                      ),
-                    ),
-                    if (verified)
-                      Positioned(
-                        right: -2,
-                        bottom: -2,
+                        decoration: const BoxDecoration(shape: BoxShape.circle, gradient: _gradient),
                         child: Container(
-                          padding: const EdgeInsets.all(1.5),
+                          padding: const EdgeInsets.all(2),
                           decoration: BoxDecoration(shape: BoxShape.circle, color: palette.surface),
-                          child: const Icon(AppIcons.sealCheck, size: 18, color: Color(0xFF3B82F6)),
+                          child: UserAvatar(initials: user.initials, imageUrl: user.avatarUrl, size: 52),
                         ),
                       ),
-                  ],
+                      if (verified)
+                        Positioned(
+                          right: -2,
+                          bottom: -2,
+                          child: Container(
+                            padding: const EdgeInsets.all(1.5),
+                            decoration: BoxDecoration(shape: BoxShape.circle, color: palette.surface),
+                            child: const Icon(AppIcons.sealCheck, size: 18, color: Color(0xFF3B82F6)),
+                          ),
+                        ),
+                    ],
+                  ),
                 ),
               ),
               const SizedBox(width: 14),
@@ -326,11 +354,26 @@ class AccountCardState extends State<AccountCard> {
                   ],
                 ),
               ),
-              IconButton(
-                tooltip: 'Edit profile',
-                onPressed: () => context.push(AppRoutes.editProfile),
-                style: IconButton.styleFrom(backgroundColor: palette.surfaceMuted, fixedSize: const Size(38, 38)),
-                icon: Icon(AppIcons.pencil, size: 17, color: palette.textPrimary),
+              const SizedBox(width: 8),
+              // Clear "Edit" button instead of a bare pencil.
+              Material(
+                color: palette.surfaceMuted,
+                borderRadius: BorderRadius.circular(999),
+                child: InkWell(
+                  borderRadius: BorderRadius.circular(999),
+                  onTap: () => context.push(AppRoutes.editProfile),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(AppIcons.pencil, size: 14, color: palette.textPrimary),
+                        const SizedBox(width: 5),
+                        Text('Edit', style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w800, color: palette.textPrimary)),
+                      ],
+                    ),
+                  ),
+                ),
               ),
             ],
           ),
@@ -340,21 +383,18 @@ class AccountCardState extends State<AccountCard> {
           ],
           const SizedBox(height: 14),
 
-          // Numbers — fixed height, so nothing jumps while loading.
-          Material(
-            color: palette.surfaceMuted,
-            borderRadius: BorderRadius.circular(14),
-            clipBehavior: Clip.antiAlias,
-            child: SizedBox(
-              height: 70,
-              child: Row(
-                children: [
-                  for (final (i, stat) in stats.indexed) ...[
-                    if (i > 0) VerticalDivider(width: 1, thickness: 1, indent: 14, endIndent: 14, color: palette.border),
-                    Expanded(child: stat),
-                  ],
+          // Money & plan — each one is its own tappable tile (fixed height, so nothing jumps).
+          Text('MONEY & PLAN', style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.w800, letterSpacing: 1, color: palette.textTertiary)),
+          const SizedBox(height: 8),
+          SizedBox(
+            height: 104,
+            child: Row(
+              children: [
+                for (final (i, stat) in stats.indexed) ...[
+                  if (i > 0) const SizedBox(width: 8),
+                  Expanded(child: stat),
                 ],
-              ),
+              ],
             ),
           ),
 
@@ -407,57 +447,78 @@ class _Tag extends StatelessWidget {
   }
 }
 
-/// One number in the stats row: label, value, small action.
+/// One tile: icon, label, number and what a tap does (e.g. "Withdraw ›").
 class _Stat extends StatelessWidget {
-  const _Stat({required this.label, required this.value, required this.onTap, this.hint, this.hintColor, this.highlight = false, this.loading = false});
+  const _Stat({required this.icon, required this.color, required this.label, required this.value, required this.onTap, this.hint, this.hintColor, this.loading = false});
 
+  final IconData icon;
+  final Color color;
   final String label;
   final String? value;
   final String? hint;
   final Color? hintColor;
-  final bool highlight;
   final bool loading;
   final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
     final palette = context.palette;
-    final valueStyle = context.text.titleMedium?.copyWith(fontSize: 16, fontWeight: FontWeight.w800, letterSpacing: -0.3, color: highlight ? Colors.white : palette.textPrimary);
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(14),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 12),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(label, maxLines: 1, style: context.text.bodySmall?.copyWith(fontSize: 11.5, fontWeight: FontWeight.w600)),
-            const SizedBox(height: 3),
-            SizedBox(
-              height: 21,
-              child: loading || value == null
-                  ? const Align(alignment: Alignment.centerLeft, child: _Placeholder(width: 64, height: 14))
-                  : FittedBox(
-                fit: BoxFit.scaleDown,
-                alignment: Alignment.centerLeft,
-                child: highlight
-                    ? ShaderMask(shaderCallback: (r) => _gradient.createShader(r), child: Text(value!, style: valueStyle))
-                    : Text(value!, style: valueStyle),
+    return Material(
+      color: palette.surfaceMuted,
+      borderRadius: BorderRadius.circular(16),
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: () {
+          HapticFeedback.selectionClick();
+          onTap();
+        },
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(10, 10, 8, 10),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Container(
+                    width: 26,
+                    height: 26,
+                    decoration: BoxDecoration(color: color.withValues(alpha: context.isDark ? 0.2 : 0.14), shape: BoxShape.circle),
+                    child: Icon(icon, size: 14, color: color),
+                  ),
+                  const SizedBox(width: 6),
+                  Expanded(child: Text(label, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700, color: palette.textSecondary))),
+                ],
               ),
-            ),
-            SizedBox(
-              height: 15,
-              child: hint == null
-                  ? null
-                  : Text(
-                hint!,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: hintColor ?? palette.textTertiary),
+              const Spacer(),
+              SizedBox(
+                height: 22,
+                child: loading || value == null
+                    ? const Align(alignment: Alignment.centerLeft, child: _Placeholder(width: 58, height: 14))
+                    : FittedBox(
+                  fit: BoxFit.scaleDown,
+                  alignment: Alignment.centerLeft,
+                  child: Text(value!, style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800, letterSpacing: -0.3, color: palette.textPrimary)),
+                ),
               ),
-            ),
-          ],
+              const SizedBox(height: 2),
+              SizedBox(
+                height: 15,
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        hint ?? '',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: hintColor ?? palette.textTertiary),
+                      ),
+                    ),
+                    Icon(AppIcons.chevronRight, size: 12, color: hintColor ?? palette.textTertiary),
+                  ],
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );

@@ -1,3 +1,4 @@
+// File: lib/features/store/presentation/live/live_room_screen.dart
 import 'dart:async';
 import 'dart:convert';
 import 'dart:math';
@@ -7,6 +8,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:livekit_client/livekit_client.dart';
+import 'package:wakelock_plus/wakelock_plus.dart';
 
 import '../../../../core/di/injection.dart';
 import '../../../../core/network/api_exception.dart';
@@ -16,8 +18,10 @@ import '../../../../core/theme/app_spacing.dart';
 import '../../../../core/widgets/app_sheet.dart';
 import '../../../../core/widgets/app_snackbar.dart';
 import '../../../auth/presentation/bloc/auth_bloc.dart';
+import '../../data/meet_host_api.dart';
 import '../../data/store_repository.dart';
 import '../fanbox/fanbox_sheet.dart';
+import '../meet/attendance_sheet.dart';
 
 /// Arguments for the live room (passed as GoRouter `extra`).
 class LiveRoomArgs {
@@ -76,11 +80,14 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> {
   @override
   void initState() {
     super.initState();
+    // Keep the screen on for the whole live.
+    WakelockPlus.enable().catchError((_) {});
     _connect();
   }
 
   @override
   void dispose() {
+    WakelockPlus.disable().catchError((_) {});
     _input.dispose();
     _listener?.dispose();
     _room.disconnect();
@@ -298,6 +305,9 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> {
                       onMic: _toggleMic,
                       onCamera: _toggleCamera,
                       onFlip: _flipCamera,
+                      onWatched: _args.isHost
+                          ? () => showAttendanceSheet(context, title: _args.title, load: () => MeetHostApi.liveAttendance(_args.liveId))
+                          : null,
                       onFanBox: _args.isHost || _args.storeId.isEmpty
                           ? null
                           : () => showFanBoxSheet(context, storeId: _args.storeId, creatorName: _args.hostName.isEmpty ? 'the host' : _args.hostName, sentFrom: 'live'),
@@ -411,10 +421,14 @@ class _BottomBar extends StatelessWidget {
     required this.onMic,
     required this.onCamera,
     required this.onFlip,
+    this.onWatched,
     this.onFanBox,
   });
 
   final VoidCallback? onFanBox;
+
+  /// Host: who watched and for how long.
+  final VoidCallback? onWatched;
 
   final bool isHost;
   final bool chatEnabled;
@@ -444,6 +458,10 @@ class _BottomBar extends StatelessWidget {
                   _RoundButton(icon: AppIcons.videoCamera, active: camOn, onTap: onCamera, label: camOn ? 'Camera off' : 'Camera on'),
                   const SizedBox(width: AppSpacing.md),
                   _RoundButton(icon: AppIcons.refresh, active: true, onTap: onFlip, label: 'Flip camera'),
+                  if (onWatched != null) ...[
+                    const SizedBox(width: AppSpacing.md),
+                    _RoundButton(icon: AppIcons.users, active: true, onTap: onWatched!, label: 'Who watched'),
+                  ],
                 ],
               ),
             ),

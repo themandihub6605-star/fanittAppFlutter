@@ -4,7 +4,7 @@ abstract final class AppConfig {
   /// Live backend on the VPS (nginx → pm2 fanitt-api).
   static const String apiBaseUrl = String.fromEnvironment(
     'API_BASE_URL',
-    //defaultValue: 'http://10.202.11.235:5000/api', // local testing
+    //defaultValue: 'http://10.134.172.235:5000/api', // local testing
     defaultValue: 'https://api.fanitt.com/api',  // live — switch back before building for Play Store
   );
 

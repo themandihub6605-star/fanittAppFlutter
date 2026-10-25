@@ -1,3 +1,4 @@
+// File: lib/core/router/app_router.dart
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
@@ -21,6 +22,7 @@ import '../../features/share/deep_link_landing.dart';
 import '../../features/account/presentation/screens/referrals_screen.dart';
 import '../../features/agency/presentation/agency_screens.dart';
 import '../../features/campaigns/presentation/brand/brand_campaigns_screen.dart';
+import '../../features/dashboard/presentation/fan_home_screen.dart';
 import '../../features/campaigns/presentation/brand/campaign_editor_screen.dart';
 import '../../features/campaigns/presentation/brand/campaign_manage_screen.dart';
 import '../../features/campaigns/presentation/creator/campaign_detail_screen.dart';
@@ -38,6 +40,9 @@ import '../../features/profile/presentation/edit_profile_screen.dart';
 import '../../features/subscription/presentation/plans_screen.dart';
 import '../../features/wallet/presentation/wallet_screen.dart';
 import '../../features/auth/presentation/bloc/auth_bloc.dart';
+import '../../features/store/data/store_access.dart';
+import '../services/secure_screen.dart';
+import '../services/feature_flags.dart';
 import '../../features/auth/presentation/cubits/choose_role_cubit.dart';
 import '../../features/auth/presentation/cubits/forgot_password_cubit.dart';
 import '../../features/auth/presentation/cubits/login_cubit.dart';
@@ -107,7 +112,9 @@ class AppRouter {
     // (signed in/out, role, profile status…) — not on every profile refresh.
     // Refreshing the router on every pull-to-refresh rebuilt the bottom-bar
     // frame mid-frame and crashed with "Duplicate GlobalKey".
-    refreshListenable: RouterRefreshStream(_authBloc.stream.map(_routeKey).distinct()),
+    // Also re-check when the admin turns the products shop on/off.
+    // …and once the splash has finished writing "fanitt".
+    refreshListenable: Listenable.merge([RouterRefreshStream(_authBloc.stream.map(_routeKey).distinct()), FeatureFlags.store, splashDone]),
     redirect: _redirect,
     routes: [
       GoRoute(
@@ -179,8 +186,9 @@ class AppRouter {
     _page(AppRoutes.notifications, (_) => const NotificationsScreen()),
     _page(AppRoutes.plans, (_) => const PlansScreen()),
     _page(AppRoutes.editProfile, (_) => const EditProfileScreen()),
-    _page(AppRoutes.wallet, (_) => const WalletScreen()),
-    _page(AppRoutes.transactions, (_) => const TransactionsScreen()),
+    // SecureScreen = no screenshots / screen recording on money & paid content.
+    _page(AppRoutes.wallet, (_) => const SecureScreen(child: WalletScreen())),
+    _page(AppRoutes.transactions, (_) => const SecureScreen(child: TransactionsScreen())),
     _page(AppRoutes.referrals, (_) => const ReferralsScreen()),
     _page(AppRoutes.posts, (_) => const MyPostsScreen()),
     _page(AppRoutes.sessions, (_) => const MySessionsScreen()),
@@ -228,14 +236,14 @@ class AppRouter {
     _page(AppRoutes.storeSales, (_) => const StoreSalesScreen()),
     _page(AppRoutes.storePagePath, (s) => StorePageScreen(slug: s.pathParameters['slug']!)),
     _page(AppRoutes.storeProductPath, (s) => ProductDetailScreen(productId: s.pathParameters['id']!)),
-    _page(AppRoutes.library, (_) => const LibraryScreen()),
+    _page(AppRoutes.library, (_) => const SecureScreen(child: LibraryScreen())),
     _page(AppRoutes.stores, (_) => const StoreDiscoverScreen(showBack: true)),
     _page(AppRoutes.storeLives, (_) => const MyLivesScreen()),
-    _page(AppRoutes.storeLiveNew, (_) => const CreateLiveScreen()),
+    _page(AppRoutes.storeLiveNew, (state) => CreateLiveScreen(communityId: state.uri.queryParameters['community'])),
     _page(AppRoutes.storeCalls, (_) => const CallSettingsScreen()),
     _page(AppRoutes.liveDetailPath, (s) => LiveDetailScreen(liveId: s.pathParameters['id']!, invite: s.uri.queryParameters['invite'])),
-    _page(AppRoutes.liveRoom, (s) => s.extra is LiveRoomArgs ? LiveRoomScreen(args: s.extra! as LiveRoomArgs) : const StoreDiscoverScreen(showBack: true)),
-    _page(AppRoutes.storeCallPath, (s) => CallScreen(callId: s.pathParameters['id']!)),
+    _page(AppRoutes.liveRoom, (s) => s.extra is LiveRoomArgs ? SecureScreen(child: LiveRoomScreen(args: s.extra! as LiveRoomArgs)) : const StoreDiscoverScreen(showBack: true)),
+    _page(AppRoutes.storeCallPath, (s) => SecureScreen(child: CallScreen(callId: s.pathParameters['id']!))),
     _page(AppRoutes.storeAffiliate, (_) => const MyAffiliateScreen()),
     _page(AppRoutes.storeFanbox, (_) => const FanBoxReceivedScreen()),
     _page(AppRoutes.storeAnalytics, (_) => const StoreAnalyticsScreen()),
@@ -245,7 +253,7 @@ class AppRouter {
     _page(AppRoutes.postDetailPath, (s) => FeedScreen(postId: s.pathParameters['id'])),
     _page(AppRoutes.products, (s) => ProductsScreen(initialCategory: s.uri.queryParameters['category'])),
     _page(AppRoutes.meetDetailPath, (s) => MeetDetailScreen(meetId: s.pathParameters['id']!)),
-    _page(AppRoutes.meetRoom, (s) => s.extra is MeetRoomArgs ? MeetRoomScreen(args: s.extra! as MeetRoomArgs) : const MeetsScreen()),
+    _page(AppRoutes.meetRoom, (s) => s.extra is MeetRoomArgs ? SecureScreen(child: MeetRoomScreen(args: s.extra! as MeetRoomArgs)) : const MeetsScreen()),
     // Fanitt Store — physical products
     _page(AppRoutes.shop, (s) => ShopHomeScreen(storeId: s.uri.queryParameters['store'], storeName: s.uri.queryParameters['name'], initialCategory: s.uri.queryParameters['category'])),
     _page(AppRoutes.shopCart, (_) => const CartScreen()),
@@ -286,6 +294,8 @@ class AppRouter {
   String? _redirect(BuildContext context, GoRouterState state) {
     final auth = _authBloc.state;
     final location = state.matchedLocation;
+    // Stay on the splash until "fanitt" has been written out.
+    if (location == AppRoutes.splash && !splashDone.value) return null;
     final isPublic = AppRoutes.publicRoutes.contains(location);
     // Legal pages are readable by everyone, signed in or not.
     if (location.startsWith('/legal/')) return null;
@@ -320,6 +330,15 @@ class AppRouter {
           return pending;
         }
         if (location.startsWith('/open/')) return null;
+        // Physical-products shop switched off by the admin: shop screens go back home.
+        if (!FeatureFlags.storeOn && FeatureFlags.isShopLocation(location)) {
+          return user.role.homeRoute;
+        }
+        // Store tools (go live, calls, products, FanBox, affiliate, sales,
+        // analytics) need a live Fanitt Store — otherwise go to the store page.
+        if (user.role == UserRole.creator && StoreAccess.isToolLocation(location) && StoreAccess.blocksFor(user.id)) {
+          return AppRoutes.store;
+        }
         // Incomplete profile: main actions open the "complete your profile" popup instead.
         if (needsProfileCompletion(user) && isProfileLockedLocation(location)) {
           return AppRoutes.completeProfile;
@@ -350,13 +369,17 @@ class AppRouter {
     );
   }
 
-  static StatefulShellRoute _shell(List<ShellDestination> destinations, List<StatefulShellBranch> branches) {
+  static StatefulShellRoute _shell(String role, List<ShellDestination> destinations, List<StatefulShellBranch> branches) {
     return StatefulShellRoute.indexedStack(
-      // One fixed page key and no transition: when the router redirects back
-      // to a tab, the existing bottom-bar frame is reused instead of a second
-      // copy being built (that crashed with "Duplicate GlobalKey").
+      // One fixed page key per role and no transition: when the router
+      // redirects back to a tab, the existing bottom-bar frame is reused
+      // instead of a second copy being built (that crashed with "Duplicate
+      // GlobalKey"). The key includes the role, so logging out of one role
+      // and into another (fan → creator) builds a fresh frame instead of
+      // reusing the old role's one (that crashed with
+      // "_lifecycleState == _ElementLifecycle.inactive").
       pageBuilder: (context, state, navigationShell) => NoTransitionPage<void>(
-        key: const ValueKey('role-shell'),
+        key: ValueKey('role-shell-$role'),
         child: RoleShell(navigationShell: navigationShell, destinations: destinations),
       ),
       branches: branches,
@@ -364,6 +387,7 @@ class AppRouter {
   }
 
   StatefulShellRoute _creatorShell() => _shell(
+    'creator',
     const [
       ShellDestination('Home', AppIcons.home, AppIcons.homeFilled),
       ShellDestination('Feed', AppIcons.feed, AppIcons.feedFilled),
@@ -381,6 +405,7 @@ class AppRouter {
   );
 
   StatefulShellRoute _brandShell() => _shell(
+    'brand',
     const [
       ShellDestination('Home', AppIcons.home, AppIcons.homeFilled),
       ShellDestination('Campaigns', AppIcons.campaigns, AppIcons.campaignsFilled),
@@ -398,23 +423,26 @@ class AppRouter {
   );
 
   StatefulShellRoute _fanShell() => _shell(
+    'fan',
     const [
-      ShellDestination('Store', AppIcons.store, AppIcons.storeFilled),
+      ShellDestination('Home', AppIcons.home, AppIcons.homeFilled),
       ShellDestination('Feed', AppIcons.feed, AppIcons.feedFilled),
-      ShellDestination('Library', AppIcons.library, AppIcons.libraryFilled),
+      ShellDestination('Creators', AppIcons.creators, AppIcons.creatorsFilled),
       ShellDestination('Messages', AppIcons.messages, AppIcons.messagesFilled),
       ShellDestination('Profile', AppIcons.account, AppIcons.accountFilled),
     ],
     [
-      _branch(AppRoutes.fanHome, const StoreDiscoverScreen()),
+      _branch(AppRoutes.fanHome, const FanHomeScreen()),
       _branch(AppRoutes.fanFeed, const FeedScreen()),
-      _branch(AppRoutes.fanLibrary, const LibraryScreen(showBack: false)),
+      // Tab path stays /fan/library; the tab is now Creators (Library is a quick action).
+      _branch(AppRoutes.fanLibrary, const CreatorsScreen()),
       _branch(AppRoutes.fanMessages, const ConversationsScreen()),
       _branch(AppRoutes.fanAccount, const MyProfileScreen()),
     ],
   );
 
   StatefulShellRoute _agencyShell() => _shell(
+    'agency',
     const [
       ShellDestination('Dashboard', AppIcons.dashboard, AppIcons.dashboardFilled),
       ShellDestination('Network', AppIcons.network, AppIcons.networkFilled),

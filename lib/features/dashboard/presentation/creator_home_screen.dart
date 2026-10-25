@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
@@ -17,6 +19,7 @@ import '../../../core/widgets/async_view.dart';
 import '../../auth/presentation/bloc/auth_bloc.dart';
 import '../../campaigns/data/campaign_repository.dart';
 import '../../campaigns/presentation/widgets/campaign_widgets.dart';
+import '../../store/data/store_access.dart';
 import '../../store/presentation/widgets/store_promo_banner.dart';
 import '../../subscription/data/subscription_repository.dart';
 import '../../wallet/presentation/wallet_screen.dart';
@@ -35,6 +38,8 @@ class CreatorHomeData {
 }
 
 Future<CreatorHomeData> _load(String myId) async {
+  // Is the Fanitt Store live? (locks the store tools on the home)
+  unawaited(StoreAccess.refresh(myId));
   final results = await Future.wait<Object>([
     sl<DashboardRepository>().creator(myId),
     sl<SubscriptionRepository>().mine(),
@@ -117,16 +122,27 @@ class _CreatorHomeView extends StatelessWidget {
                   // Quick actions
                   const HomeSectionHeader(title: 'Quick actions'),
                   const SizedBox(height: AppSpacing.sm),
+                  // Store tools (live, calls, products…) stay inside My store, not here.
                   HomeQuickActions(
+                    // Most used first. The 8th tile is "More".
                     actions: [
                       HomeAction(icon: AppIcons.storeFilled, label: 'My store', isNew: true, onTap: () => context.push(AppRoutes.store)),
-                      HomeAction(icon: AppIcons.chartLine, label: 'Analytics', color: AppColors.info, onTap: () => context.push(AppRoutes.storeAnalytics)),
-                      HomeAction(icon: AppIcons.brand, label: 'Brands', color: const Color(0xFF7C4DFF), onTap: () => context.push(AppRoutes.brands)),
                       HomeAction(icon: AppIcons.campaigns, label: 'Campaigns', color: AppColors.success, onTap: () => context.go(AppRoutes.creatorCampaigns)),
-                      HomeAction(icon: AppIcons.gift, label: 'FanBox', color: const Color(0xFFEC2A78), onTap: () => context.push(AppRoutes.storeFanbox)),
+                      HomeAction(icon: AppIcons.brand, label: 'Brands', color: const Color(0xFF7C4DFF), onTap: () => context.push(AppRoutes.brands)),
                       HomeAction(icon: AppIcons.users, label: 'Communities', color: AppColors.warning, onTap: () => context.push(AppRoutes.communities)),
+                      HomeAction(icon: AppIcons.messages, label: 'Messages', color: const Color(0xFF0EA5E9), onTap: () => context.go(AppRoutes.creatorMessages)),
                       HomeAction(icon: AppIcons.package, label: 'Shop', color: const Color(0xFF00A3A3), onTap: () => context.push(AppRoutes.products)),
                       HomeAction(icon: AppIcons.gift, label: 'Refer & earn', color: AppColors.error, onTap: () => context.push(AppRoutes.referrals)),
+                    ],
+                    more: [
+                      HomeAction(icon: AppIcons.wallet, label: 'Wallet', color: const Color(0xFFF59E0B), onTap: () => context.push(AppRoutes.wallet)),
+                      HomeAction(icon: AppIcons.image, label: 'My posts', color: const Color(0xFFDB2777), onTap: () => context.push(AppRoutes.posts)),
+                      HomeAction(icon: AppIcons.feed, label: 'Feed', color: const Color(0xFF6366F1), onTap: () => context.go(AppRoutes.creatorFeed)),
+                      HomeAction(icon: AppIcons.crown, label: 'Plans', color: const Color(0xFFEAB308), onTap: () => context.push(AppRoutes.plans)),
+                      HomeAction(icon: AppIcons.receipt, label: 'Activity', color: const Color(0xFF16A34A), onTap: () => context.push(AppRoutes.transactions)),
+                      HomeAction(icon: AppIcons.userPlus, label: 'Following', color: const Color(0xFF14B8A6), onTap: () => context.push(AppRoutes.following)),
+                      HomeAction(icon: AppIcons.bookmark, label: 'Saved', color: const Color(0xFFE11D48), onTap: () => context.push(AppRoutes.savedPosts)),
+                      HomeAction(icon: AppIcons.pencil, label: 'Edit profile', color: AppColors.info, onTap: () => context.push(AppRoutes.editProfile)),
                     ],
                   ),
 

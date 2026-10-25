@@ -13,7 +13,7 @@ enum UserRole {
       UserRole.values.firstWhere((role) => role.value == value, orElse: () => UserRole.fan);
 
   /// Roles this mobile app is built for (fans shop in Fanitt Store).
-  static const List<UserRole> appRoles = [UserRole.creator, UserRole.brand, UserRole.agency, UserRole.fan];
+  static const List<UserRole> appRoles = [UserRole.fan, UserRole.creator, UserRole.brand, UserRole.agency];
 
   bool get isAppRole => appRoles.contains(this);
 

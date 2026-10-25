@@ -1,3 +1,4 @@
+// File: lib/features/creators/presentation/creator_profile_screen.dart
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -17,14 +18,21 @@ import '../../../core/theme/app_icons.dart';
 import '../../../core/theme/app_palette.dart';
 import '../../../core/theme/app_spacing.dart';
 import '../../../core/utils/formatters.dart';
+import '../../../core/network/api_exception.dart';
 import '../../../core/widgets/action_scope.dart';
+import '../../../core/widgets/app_snackbar.dart';
 import '../../../core/widgets/app_network_image.dart';
 import '../../../core/widgets/async_view.dart';
 import '../../auth/presentation/bloc/auth_bloc.dart';
 import '../../../core/widgets/stream_video_player.dart';
+import '../../chat/data/chat_repository.dart';
+import '../../chat/presentation/chat_screen.dart';
 import '../../content/data/content_repository.dart';
 import '../../feed/presentation/media_viewer_screen.dart';
 import '../../feed/presentation/reels_screen.dart';
+import '../../profile/data/profile_models.dart';
+import '../../store/data/store_repository.dart';
+import '../../store/presentation/call/request_call_sheet.dart';
 import '../../store/presentation/fanbox/fanbox_sheet.dart';
 import '../data/creators_repository.dart';
 
@@ -75,7 +83,7 @@ class _ProfileView extends StatelessWidget {
   }
 }
 
-class _Loaded extends StatelessWidget {
+class _Loaded extends StatefulWidget {
   const _Loaded({required this.data, required this.slug, required this.onFollow});
 
   final CreatorPublicProfile data;
@@ -83,151 +91,168 @@ class _Loaded extends StatelessWidget {
   final VoidCallback onFollow;
 
   @override
+  State<_Loaded> createState() => _LoadedState();
+}
+
+class _LoadedState extends State<_Loaded> {
+  bool _messaging = false;
+  bool _calling = false;
+
+  /// Fan (or creator) → direct chat with this creator.
+  Future<void> _message() async {
+    final c = widget.data.creator;
+    HapticFeedback.selectionClick();
+    setState(() => _messaging = true);
+    try {
+      final conversation = await sl<ChatRepository>().startWith(c.userId);
+      if (!mounted) return;
+      context.push(AppRoutes.chat(conversation.id), extra: ChatArgs(title: c.name, avatarUrl: c.avatarUrl));
+    } on ApiException catch (e) {
+      if (mounted) AppSnackbar.error(context, e.displayMessage);
+    } finally {
+      if (mounted) setState(() => _messaging = false);
+    }
+  }
+
+  /// Audio / video call at the creator's own per-minute rate (or free).
+  Future<void> _call() async {
+    final ref = widget.data.store;
+    if (ref == null) return;
+    HapticFeedback.selectionClick();
+    setState(() => _calling = true);
+    try {
+      final page = await sl<StoreRepository>().storePage(ref.slug);
+      if (!mounted) return;
+      final info = page.calls;
+      final name = widget.data.creator.name;
+      if (!info.enabled) {
+        AppSnackbar.info(context, '$name isn’t taking calls yet');
+      } else if (info.busy) {
+        AppSnackbar.info(context, '$name is on another call — try again in a bit');
+      } else if (!info.online) {
+        AppSnackbar.info(context, '$name is offline right now — try again later');
+      } else {
+        await showRequestCallSheet(context, store: page.store, info: info);
+      }
+    } on ApiException catch (e) {
+      if (mounted) AppSnackbar.error(context, e.displayMessage);
+    } finally {
+      if (mounted) setState(() => _calling = false);
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final data = widget.data;
     final c = data.creator;
     final palette = context.palette;
     final actions = context.watch<ActionCubit>().state;
     final auth = context.watch<AuthBloc>().state;
     final isMe = auth is AuthAuthenticated && auth.user.id == c.userId;
+    final viewerIsBrand = auth is AuthAuthenticated && auth.user.role == UserRole.brand;
+    // Creators can't message other creators (they can still call their store).
+    final viewerIsCreator = auth is AuthAuthenticated && auth.user.role == UserRole.creator;
     final topInset = MediaQuery.paddingOf(context).top;
     final verified = c.verificationStatus == VerificationStatus.verified;
-    final links = <String, String>{...c.socials.values, if (c.portfolioLink.isNotEmpty) 'website': c.portfolioLink};
+    // Instagram isn't shown on profiles.
+    final links = <String, String>{
+      for (final e in c.socials.values.entries)
+        if (e.key != 'instagram') e.key: e.value,
+      if (c.portfolioLink.isNotEmpty) 'website': c.portfolioLink,
+    };
 
     return AnnotatedRegion(
-      value: SystemUiOverlayStyle.light,
+      value: context.isDark ? SystemUiOverlayStyle.light : SystemUiOverlayStyle.dark,
       child: Scaffold(
         body: RefreshIndicator.adaptive(
           color: AppColors.primary,
-          edgeOffset: topInset,
+          edgeOffset: topInset + kToolbarHeight,
           onRefresh: context.read<LoadCubit<CreatorPublicProfile>>().refresh,
           child: CustomScrollView(
             physics: const AlwaysScrollableScrollPhysics(),
             slivers: [
-              // Big photo header that collapses into a bar with the name.
+              // Simple bar: back, name, share.
               SliverAppBar(
                 pinned: true,
-                stretch: true,
-                expandedHeight: 360,
-                backgroundColor: const Color(0xFF14141F),
-                foregroundColor: Colors.white,
-                title: Text(c.name, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700)),
+                backgroundColor: palette.background,
+                surfaceTintColor: Colors.transparent,
+                foregroundColor: palette.textPrimary,
+                titleSpacing: 0,
+                title: Text(c.name, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(color: palette.textPrimary, fontSize: 17, fontWeight: FontWeight.w800)),
                 actions: [
                   ShareIconButton(
-                    onDark: true,
                     size: 40,
                     message: () => ShareService.creator(slug: c.slug, name: c.name, category: c.category?.label ?? '', mine: isMe),
                   ),
                   const SizedBox(width: 10),
                 ],
-                flexibleSpace: FlexibleSpaceBar(
-                  collapseMode: CollapseMode.parallax,
-                  stretchModes: const [StretchMode.zoomBackground],
-                  background: Stack(
-                    fit: StackFit.expand,
-                    children: [
-                      Hero(
-                        tag: 'creator-photo-$slug',
-                        child: c.avatarUrl != null && c.avatarUrl!.isNotEmpty
-                            ? CachedNetworkImage(imageUrl: c.avatarUrl!, fit: BoxFit.cover, alignment: Alignment.topCenter)
-                            : (c.coverImageUrl != null && c.coverImageUrl!.isNotEmpty
-                            ? CachedNetworkImage(imageUrl: c.coverImageUrl!, fit: BoxFit.cover)
-                            : DecoratedBox(
-                          decoration: const BoxDecoration(gradient: _gradient),
-                          child: Center(child: Text(c.initials, style: const TextStyle(color: Colors.white, fontSize: 90, fontWeight: FontWeight.w800))),
-                        )),
-                      ),
-                      const DecoratedBox(
-                        decoration: BoxDecoration(
-                          gradient: LinearGradient(
-                            begin: Alignment.topCenter,
-                            end: Alignment.bottomCenter,
-                            colors: [Color(0x66000000), Color(0x00000000), Color(0xEE000000)],
-                            stops: [0, 0.4, 1],
-                          ),
-                        ),
-                      ),
-                      Positioned(
-                        left: AppSpacing.gutter,
-                        right: AppSpacing.gutter,
-                        bottom: 18,
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Wrap(
-                              spacing: 6,
-                              runSpacing: 6,
-                              children: [
-                                if (c.isAvailableForWork) const _HeaderChip(label: 'Available for work', dot: Color(0xFF34D399)),
-                                if (c.isProPlan) _HeaderChip(label: c.planName, icon: AppIcons.crown, gradient: true),
-                                if (c.category != null && c.category!.label.isNotEmpty) _HeaderChip(label: c.category!.label),
-                              ],
-                            ),
-                            const SizedBox(height: 10),
-                            Row(
-                              children: [
-                                Flexible(
-                                  child: Text(
-                                    c.name,
-                                    maxLines: 2,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: const TextStyle(color: Colors.white, fontSize: 28, fontWeight: FontWeight.w800, height: 1.1, letterSpacing: -0.5),
-                                  ),
-                                ),
-                                if (verified) ...[
-                                  const SizedBox(width: 6),
-                                  const Icon(AppIcons.sealCheck, color: Color(0xFF60A5FA), size: 24),
-                                ],
-                              ],
-                            ),
-                            if (c.title.isNotEmpty) ...[
-                              const SizedBox(height: 4),
-                              Text(c.title, maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.white70, fontSize: 14)),
-                            ],
-                            if (c.location.isNotEmpty) ...[
-                              const SizedBox(height: 6),
-                              Row(
-                                children: [
-                                  const Icon(AppIcons.mapPin, size: 14, color: Colors.white70),
-                                  const SizedBox(width: 4),
-                                  Flexible(child: Text(c.location, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.white70, fontSize: 13))),
-                                ],
-                              ),
-                            ],
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
               ),
 
               SliverPadding(
-                padding: const EdgeInsets.fromLTRB(AppSpacing.gutter, AppSpacing.lg, AppSpacing.gutter, AppSpacing.huge),
+                padding: const EdgeInsets.fromLTRB(AppSpacing.gutter, AppSpacing.xs, AppSpacing.gutter, AppSpacing.huge),
                 sliver: SliverList.list(
                   children: [
-                    // Numbers
-                    Container(
-                      padding: const EdgeInsets.symmetric(vertical: 14),
-                      decoration: BoxDecoration(color: palette.surface, borderRadius: BorderRadius.circular(18), border: Border.all(color: palette.border)),
-                      child: Row(
-                        children: [
-                          _Stat(value: Fmt.compact(data.posts.length), label: 'Posts'),
-                          _Divider(color: palette.border),
-                          _Stat(value: Fmt.compact(c.followerCount), label: 'Followers'),
-                          _Divider(color: palette.border),
-                          _Stat(value: c.reviewCount == 0 ? '—' : c.averageRating.toStringAsFixed(1), label: c.reviewCount == 0 ? 'Rating' : '${c.reviewCount} reviews', icon: c.reviewCount == 0 ? null : AppIcons.starFilled),
-                          _Divider(color: palette.border),
-                          _Stat(value: '${data.projectsCompleted}', label: 'Projects'),
-                          if (c.yearsOfExperience != null) ...[
-                            _Divider(color: palette.border),
-                            _Stat(value: '${c.yearsOfExperience}y', label: 'Experience'),
-                          ],
+                    // Photo + numbers side by side.
+                    Row(
+                      children: [
+                        _Avatar(creator: c, slug: widget.slug, available: c.isAvailableForWork),
+                        const SizedBox(width: 14),
+                        Expanded(
+                          child: Row(
+                            children: [
+                              _Stat(value: Fmt.compact(c.followerCount), label: 'Followers'),
+                              _Stat(value: Fmt.compact(data.posts.length), label: 'Posts'),
+                              _Stat(
+                                value: c.reviewCount == 0 ? '—' : c.averageRating.toStringAsFixed(1),
+                                label: c.reviewCount == 0 ? 'Rating' : '${c.reviewCount} reviews',
+                                icon: c.reviewCount == 0 ? null : AppIcons.starFilled,
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ).animate().fadeIn(duration: 300.ms),
+                    const SizedBox(height: 14),
+
+                    // Name, title, chips.
+                    Row(
+                      children: [
+                        Flexible(
+                          child: Text(
+                            c.name,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: context.text.headlineSmall?.copyWith(fontWeight: FontWeight.w800, letterSpacing: -0.5, height: 1.15),
+                          ),
+                        ),
+                        if (verified) ...[
+                          const SizedBox(width: 6),
+                          const Icon(AppIcons.sealCheck, color: Color(0xFF3B82F6), size: 22),
                         ],
-                      ),
-                    ).animate().fadeIn(duration: 300.ms).slideY(begin: 0.08),
+                        if (c.isProPlan) ...[
+                          const SizedBox(width: 8),
+                          _HeaderChip(label: c.planName, icon: AppIcons.crown, gradient: true),
+                        ],
+                      ],
+                    ),
+                    if (c.title.isNotEmpty) ...[
+                      const SizedBox(height: 4),
+                      Text(c.title, maxLines: 2, overflow: TextOverflow.ellipsis, style: context.text.bodyMedium?.copyWith(color: palette.textSecondary, height: 1.35)),
+                    ],
+                    const SizedBox(height: 10),
+                    Wrap(
+                      spacing: 6,
+                      runSpacing: 6,
+                      children: [
+                        if (c.category != null && c.category!.label.isNotEmpty) _MetaChip(icon: AppIcons.sparkle, label: c.category!.label, color: AppColors.primary),
+                        if (c.location.isNotEmpty) _MetaChip(icon: AppIcons.mapPin, label: c.location),
+                        if (c.isAvailableForWork) const _MetaChip(icon: AppIcons.checkCircle, label: 'Open to work', color: AppColors.success),
+                        if (data.isTopCreator) const _MetaChip(icon: AppIcons.crown, label: 'Top creator', color: AppColors.warning),
+                      ],
+                    ),
                     const SizedBox(height: AppSpacing.md),
 
-                    // Actions
+                    // Actions: Follow + FanBox.
                     if (!isMe)
                       Row(
                         children: [
@@ -238,7 +263,7 @@ class _Loaded extends StatelessWidget {
                               icon: c.isFollowing ? AppIcons.check : AppIcons.userPlus,
                               filled: !c.isFollowing,
                               busy: actions.isBusyWith('follow'),
-                              onTap: actions.isBusy ? null : onFollow,
+                              onTap: actions.isBusy ? null : widget.onFollow,
                             ),
                           ),
                           const SizedBox(width: AppSpacing.sm),
@@ -253,6 +278,25 @@ class _Loaded extends StatelessWidget {
                           ),
                         ],
                       ).animate().fadeIn(delay: 80.ms, duration: 300.ms),
+                    // Message + Call (brands talk to creators through campaigns instead;
+                    // creators can't message other creators, only call).
+                    if (!isMe && !viewerIsBrand && (!viewerIsCreator || data.store != null)) ...[
+                      const SizedBox(height: AppSpacing.sm),
+                      Row(
+                        children: [
+                          if (!viewerIsCreator)
+                            Expanded(
+                              child: _ActionButton(label: 'Message', icon: AppIcons.messages, filled: false, busy: _messaging, onTap: _messaging ? null : _message),
+                            ),
+                          if (data.store != null) ...[
+                            if (!viewerIsCreator) const SizedBox(width: AppSpacing.sm),
+                            Expanded(
+                              child: _ActionButton(label: 'Call', icon: AppIcons.phone, filled: false, busy: _calling, onTap: _calling ? null : _call),
+                            ),
+                          ],
+                        ],
+                      ).animate().fadeIn(delay: 110.ms, duration: 300.ms),
+                    ],
                     if (c.responseTime.isNotEmpty) ...[
                       const SizedBox(height: AppSpacing.sm),
                       Row(
@@ -269,23 +313,31 @@ class _Loaded extends StatelessWidget {
 
                     if (c.bio.isNotEmpty) _Section(title: 'About', icon: AppIcons.user, child: _Expandable(text: c.bio)),
 
-                    // Quick facts
+                    // Trust numbers
                     _Section(
-                      title: 'Highlights',
+                      title: 'Why brands pick ${c.name.split(' ').first}',
                       icon: AppIcons.lightning,
-                      child: Wrap(
-                        spacing: 8,
-                        runSpacing: 8,
+                      child: Column(
                         children: [
-                          if (data.isTopCreator) const _Fact(icon: AppIcons.crown, text: 'Top creator', color: AppColors.warning),
-                          if (verified) const _Fact(icon: AppIcons.sealCheck, text: 'Verified', color: Color(0xFF3B82F6)),
-                          _Fact(icon: AppIcons.check, text: '${data.onTimeDeliveryPercent}% on-time delivery', color: AppColors.success),
-                          if (c.isAvailableForWork) const _Fact(icon: AppIcons.campaigns, text: 'Open to work', color: AppColors.success),
-                          if (c.responseTime.isNotEmpty) _Fact(icon: AppIcons.clock, text: 'Replies ${c.responseTime}'),
-                          if (c.yearsOfExperience != null) _Fact(icon: AppIcons.star, text: '${c.yearsOfExperience} yrs experience'),
-                          if (c.location.isNotEmpty) _Fact(icon: AppIcons.mapPin, text: c.location),
-                          if (data.profileViews > 0) _Fact(icon: AppIcons.eye, text: '${Fmt.compact(data.profileViews)} profile views'),
-                          if (data.joinedAt != null) _Fact(icon: AppIcons.calendar, text: 'Joined ${Fmt.date(data.joinedAt!)}'),
+                          Row(
+                            children: [
+                              Expanded(child: _TrustTile(icon: AppIcons.checkCircle, value: '${data.onTimeDeliveryPercent}%', label: 'On-time delivery', color: AppColors.success)),
+                              const SizedBox(width: 8),
+                              Expanded(child: _TrustTile(icon: AppIcons.campaigns, value: '${data.projectsCompleted}', label: 'Projects done', color: AppColors.info)),
+                            ],
+                          ),
+                          const SizedBox(height: 8),
+                          Wrap(
+                            spacing: 8,
+                            runSpacing: 8,
+                            children: [
+                              if (verified) const _Fact(icon: AppIcons.sealCheck, text: 'Verified', color: Color(0xFF3B82F6)),
+                              if (c.responseTime.isNotEmpty) _Fact(icon: AppIcons.clock, text: 'Replies ${c.responseTime}'),
+                              if (c.yearsOfExperience != null) _Fact(icon: AppIcons.star, text: '${c.yearsOfExperience} yrs experience'),
+                              if (data.profileViews > 0) _Fact(icon: AppIcons.eye, text: '${Fmt.compact(data.profileViews)} profile views'),
+                              if (data.joinedAt != null) _Fact(icon: AppIcons.calendar, text: 'Joined ${Fmt.date(data.joinedAt!)}'),
+                            ],
+                          ),
                         ],
                       ),
                     ),
@@ -296,7 +348,7 @@ class _Loaded extends StatelessWidget {
                         title: 'Portfolio',
                         icon: AppIcons.image,
                         child: SizedBox(
-                          height: 120,
+                          height: 150,
                           child: ListView.separated(
                             scrollDirection: Axis.horizontal,
                             itemCount: data.portfolioImages.length,
@@ -308,7 +360,7 @@ class _Loaded extends StatelessWidget {
                                 index: i,
                               ),
                               child: ClipRRect(
-                                borderRadius: BorderRadius.circular(12),
+                                borderRadius: BorderRadius.circular(14),
                                 child: SizedBox(width: 120, child: AppNetworkImage(url: data.portfolioImages[i], fit: BoxFit.cover)),
                               ),
                             ),
@@ -328,10 +380,10 @@ class _Loaded extends StatelessWidget {
                               Row(
                                 children: [
                                   Container(
-                                    width: 40,
-                                    height: 40,
-                                    decoration: BoxDecoration(color: AppColors.primary.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(12)),
-                                    child: const Icon(AppIcons.videoCamera, size: 19, color: AppColors.primary),
+                                    width: 42,
+                                    height: 42,
+                                    decoration: BoxDecoration(gradient: _gradient, borderRadius: BorderRadius.circular(12)),
+                                    child: const Icon(AppIcons.videoCamera, size: 19, color: Colors.white),
                                   ),
                                   const SizedBox(width: 12),
                                   Expanded(
@@ -370,7 +422,7 @@ class _Loaded extends StatelessWidget {
 
                     if (links.isNotEmpty)
                       _Section(
-                        title: 'Find them online',
+                        title: 'More links',
                         icon: AppIcons.link,
                         child: Column(
                           children: [
@@ -383,10 +435,10 @@ class _Loaded extends StatelessWidget {
                                   child: Row(
                                     children: [
                                       Container(
-                                        width: 34,
-                                        height: 34,
-                                        decoration: BoxDecoration(color: AppColors.primary.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(10)),
-                                        child: const Icon(AppIcons.link, size: 17, color: AppColors.primary),
+                                        width: 36,
+                                        height: 36,
+                                        decoration: BoxDecoration(color: AppColors.primary.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(11)),
+                                        child: Icon(_linkIcon(e.key), size: 17, color: AppColors.primary),
                                       ),
                                       const SizedBox(width: 12),
                                       Expanded(
@@ -398,7 +450,7 @@ class _Loaded extends StatelessWidget {
                                           ],
                                         ),
                                       ),
-                                      Icon(AppIcons.chevronRight, size: 16, color: palette.textTertiary),
+                                      Icon(AppIcons.arrowUpRight, size: 16, color: palette.textTertiary),
                                     ],
                                   ),
                                 ),
@@ -417,7 +469,33 @@ class _Loaded extends StatelessWidget {
                       child: data.reviews.isEmpty
                           ? Text('No reviews yet.', style: context.text.bodyMedium)
                           : Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
+                          // Rating summary
+                          Container(
+                            padding: const EdgeInsets.all(12),
+                            margin: const EdgeInsets.only(bottom: 14),
+                            decoration: BoxDecoration(color: palette.surfaceMuted, borderRadius: BorderRadius.circular(14)),
+                            child: Row(
+                              children: [
+                                Text(c.averageRating.toStringAsFixed(1), style: context.text.headlineMedium?.copyWith(fontWeight: FontWeight.w900)),
+                                const SizedBox(width: 12),
+                                Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Row(
+                                      children: [
+                                        for (var s = 0; s < 5; s++)
+                                          Icon(s < c.averageRating.round() ? AppIcons.starFilled : AppIcons.star, size: 16, color: AppColors.warning),
+                                      ],
+                                    ),
+                                    const SizedBox(height: 2),
+                                    Text('From ${c.reviewCount} ${c.reviewCount == 1 ? 'review' : 'reviews'}', style: context.text.bodySmall),
+                                  ],
+                                ),
+                              ],
+                            ),
+                          ),
                           for (final (i, review) in data.reviews.indexed) ...[
                             if (i > 0) Divider(height: 24, color: palette.border),
                             Column(
@@ -447,6 +525,141 @@ class _Loaded extends StatelessWidget {
             ],
           ),
         ),
+      ),
+    );
+  }
+}
+
+IconData _linkIcon(String key) => switch (key.toLowerCase()) {
+  'youtube' => AppIcons.youtube,
+  'linkedin' => AppIcons.linkedin,
+  'website' => AppIcons.globe,
+  _ => AppIcons.link,
+};
+
+/// Big round photo with a gradient ring and an "available" dot.
+class _Avatar extends StatelessWidget {
+  const _Avatar({required this.creator, required this.slug, required this.available});
+
+  final CreatorProfile creator;
+  final String slug;
+  final bool available;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.palette;
+    final c = creator;
+    final hasPhoto = (c.avatarUrl ?? '').isNotEmpty;
+    return GestureDetector(
+      // Tap the circle → the full photo.
+      onTap: hasPhoto
+          ? () {
+        HapticFeedback.selectionClick();
+        MediaViewerScreen.open(context, media: [PostMedia(url: c.avatarUrl!, isVideo: false)], index: 0);
+      }
+          : null,
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          Container(
+            padding: const EdgeInsets.all(3),
+            decoration: const BoxDecoration(shape: BoxShape.circle, gradient: _gradient),
+            child: Container(
+              padding: const EdgeInsets.all(3),
+              decoration: BoxDecoration(shape: BoxShape.circle, color: palette.background),
+              child: Hero(
+                tag: 'creator-photo-$slug',
+                child: ClipOval(
+                  child: SizedBox(
+                    width: 96,
+                    height: 96,
+                    child: (c.avatarUrl ?? '').isNotEmpty
+                        ? CachedNetworkImage(imageUrl: c.avatarUrl!, fit: BoxFit.cover)
+                        : DecoratedBox(
+                      decoration: const BoxDecoration(gradient: _gradient),
+                      child: Center(child: Text(c.initials, style: const TextStyle(color: Colors.white, fontSize: 34, fontWeight: FontWeight.w800))),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+          if (available)
+            Positioned(
+              right: 6,
+              bottom: 6,
+              child: Container(
+                width: 18,
+                height: 18,
+                decoration: BoxDecoration(color: const Color(0xFF22C55E), shape: BoxShape.circle, border: Border.all(color: palette.background, width: 3)),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+class _MetaChip extends StatelessWidget {
+  const _MetaChip({required this.icon, required this.label, this.color});
+
+  final IconData icon;
+  final String label;
+  final Color? color;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.palette;
+    final tint = color ?? palette.textSecondary;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: color == null ? palette.surfaceMuted : tint.withValues(alpha: 0.1),
+        borderRadius: BorderRadius.circular(AppRadius.pill),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 13, color: tint),
+          const SizedBox(width: 5),
+          ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 220),
+            child: Text(label, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: color ?? palette.textPrimary)),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _TrustTile extends StatelessWidget {
+  const _TrustTile({required this.icon, required this.value, required this.label, required this.color});
+
+  final IconData icon;
+  final String value;
+  final String label;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.palette;
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(color: color.withValues(alpha: 0.08), borderRadius: BorderRadius.circular(14)),
+      child: Row(
+        children: [
+          Icon(icon, size: 20, color: color),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(value, style: context.text.titleMedium?.copyWith(fontWeight: FontWeight.w900)),
+                Text(label, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600, color: palette.textSecondary)),
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }

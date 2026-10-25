@@ -10,6 +10,8 @@ import 'core/network/api_client.dart';
 import 'core/enums/user_role.dart';
 import 'core/router/app_router.dart';
 import 'core/router/app_routes.dart';
+import 'core/router/home_first_back.dart';
+import 'core/services/device_security.dart';
 import 'core/services/link_opener.dart';
 import 'core/services/push_service.dart';
 import 'core/services/screen_tracker.dart';
@@ -130,7 +132,8 @@ class _FanittAppState extends State<FanittApp> {
           theme: AppTheme.light(),
           darkTheme: AppTheme.dark(),
           themeMode: ThemeMode.system,
-          routerConfig: _router,
+          // Back from any inner screen goes Home first; only Home closes the app.
+          routerConfig: HomeFirstBack.config(_router),
           builder: (context, child) {
             final mediaQuery = MediaQuery.of(context);
             return MediaQuery(
@@ -140,7 +143,8 @@ class _FanittAppState extends State<FanittApp> {
               ),
               child: GestureDetector(
                 onTap: () => FocusManager.instance.primaryFocus?.unfocus(),
-                child: child ?? const SizedBox.shrink(),
+                // Blocks tampered / debuggable phones in release builds (see DeviceSecurityGate).
+                child: DeviceSecurityGate(child: HomeFirstBackScope(router: _router, child: child ?? const SizedBox.shrink())),
               ),
             );
           },

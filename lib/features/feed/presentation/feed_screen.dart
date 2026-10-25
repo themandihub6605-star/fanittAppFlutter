@@ -1,3 +1,4 @@
+// File: lib/features/feed/presentation/feed_screen.dart
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_animate/flutter_animate.dart';
@@ -161,35 +162,44 @@ class _FeedViewState extends State<_FeedView> {
     final showCreate = canPost && _isMainFeed;
 
     return Scaffold(
-      // Main feed: just "+" (create) on the left and ♥ (activity) on the right.
+      // Main feed: big "Feed" title, then + (create) and ♥ (activity) as round buttons.
       appBar: AppBar(
-        centerTitle: true,
+        centerTitle: false,
         automaticallyImplyLeading: !_isMainFeed,
-        leading: showCreate
-            ? IconButton(
-          tooltip: 'Create',
-          onPressed: () {
-            HapticFeedback.selectionClick();
-            _create();
-          },
-          icon: Container(
-            width: 30,
-            height: 30,
-            decoration: BoxDecoration(borderRadius: BorderRadius.circular(9), border: Border.all(color: context.palette.textPrimary, width: 1.8)),
-            child: Icon(AppIcons.plus, size: 17, color: context.palette.textPrimary),
-          ),
-        )
-            : null,
-        // Main feed: no title — just + and ♥.
-        title: _isMainFeed
-            ? null
-            : Text(
-          widget.single ? 'Post' : 'Saved posts',
-          style: context.text.titleLarge?.copyWith(fontWeight: FontWeight.w800, letterSpacing: -0.4),
+        titleSpacing: _isMainFeed ? AppSpacing.gutter : null,
+        title: Text(
+          _isMainFeed ? 'Feed' : (widget.single ? 'Post' : 'Saved posts'),
+          style: context.text.titleLarge?.copyWith(fontSize: _isMainFeed ? 26 : null, fontWeight: FontWeight.w800, letterSpacing: _isMainFeed ? -0.8 : -0.4),
         ),
         actions: [
-          if (_isMainFeed && auth is AuthAuthenticated) const ActivityButton(),
-          const SizedBox(width: AppSpacing.xs),
+          if (showCreate)
+            Padding(
+              padding: const EdgeInsets.only(right: 8),
+              child: GestureDetector(
+                onTap: () {
+                  HapticFeedback.selectionClick();
+                  _create();
+                },
+                child: Container(
+                  width: 40,
+                  height: 40,
+                  decoration: const BoxDecoration(
+                    shape: BoxShape.circle,
+                    gradient: LinearGradient(begin: Alignment.topLeft, end: Alignment.bottomRight, colors: [Color(0xFFF4511E), Color(0xFFEC2A78)]),
+                    boxShadow: [BoxShadow(color: Color(0x59F4511E), blurRadius: 14, offset: Offset(0, 6))],
+                  ),
+                  child: const Icon(AppIcons.plus, size: 20, color: Colors.white),
+                ),
+              ),
+            ),
+          if (_isMainFeed && auth is AuthAuthenticated)
+            Container(
+              width: 42,
+              height: 42,
+              decoration: BoxDecoration(shape: BoxShape.circle, color: context.palette.surface, border: Border.all(color: context.palette.border.withValues(alpha: 0.8))),
+              child: const Center(child: ActivityButton()),
+            ),
+          const SizedBox(width: AppSpacing.gutter - 4),
         ],
       ),
       body: AsyncView<List<Post>>(
@@ -199,10 +209,9 @@ class _FeedViewState extends State<_FeedView> {
           final rows = <Widget>[
             if (_isMainFeed) StoriesBar(canPost: canPost, onAddStory: _addStory, refresh: _storiesTick),
             // A little room between the stories and the first post.
-            if (_isMainFeed) const SizedBox(height: AppSpacing.sm),
+            if (_isMainFeed) const SizedBox(height: AppSpacing.md),
           ];
           for (var i = 0; i < posts.length; i++) {
-            if (i > 0 || rows.isNotEmpty) rows.add(Divider(height: 1, thickness: 1, color: context.palette.border));
             rows.add(_FeedPost(key: ValueKey(posts[i].id), post: posts[i], savedOnly: widget.savedOnly));
             if (_isMainFeed && i == _reelsAfter - 1 && _reels.isNotEmpty) rows.add(ReelsRow(reels: _reels));
           }
@@ -370,118 +379,188 @@ class _FeedPostState extends State<_FeedPost> {
     final liked = myId != null && post.likedByUser(myId);
     final isOwnPost = myId != null && post.creatorUserId == myId;
     final name = post.creatorName ?? (post.isBrand ? 'Brand' : 'Creator');
+    final palette = context.palette;
+    final dark = context.isDark;
+    final hasMedia = post.media.isNotEmpty;
 
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: AppSpacing.sm),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+    Widget header({required bool onMedia}) {
+      final fg = onMedia ? Colors.white : palette.textPrimary;
+      final sub = onMedia ? const Color(0xD9FFFFFF) : palette.textSecondary;
+      return Row(
         children: [
-          // Header: avatar, name, time, follow
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: AppSpacing.gutter),
-            child: Row(
-              children: [
-                Expanded(
-                  child: InkWell(
-                    borderRadius: BorderRadius.circular(AppRadius.sm),
-                    onTap: post.authorRoute == null ? null : () => context.push(post.authorRoute!),
-                    child: Row(
+          Expanded(
+            child: GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: post.authorRoute == null ? null : () => context.push(post.authorRoute!),
+              child: Row(
+                children: [
+                  // Photo with the brand ring.
+                  Container(
+                    padding: const EdgeInsets.all(2),
+                    decoration: const BoxDecoration(shape: BoxShape.circle, gradient: LinearGradient(colors: [Color(0xFFF4511E), Color(0xFFEC2A78)])),
+                    child: Container(
+                      padding: const EdgeInsets.all(1.5),
+                      decoration: BoxDecoration(shape: BoxShape.circle, color: onMedia ? Colors.white : palette.surface),
+                      child: UserAvatar(initials: name.substring(0, 1).toUpperCase(), imageUrl: post.creatorAvatarUrl, size: 36),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Flexible(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
                       children: [
-                        UserAvatar(initials: name.substring(0, 1).toUpperCase(), imageUrl: post.creatorAvatarUrl, size: 34),
-                        const SizedBox(width: AppSpacing.sm),
-                        Flexible(child: Text(name, style: context.text.titleSmall, overflow: TextOverflow.ellipsis)),
-                        if (post.verified) ...[
-                          const SizedBox(width: 3),
-                          const Icon(AppIcons.sealCheck, size: 14, color: AppColors.info),
-                        ],
-                        if (post.isBrand) ...[
-                          const SizedBox(width: 5),
-                          Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
-                            decoration: BoxDecoration(color: AppColors.info.withValues(alpha: 0.12), borderRadius: BorderRadius.circular(4)),
-                            child: const Text('Brand', style: TextStyle(color: AppColors.info, fontSize: 10, fontWeight: FontWeight.w800)),
-                          ),
-                        ],
-                        const SizedBox(width: AppSpacing.xs),
-                        Text(Fmt.relative(post.createdAt), style: context.text.bodySmall),
+                        Row(
+                          children: [
+                            Flexible(child: Text(name, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 14.5, fontWeight: FontWeight.w800, color: fg, letterSpacing: -0.2, shadows: onMedia ? const [Shadow(color: Color(0x66000000), blurRadius: 8)] : null))),
+                            if (post.verified) ...[
+                              const SizedBox(width: 4),
+                              Icon(AppIcons.sealCheck, size: 14, color: onMedia ? const Color(0xFF60A5FA) : AppColors.info),
+                            ],
+                            const SizedBox(width: 5),
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                              decoration: BoxDecoration(
+                                gradient: post.isBrand ? null : const LinearGradient(colors: [Color(0xFFF4511E), Color(0xFFEC2A78)]),
+                                color: post.isBrand ? AppColors.info : null,
+                                borderRadius: BorderRadius.circular(5),
+                              ),
+                              child: Text(post.isBrand ? 'BRAND' : 'CREATOR', style: const TextStyle(color: Colors.white, fontSize: 8.5, fontWeight: FontWeight.w900, letterSpacing: 0.4)),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 1),
+                        Text(Fmt.relative(post.createdAt), style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600, color: sub)),
                       ],
                     ),
                   ),
-                ),
-                if (!isOwnPost && post.creatorId != null) ...[
-                  const SizedBox(width: AppSpacing.xs),
-                  _FollowButton(following: post.isFollowingCreator, busy: _followBusy, onTap: _toggleFollow),
                 ],
-              ],
-            ),
-          ),
-
-          const SizedBox(height: AppSpacing.sm),
-
-          // Media — every photo / video of the post together in one block.
-          if (post.media.isNotEmpty)
-          // Edge to edge — the media touches both sides of the screen.
-            GestureDetector(
-              onDoubleTap: () => _toggleLike(fromDoubleTap: true),
-              child: PostMediaGrid(
-                media: post.media,
-                radius: 0,
-                onOpen: _openViewer,
-                overlay: Center(
-                  child: AnimatedScale(
-                    scale: _burst ? 1 : 0,
-                    duration: const Duration(milliseconds: 250),
-                    curve: Curves.easeOutBack,
-                    child: const Icon(AppIcons.heartFilled, size: 96, color: Colors.white),
-                  ),
-                ),
               ),
             ),
-
-          // Likes summary + Like | Save
-          _PostActions(
-            post: post,
-            liked: liked,
-            myId: myId,
-            onLike: () => _toggleLike(),
-            onSave: _toggleSave,
-            onShare: (ctx) => ShareService.send(
-              ctx,
-              ShareService.post(id: post.id, creator: post.creatorName ?? (post.isBrand ? 'A brand' : 'A creator'), caption: post.caption, mine: post.creatorUserId == myId),
-            ),
-            onShowLikers: () => showLikersSheet(context, postId: post.id, likeCount: post.likeCount),
           ),
-
-          // Caption under the actions (2 lines, then "See more").
-          if (post.caption.isNotEmpty)
-            Padding(
-              padding: const EdgeInsets.fromLTRB(AppSpacing.gutter, 2, AppSpacing.gutter, 0),
-              child: _ExpandableCaption(text: post.caption),
-            ),
+          if (!isOwnPost && post.creatorId != null) ...[
+            const SizedBox(width: 8),
+            _FollowButton(following: post.isFollowingCreator, busy: _followBusy, onTap: _toggleFollow, onMedia: onMedia),
+          ],
         ],
+      );
+    }
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(12, 0, 12, 16),
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          color: palette.surface,
+          borderRadius: BorderRadius.circular(26),
+          border: dark ? Border.all(color: palette.border.withValues(alpha: 0.5)) : null,
+          boxShadow: dark ? null : const [BoxShadow(color: Color(0x14101828), blurRadius: 30, offset: Offset(0, 10))],
+        ),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(26),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              if (hasMedia)
+              // Media with the creator on top of it.
+                Stack(
+                  children: [
+                    GestureDetector(
+                      onDoubleTap: () => _toggleLike(fromDoubleTap: true),
+                      child: PostMediaGrid(
+                        media: post.media,
+                        radius: 0,
+                        onOpen: _openViewer,
+                        overlay: Center(
+                          child: AnimatedScale(
+                            scale: _burst ? 1 : 0,
+                            duration: const Duration(milliseconds: 250),
+                            curve: Curves.easeOutBack,
+                            child: const Icon(AppIcons.heartFilled, size: 96, color: Colors.white, shadows: [Shadow(color: Color(0x66000000), blurRadius: 20)]),
+                          ),
+                        ),
+                      ),
+                    ),
+                    const Positioned(
+                      left: 0,
+                      right: 0,
+                      top: 0,
+                      height: 110,
+                      child: IgnorePointer(
+                        child: DecoratedBox(
+                          decoration: BoxDecoration(gradient: LinearGradient(begin: Alignment.topCenter, end: Alignment.bottomCenter, colors: [Color(0x8C000000), Color(0x00000000)])),
+                        ),
+                      ),
+                    ),
+                    Positioned(left: 12, right: 12, top: 12, child: header(onMedia: true)),
+                  ],
+                )
+              else
+                Padding(padding: const EdgeInsets.fromLTRB(14, 14, 14, 4), child: header(onMedia: false)),
+
+              _PostActions(
+                post: post,
+                liked: liked,
+                myId: myId,
+                onLike: () => _toggleLike(),
+                onSave: _toggleSave,
+                onShare: (ctx) => ShareService.send(
+                  ctx,
+                  ShareService.post(id: post.id, creator: post.creatorName ?? (post.isBrand ? 'A brand' : 'A creator'), caption: post.caption, mine: post.creatorUserId == myId),
+                ),
+                onShowLikers: () => showLikersSheet(context, postId: post.id, likeCount: post.likeCount),
+              ),
+
+              if (post.caption.isNotEmpty)
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 4, 16, 0),
+                  child: _ExpandableCaption(text: post.caption, author: name),
+                ),
+              const SizedBox(height: 16),
+            ],
+          ),
+        ),
       ),
     );
   }
 }
 
 class _FollowButton extends StatelessWidget {
-  const _FollowButton({required this.following, required this.busy, required this.onTap});
+  const _FollowButton({required this.following, required this.busy, required this.onTap, this.onMedia = false});
 
   final bool following;
   final bool busy;
   final VoidCallback onTap;
 
+  /// Glass style on top of a photo.
+  final bool onMedia;
+
   @override
   Widget build(BuildContext context) {
-    return TextButton(
-      onPressed: busy ? null : onTap,
-      style: TextButton.styleFrom(
-        minimumSize: const Size(0, 32),
-        padding: const EdgeInsets.symmetric(horizontal: 10),
-        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-        foregroundColor: following ? context.palette.textSecondary : AppColors.primary,
+    final palette = context.palette;
+    final Color fg;
+    final BoxDecoration deco;
+    if (onMedia) {
+      fg = Colors.white;
+      deco = BoxDecoration(
+        color: Colors.white.withValues(alpha: following ? 0.12 : 0.22),
+        borderRadius: BorderRadius.circular(99),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.4)),
+      );
+    } else if (following) {
+      fg = palette.textSecondary;
+      deco = BoxDecoration(color: palette.surfaceMuted, borderRadius: BorderRadius.circular(99));
+    } else {
+      fg = Colors.white;
+      deco = BoxDecoration(gradient: const LinearGradient(colors: [Color(0xFFF4511E), Color(0xFFEC2A78)]), borderRadius: BorderRadius.circular(99));
+    }
+    return GestureDetector(
+      onTap: busy ? null : onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 200),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
+        decoration: deco,
+        child: Text(following ? 'Following' : 'Follow', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 12.5, color: fg)),
       ),
-      child: Text(following ? 'Following' : 'Follow', style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 13)),
     );
   }
 }
@@ -516,56 +595,88 @@ class _PostActions extends StatelessWidget {
     final first = post.likePreview.isEmpty ? null : post.likePreview.first;
     final firstName = first == null ? null : (first.id == myId ? 'You' : first.name);
     final others = post.likeCount - (first == null ? 0 : 1);
-    final text = context.text.bodySmall?.copyWith(fontSize: 12.5, color: palette.textSecondary);
-    final strong = text?.copyWith(color: palette.textPrimary, fontWeight: FontWeight.w700);
+    final text = TextStyle(fontSize: 12.5, color: palette.textSecondary);
+    final strong = TextStyle(fontSize: 12.5, color: palette.textPrimary, fontWeight: FontWeight.w800);
+    final faces = post.likePreview.take(3).toList();
 
     return Padding(
-      padding: const EdgeInsets.fromLTRB(AppSpacing.gutter - 6, AppSpacing.xs, AppSpacing.gutter, 0),
+      padding: const EdgeInsets.fromLTRB(10, 8, 10, 0),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          //  ♡ 12    ⌑ Save    ↗ Share
+          // ♥ 1.2K    ↗ Share                         ⌑
           Row(
             children: [
               _ActionButton(
                 icon: liked ? AppIcons.heartFilled : AppIcons.heart,
                 label: post.likeCount > 0 ? Fmt.compact(post.likeCount) : 'Like',
                 active: liked,
-                activeColor: AppColors.error,
+                activeColor: const Color(0xFFEC2A78),
+                bold: true,
                 onTap: onLike,
-              ),
-              _ActionButton(
-                icon: post.isSaved ? AppIcons.bookmarkFilled : AppIcons.bookmark,
-                label: post.isSaved ? 'Saved' : 'Save',
-                active: post.isSaved,
-                activeColor: AppColors.primary,
-                onTap: onSave,
               ),
               Builder(
                 builder: (ctx) => _ActionButton(icon: AppIcons.share, label: 'Share', active: false, activeColor: AppColors.primary, onTap: () => onShare(ctx)),
               ),
+              const Spacer(),
+              _ActionButton(
+                icon: post.isSaved ? AppIcons.bookmarkFilled : AppIcons.bookmark,
+                label: '',
+                active: post.isSaved,
+                activeColor: AppColors.primary,
+                onTap: onSave,
+              ),
             ],
           ),
-          // "Liked by Riya and 12 others" — only when someone liked it.
+          // "Liked by Riya and 12 others" with their faces.
           if (post.likeCount > 0)
             Padding(
-              padding: const EdgeInsets.only(left: 6, bottom: 2),
+              padding: const EdgeInsets.fromLTRB(6, 2, 6, 2),
               child: GestureDetector(
                 onTap: onShowLikers,
-                child: Text.rich(
-                  TextSpan(
-                    style: text,
-                    children: [
-                      const TextSpan(text: 'Liked by '),
-                      if (firstName != null) ...[
-                        TextSpan(text: firstName, style: strong),
-                        if (others > 0) TextSpan(text: ' and ${Fmt.compact(others)} ${others == 1 ? 'other' : 'others'}'),
-                      ] else
-                        TextSpan(text: '${Fmt.compact(post.likeCount)} ${post.likeCount == 1 ? 'person' : 'people'}', style: strong),
+                child: Row(
+                  children: [
+                    if (faces.isNotEmpty) ...[
+                      SizedBox(
+                        width: 20.0 + (faces.length - 1) * 13,
+                        height: 22,
+                        child: Stack(
+                          children: [
+                            for (final (i, f) in faces.indexed)
+                              Positioned(
+                                left: i * 13.0,
+                                child: Container(
+                                  padding: const EdgeInsets.all(1.5),
+                                  decoration: BoxDecoration(shape: BoxShape.circle, color: palette.surface),
+                                  child: UserAvatar(initials: f.name.isEmpty ? '?' : f.name[0].toUpperCase(), imageUrl: f.avatarUrl, size: 19),
+                                ),
+                              ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(width: 8),
                     ],
-                  ),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
+                    Expanded(
+                      child: Text.rich(
+                        TextSpan(
+                          style: text,
+                          children: [
+                            const TextSpan(text: 'Liked by '),
+                            if (firstName != null) ...[
+                              TextSpan(text: firstName, style: strong),
+                              if (others > 0) ...[
+                                const TextSpan(text: ' and '),
+                                TextSpan(text: '${Fmt.compact(others)} ${others == 1 ? 'other' : 'others'}', style: strong),
+                              ],
+                            ] else
+                              TextSpan(text: '${Fmt.compact(post.likeCount)} ${post.likeCount == 1 ? 'person' : 'people'}', style: strong),
+                          ],
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ),
@@ -577,13 +688,16 @@ class _PostActions extends StatelessWidget {
 
 /// Icon + small text (count / label), Instagram-style.
 class _ActionButton extends StatelessWidget {
-  const _ActionButton({required this.icon, required this.label, required this.active, required this.activeColor, required this.onTap});
+  const _ActionButton({required this.icon, required this.label, required this.active, required this.activeColor, required this.onTap, this.bold = false});
 
   final IconData icon;
   final String label;
   final bool active;
   final Color activeColor;
   final VoidCallback onTap;
+
+  /// Bold count (likes).
+  final bool bold;
 
   @override
   Widget build(BuildContext context) {
@@ -596,14 +710,16 @@ class _ActionButton extends StatelessWidget {
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(icon, size: 23, color: color)
+            Icon(icon, size: 25, color: color)
                 .animate(key: ValueKey(active), target: active ? 1 : 0)
                 .scaleXY(begin: 1, end: 1.25, duration: 130.ms, curve: Curves.easeOut)
                 .then()
                 .scaleXY(begin: 1.25, end: 1, duration: 150.ms, curve: Curves.easeIn),
-            const SizedBox(width: 5),
-            Text(label, style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600, color: active ? activeColor : context.palette.textSecondary)),
-            const SizedBox(width: 8),
+            if (label.isNotEmpty) ...[
+              const SizedBox(width: 6),
+              Text(label, style: TextStyle(fontSize: 13, fontWeight: bold ? FontWeight.w800 : FontWeight.w700, color: bold ? context.palette.textPrimary : context.palette.textSecondary)),
+              const SizedBox(width: 10),
+            ],
           ],
         ),
       ),
@@ -613,9 +729,12 @@ class _ActionButton extends StatelessWidget {
 
 /// Caption limited to 2 lines with an inline "more" / "less".
 class _ExpandableCaption extends StatefulWidget {
-  const _ExpandableCaption({required this.text});
+  const _ExpandableCaption({required this.text, this.author});
 
   final String text;
+
+  /// Shown bold before the caption.
+  final String? author;
 
   @override
   State<_ExpandableCaption> createState() => _ExpandableCaptionState();
@@ -626,11 +745,18 @@ class _ExpandableCaptionState extends State<_ExpandableCaption> {
 
   @override
   Widget build(BuildContext context) {
-    final style = context.text.bodyMedium?.copyWith(color: context.palette.textPrimary, height: 1.4);
+    final style = context.text.bodyMedium?.copyWith(color: context.palette.textPrimary, height: 1.4, fontSize: 13.5);
+    final span = TextSpan(
+      style: style,
+      children: [
+        if (widget.author != null) TextSpan(text: '${widget.author}  ', style: const TextStyle(fontWeight: FontWeight.w800)),
+        TextSpan(text: widget.text),
+      ],
+    );
     return LayoutBuilder(
       builder: (context, box) {
         final painter = TextPainter(
-          text: TextSpan(text: widget.text, style: style),
+          text: span,
           maxLines: 2,
           textDirection: Directionality.of(context),
           textScaler: MediaQuery.textScalerOf(context),
@@ -646,9 +772,8 @@ class _ExpandableCaptionState extends State<_ExpandableCaption> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  widget.text,
-                  style: style,
+                Text.rich(
+                  span,
                   maxLines: _expanded ? null : 2,
                   overflow: _expanded ? TextOverflow.visible : TextOverflow.ellipsis,
                 ),
@@ -656,8 +781,8 @@ class _ExpandableCaptionState extends State<_ExpandableCaption> {
                   Padding(
                     padding: const EdgeInsets.only(top: 2),
                     child: Text(
-                      _expanded ? 'See less' : 'See more',
-                      style: context.text.labelLarge?.copyWith(color: AppColors.primary, fontWeight: FontWeight.w700),
+                      _expanded ? 'less' : 'more',
+                      style: context.text.labelLarge?.copyWith(color: context.palette.textTertiary, fontWeight: FontWeight.w700),
                     ),
                   ),
               ],

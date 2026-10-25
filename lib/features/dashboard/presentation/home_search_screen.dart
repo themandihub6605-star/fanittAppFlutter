@@ -250,6 +250,14 @@ class _HomeSearchScreenState extends State<HomeSearchScreen> {
       );
     }
     if (_hits.isEmpty) {
+      // Creators are hidden until the profile is complete — say so instead of "no results".
+      if (!_canSeeCreators && (_kind == _Kind.all || _kind == _Kind.creators)) {
+        return _Empty(
+          icon: AppIcons.lock,
+          title: 'Complete your profile to find creators',
+          message: 'Finish your profile and get it verified — then you can search and open creator profiles.',
+        );
+      }
       return _Empty(icon: AppIcons.search, title: 'No results for “$q”', message: 'Try a different name or another filter.');
     }
     return ListView.separated(

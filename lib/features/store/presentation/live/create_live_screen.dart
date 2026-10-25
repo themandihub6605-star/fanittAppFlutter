@@ -29,21 +29,26 @@ enum _Audience { public, invite, community }
 
 /// Set up a live: now or scheduled, free or ticketed, public/invite/community.
 class CreateLiveScreen extends StatelessWidget {
-  const CreateLiveScreen({super.key});
+  const CreateLiveScreen({super.key, this.communityId});
+
+  /// Opened from a community: start with "Community members" picked for it.
+  final String? communityId;
 
   @override
   Widget build(BuildContext context) {
     return ActionScope(
       child: BlocProvider(
         create: (_) => LoadCubit<List<Community>>(sl<CommunityRepository>().mine),
-        child: const _CreateLiveView(),
+        child: _CreateLiveView(communityId: communityId),
       ),
     );
   }
 }
 
 class _CreateLiveView extends StatefulWidget {
-  const _CreateLiveView();
+  const _CreateLiveView({this.communityId});
+
+  final String? communityId;
 
   @override
   State<_CreateLiveView> createState() => _CreateLiveViewState();
@@ -61,6 +66,16 @@ class _CreateLiveViewState extends State<_CreateLiveView> {
   String? _communityId;
   bool _chat = true;
   PickedMedia? _cover;
+
+  @override
+  void initState() {
+    super.initState();
+    final id = widget.communityId;
+    if (id != null && id.isNotEmpty) {
+      _audience = _Audience.community;
+      _communityId = id;
+    }
+  }
 
   @override
   void dispose() {
@@ -213,7 +228,8 @@ class _CreateLiveViewState extends State<_CreateLiveView> {
                 AppDropdown<String>(
                   label: 'Community',
                   items: communities.map((c) => c.id).toList(),
-                  value: _communityId,
+                  // Only a community from this list (avoids a dropdown error).
+                  value: communities.any((c) => c.id == _communityId) ? _communityId : null,
                   labelOf: (id) => communities.firstWhere((c) => c.id == id).name,
                   onChanged: (id) => setState(() => _communityId = id),
                 ),

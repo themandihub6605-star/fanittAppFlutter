@@ -1,3 +1,4 @@
+// File: lib/core/network/api_client.dart
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 
@@ -5,6 +6,7 @@ import '../config/app_config.dart';
 import '../storage/token_storage.dart';
 import 'api_exception.dart';
 import 'auth_interceptor.dart';
+import 'integrity_interceptor.dart';
 import 'session_events.dart';
 
 typedef JsonParser<T> = T Function(dynamic data);
@@ -35,6 +37,8 @@ class ApiClient {
     _dio.interceptors.add(
       AuthInterceptor(storage: storage, plainDio: plainDio, sessionEvents: sessionEvents),
     );
+    // Play Integrity token on login / payments / withdrawals (release Android builds).
+    _dio.interceptors.add(IntegrityInterceptor());
     if (kDebugMode) {
       _dio.interceptors.add(LogInterceptor(requestBody: true, responseBody: true, logPrint: (object) => debugPrint(object.toString())));
     }

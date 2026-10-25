@@ -163,22 +163,140 @@ class _CreatorsViewState extends State<_CreatorsView> {
               onRefresh: () async => _reload(),
               child: state.items.isEmpty
                   ? const ScrollableMessage(child: MessageView(icon: AppIcons.creators, title: 'No creators found', message: 'Try a different search or niche.'))
-                  : GridView.builder(
+                  : _CreatorsScroll(
                 controller: _scroll,
-                physics: const AlwaysScrollableScrollPhysics(),
-                padding: const EdgeInsets.fromLTRB(AppSpacing.gutter, AppSpacing.xs, AppSpacing.gutter, AppSpacing.xl),
-                gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: 2, mainAxisSpacing: 12, crossAxisSpacing: 12, childAspectRatio: 0.72),
-                itemCount: state.items.length + (state.hasMore ? 2 : 0),
-                itemBuilder: (context, i) {
-                  if (i >= state.items.length) {
-                    return const Center(child: SizedBox(width: 22, height: 22, child: CircularProgressIndicator(strokeWidth: 2)));
-                  }
-                  return CreatorTile(creator: state.items[i])
-                      .animate(delay: (30 * (i % 10)).ms)
-                      .fadeIn(duration: 260.ms)
-                      .scaleXY(begin: 0.96, curve: Curves.easeOutCubic);
-                },
+                items: state.items,
+                hasMore: state.hasMore,
+                // Rails only on the plain list — a search or niche shows just the grid.
+                showRails: _search.text.trim().isEmpty && _categoryId == null,
               ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Up-and-down page with side-scrolling rows on top:
+/// Most followed · Top rated · Open to work, then every creator in a grid.
+class _CreatorsScroll extends StatelessWidget {
+  const _CreatorsScroll({required this.controller, required this.items, required this.hasMore, required this.showRails});
+
+  final ScrollController controller;
+  final List<CreatorProfile> items;
+  final bool hasMore;
+  final bool showRails;
+
+  @override
+  Widget build(BuildContext context) {
+    // Each creator appears in one row only: Most followed first, then the
+    // rest go to Top rated / Open to work.
+    final mostFollowed = ([...items]..sort((a, b) => b.followerCount.compareTo(a.followerCount))).take(12).toList();
+    final used = {for (final c in mostFollowed) c.id};
+    final topRated = ([...items.where((c) => c.reviewCount > 0 && !used.contains(c.id))]..sort((a, b) => b.averageRating.compareTo(a.averageRating))).take(10).toList();
+    used.addAll(topRated.map((c) => c.id));
+    final available = items.where((c) => c.isAvailableForWork && !used.contains(c.id)).take(10).toList();
+    // Only worth a row when there's enough to scroll.
+    final rails = showRails && items.length >= 6
+        ? [
+      if (mostFollowed.length >= 3) (title: 'Most followed', subtitle: 'Creators with the biggest audience', icon: AppIcons.users, items: mostFollowed),
+      if (topRated.length >= 3) (title: 'Top rated', subtitle: 'Loved by brands they worked with', icon: AppIcons.starFilled, items: topRated),
+      if (available.length >= 3) (title: 'Open to work', subtitle: 'Ready for new collaborations', icon: AppIcons.checkCircle, items: available),
+    ]
+        : const <({String title, String subtitle, IconData icon, List<CreatorProfile> items})>[];
+    // One place per creator: anyone already in a row above is left out of the grid.
+    final inRails = {for (final r in rails) ...r.items.map((c) => c.id)};
+    final grid = inRails.isEmpty ? items : items.where((c) => !inRails.contains(c.id)).toList();
+
+    return CustomScrollView(
+      controller: controller,
+      physics: const AlwaysScrollableScrollPhysics(),
+      slivers: [
+        for (final rail in rails) ...[
+          SliverToBoxAdapter(child: _RailHeader(title: rail.title, subtitle: rail.subtitle, icon: rail.icon)),
+          SliverToBoxAdapter(
+            child: rail.title == 'Most followed' && rail.items.length >= 6
+            // Two rows that scroll sideways together.
+                ? SizedBox(
+              height: 2 * 176 + 10,
+              child: GridView.builder(
+                scrollDirection: Axis.horizontal,
+                padding: const EdgeInsets.symmetric(horizontal: AppSpacing.gutter),
+                gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: 2, mainAxisSpacing: 10, crossAxisSpacing: 10, mainAxisExtent: 132),
+                itemCount: rail.items.length,
+                itemBuilder: (context, i) => CreatorTile(creator: rail.items[i], heroTag: 'creator-photo-${rail.items[i].slug}-${rail.title}')
+                    .animate(delay: (30 * i.clamp(0, 8)).ms)
+                    .fadeIn(duration: 240.ms)
+                    .slideX(begin: 0.08, curve: Curves.easeOutCubic),
+              ),
+            )
+                : SizedBox(
+              height: 218,
+              child: ListView.separated(
+                scrollDirection: Axis.horizontal,
+                padding: const EdgeInsets.symmetric(horizontal: AppSpacing.gutter),
+                itemCount: rail.items.length,
+                separatorBuilder: (_, _) => const SizedBox(width: 10),
+                itemBuilder: (context, i) => SizedBox(
+                  width: 150,
+                  // Unique hero tag per row so it never clashes with the grid below.
+                  child: CreatorTile(creator: rail.items[i], heroTag: 'creator-photo-${rail.items[i].slug}-${rail.title}'),
+                ).animate(delay: (40 * i.clamp(0, 6)).ms).fadeIn(duration: 240.ms).slideX(begin: 0.08, curve: Curves.easeOutCubic),
+              ),
+            ),
+          ),
+        ],
+        if (rails.isNotEmpty && grid.isNotEmpty) const SliverToBoxAdapter(child: _RailHeader(title: 'More creators', subtitle: 'Scroll to discover everyone else', icon: AppIcons.creators)),
+        SliverPadding(
+          padding: EdgeInsets.fromLTRB(AppSpacing.gutter, rails.isEmpty ? AppSpacing.xs : 0, AppSpacing.gutter, AppSpacing.xl),
+          sliver: SliverGrid.builder(
+            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: 2, mainAxisSpacing: 12, crossAxisSpacing: 12, childAspectRatio: 0.72),
+            itemCount: grid.length + (hasMore ? 2 : 0),
+            itemBuilder: (context, i) {
+              if (i >= grid.length) {
+                return const Center(child: SizedBox(width: 22, height: 22, child: CircularProgressIndicator(strokeWidth: 2)));
+              }
+              return CreatorTile(creator: grid[i])
+                  .animate(delay: (30 * (i % 10)).ms)
+                  .fadeIn(duration: 260.ms)
+                  .scaleXY(begin: 0.96, curve: Curves.easeOutCubic);
+            },
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _RailHeader extends StatelessWidget {
+  const _RailHeader({required this.title, required this.subtitle, required this.icon});
+
+  final String title;
+  final String subtitle;
+  final IconData icon;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.palette;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(AppSpacing.gutter, 16, AppSpacing.gutter, 10),
+      child: Row(
+        children: [
+          Container(
+            width: 30,
+            height: 30,
+            decoration: BoxDecoration(borderRadius: BorderRadius.circular(10), color: AppColors.primary.withValues(alpha: 0.12)),
+            child: Icon(icon, size: 16, color: AppColors.primary),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(title, style: context.text.titleMedium?.copyWith(fontWeight: FontWeight.w800)),
+                Text(subtitle, style: context.text.bodySmall?.copyWith(fontSize: 11.5, color: palette.textSecondary)),
+              ],
             ),
           ),
         ],
@@ -190,9 +308,12 @@ class _CreatorsViewState extends State<_CreatorsView> {
 /// Portrait creator card: full photo, badges, name, niche and numbers.
 /// Tap opens the full profile.
 class CreatorTile extends StatefulWidget {
-  const CreatorTile({super.key, required this.creator});
+  const CreatorTile({super.key, required this.creator, this.heroTag});
 
   final CreatorProfile creator;
+
+  /// Defaults to `creator-photo-<slug>` (matches the profile's photo).
+  final String? heroTag;
 
   @override
   State<CreatorTile> createState() => _CreatorTileState();
@@ -226,7 +347,7 @@ class _CreatorTileState extends State<CreatorTile> {
             fit: StackFit.expand,
             children: [
               Hero(
-                tag: 'creator-photo-${c.slug}',
+                tag: widget.heroTag ?? 'creator-photo-${c.slug}',
                 child: hasPhoto
                     ? CachedNetworkImage(
                   imageUrl: c.avatarUrl!,
