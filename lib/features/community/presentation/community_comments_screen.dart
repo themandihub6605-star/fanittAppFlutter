@@ -1,3 +1,4 @@
+// File: lib/features/community/presentation/community_comments_screen.dart
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -12,6 +13,7 @@ import '../../../core/widgets/app_sheet.dart';
 import '../../../core/widgets/app_snackbar.dart';
 import '../../../core/widgets/async_view.dart';
 import '../../../core/widgets/user_avatar.dart';
+import '../../../core/widgets/report_sheet.dart';
 import '../data/community_repository.dart';
 
 /// Comments with one level of replies. Pops with the new comment count.
@@ -164,6 +166,9 @@ class _CommunityCommentsScreenState extends State<CommunityCommentsScreen> {
 
   Widget _comment(CommunityComment c, {bool reply = false}) {
     final palette = context.palette;
+    // Reported by me → hidden for me.
+    if (ReportedItems.instance.has(ReportType.communityComment, c.id)) return const SizedBox.shrink();
+    if (BlockedUsers.instance.isHidden(c.author.id)) return const SizedBox.shrink();
     final canDelete = widget.myUserId != null && (c.author.id == widget.myUserId || widget.canModerate);
     return Padding(
       padding: EdgeInsets.only(top: reply ? AppSpacing.sm : 0),
@@ -199,6 +204,13 @@ class _CommunityCommentsScreenState extends State<CommunityCommentsScreen> {
                     ),
                     if (widget.canComment) _Action(label: 'Reply', onTap: () => _reply(c)),
                     if (canDelete) _Action(label: 'Delete', onTap: () => _delete(c)),
+                    if (widget.myUserId != null && c.author.id != widget.myUserId)
+                      _Action(
+                        label: 'Report',
+                        onTap: () async {
+                          if (await showReportSheet(context, type: ReportType.communityComment, id: c.id) && mounted) setState(() {});
+                        },
+                      ),
                   ],
                 ),
                 for (final r in c.replies) _comment(r, reply: true),

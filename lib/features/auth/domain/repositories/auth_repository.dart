@@ -1,3 +1,4 @@
+// File: lib/features/auth/domain/repositories/auth_repository.dart
 import '../../../../core/enums/user_role.dart';
 import '../entities/app_user.dart';
 
@@ -36,6 +37,9 @@ abstract interface class AuthRepository {
   /// Throws [GoogleSignInCancelled] when the user closes the Google sheet.
   Future<AppUser> signInWithGoogle({UserRole? role, String? referralCode});
 
+  /// iPhone only. Throws [AppleSignInCancelled] when the user closes the Apple sheet.
+  Future<AppUser> signInWithApple({UserRole? role, String? referralCode});
+
   Future<AppUser> fetchCurrentUser();
 
   Future<AppUser> upgradeRole(UserRole role, {String? name});
@@ -54,4 +58,8 @@ abstract interface class AuthRepository {
 
 class GoogleSignInCancelled implements Exception {
   const GoogleSignInCancelled();
+}
+
+class AppleSignInCancelled implements Exception {
+  const AppleSignInCancelled();
 }

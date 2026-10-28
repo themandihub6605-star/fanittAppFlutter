@@ -1,6 +1,7 @@
 // File: lib/features/content/presentation/my_sessions_screen.dart
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_animate/flutter_animate.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
 import '../../../core/bloc/action_cubit.dart';
@@ -30,83 +31,291 @@ import '../../../core/widgets/user_avatar.dart';
 import '../../../core/widgets/status_chip.dart';
 import '../../auth/presentation/bloc/auth_bloc.dart';
 import '../../common/data/categories_repository.dart';
-import '../../dashboard/data/dashboard_repository.dart';
 import '../data/content_repository.dart';
 import '../../store/data/meet_host_api.dart';
 import '../../store/presentation/meet/attendance_sheet.dart';
 import '../../store/presentation/meet/meet_detail_screen.dart';
 import 'gifts_screen.dart';
+import 'session_bookings_screen.dart';
 
+/// Creator → My store → Live sessions. Upcoming (with who booked, seats and
+/// earnings) and History. Tap the booking strip to see everyone who booked.
 class MySessionsScreen extends StatelessWidget {
   const MySessionsScreen({super.key});
 
   @override
   Widget build(BuildContext context) {
-    final auth = context.read<AuthBloc>().state;
-    final myId = auth is AuthAuthenticated ? auth.user.id : '';
     return ActionScope(
       child: BlocProvider(
-        create: (_) => LoadCubit<List<LiveSession>>(() async => (await sl<DashboardRepository>().creator(myId)).upcomingSessions),
+        create: (_) => LoadCubit<List<HostSession>>(MeetHostApi.myUpcoming),
         child: const _SessionsView(),
       ),
     );
   }
 }
 
-class _SessionsView extends StatelessWidget {
+enum _View {
+  upcoming('Upcoming', 'Sessions you have scheduled', AppIcons.calendar),
+  history('History', 'Past sessions and who attended', AppIcons.clock);
+
+  const _View(this.label, this.hint, this.icon);
+  final String label;
+  final String hint;
+  final IconData icon;
+}
+
+class _SessionsView extends StatefulWidget {
   const _SessionsView();
 
+  @override
+  State<_SessionsView> createState() => _SessionsViewState();
+}
+
+class _SessionsViewState extends State<_SessionsView> {
+  _View _view = _View.upcoming;
+
   Future<void> _create(BuildContext context) async {
+    HapticFeedback.selectionClick();
     final created = await showAppSheet<bool>(context, builder: (_) => const SheetActionScope(child: _NewSessionSheet()));
     if ((created ?? false) && context.mounted) {
       AppSnackbar.success(context, 'Session scheduled');
-      context.read<LoadCubit<List<LiveSession>>>().refresh();
+      if (_view != _View.upcoming) setState(() => _view = _View.upcoming);
+      context.read<LoadCubit<List<HostSession>>>().refresh();
     }
+  }
+
+  Future<void> _pickView() async {
+    HapticFeedback.selectionClick();
+    final picked = await showAppSheet<_View>(
+      context,
+      builder: (sheet) => SheetBody(
+        title: 'Show',
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            for (final v in _View.values) ...[
+              _ViewOption(view: v, selected: v == _view, onTap: () => Navigator.of(sheet).pop(v)),
+              if (v != _View.values.last) const SizedBox(height: 8),
+            ],
+          ],
+        ),
+      ),
+    );
+    if (picked != null && mounted) setState(() => _view = picked);
   }
 
   @override
   Widget build(BuildContext context) {
-    final cubit = context.watch<LoadCubit<List<LiveSession>>>();
+    final cubit = context.watch<LoadCubit<List<HostSession>>>();
     final palette = context.palette;
-    return DefaultTabController(
-      length: 2,
-      child: Scaffold(
-        appBar: AppBar(
-          title: const Text('Live sessions'),
-          bottom: TabBar(
-            labelColor: AppColors.primary,
-            unselectedLabelColor: palette.textSecondary,
-            indicatorColor: AppColors.primary,
-            dividerColor: palette.border,
-            tabs: const [Tab(text: 'Upcoming'), Tab(text: 'History')],
-          ),
+    return Scaffold(
+      appBar: AppBar(
+        leading: const BackButton(),
+        title: Text(
+          _view == _View.upcoming ? 'Live sessions' : 'Session history',
+          style: const TextStyle(fontWeight: FontWeight.w800, letterSpacing: -0.3),
         ),
-        floatingActionButton: FloatingActionButton.extended(onPressed: () => _create(context), icon: const Icon(AppIcons.plus), label: const Text('Schedule')),
-        body: TabBarView(
-          children: [
-            AsyncView<List<LiveSession>>(
-              state: cubit.state,
-              onRetry: cubit.load,
-              builder: (sessions) => AppRefresh(
-                onRefresh: cubit.refresh,
-                child: sessions.isEmpty
-                    ? const ScrollableMessage(
-                  child: MessageView(
-                    icon: AppIcons.videoCamera,
-                    title: 'No upcoming sessions',
-                    message: 'Host free or paid live sessions and 1:1 calls with your audience — right inside the Fanitt app.',
+        actions: [
+          IconButton(
+            tooltip: 'Filter',
+            onPressed: _pickView,
+            icon: Stack(
+              clipBehavior: Clip.none,
+              children: [
+                Icon(AppIcons.sliders, color: palette.textPrimary),
+                if (_view == _View.history)
+                  Positioned(
+                    right: -2,
+                    top: -2,
+                    child: Container(
+                      width: 9,
+                      height: 9,
+                      decoration: BoxDecoration(color: AppColors.primary, shape: BoxShape.circle, border: Border.all(color: palette.background, width: 1.5)),
+                    ),
                   ),
-                )
-                    : ListView.separated(
-                  physics: const AlwaysScrollableScrollPhysics(),
-                  padding: const EdgeInsets.fromLTRB(AppSpacing.gutter, AppSpacing.md, AppSpacing.gutter, 96),
-                  itemCount: sessions.length,
-                  separatorBuilder: (_, _) => const SizedBox(height: AppSpacing.sm),
-                  itemBuilder: (context, index) => _SessionCard(session: sessions[index]),
+              ],
+            ),
+          ),
+          const SizedBox(width: 4),
+        ],
+      ),
+      // Schedule — white pill, not orange.
+      floatingActionButton: _view == _View.upcoming
+          ? FloatingActionButton.extended(
+        onPressed: () => _create(context),
+        backgroundColor: palette.surface,
+        foregroundColor: palette.textPrimary,
+        elevation: 3,
+        highlightElevation: 5,
+        shape: StadiumBorder(side: BorderSide(color: palette.border)),
+        icon: const Icon(AppIcons.plus, size: 20),
+        label: const Text('Schedule', style: TextStyle(fontWeight: FontWeight.w800)),
+      )
+          : null,
+      body: AnimatedSwitcher(
+        duration: const Duration(milliseconds: 220),
+        child: _view == _View.history
+            ? const _HistoryTab(key: ValueKey('history'))
+            : KeyedSubtree(
+          key: const ValueKey('upcoming'),
+          child: AsyncView<List<HostSession>>(
+            state: cubit.state,
+            onRetry: cubit.load,
+            builder: (sessions) => AppRefresh(
+              onRefresh: cubit.refresh,
+              child: sessions.isEmpty
+                  ? const ScrollableMessage(
+                child: MessageView(
+                  icon: AppIcons.videoCamera,
+                  title: 'No upcoming sessions',
+                  message: 'Schedule a free or paid live session — you’ll see everyone who books it right here.',
                 ),
+              )
+                  : ListView(
+                physics: const AlwaysScrollableScrollPhysics(),
+                padding: const EdgeInsets.fromLTRB(AppSpacing.gutter, AppSpacing.xs, AppSpacing.gutter, 110),
+                children: [
+                  _Overview(sessions: sessions).animate().fadeIn(duration: 300.ms).slideY(begin: 0.05),
+                  const SizedBox(height: 18),
+                  for (final (i, s) in sessions.indexed) ...[
+                    _SessionCard(item: s).animate(delay: (60 * i.clamp(0, 6)).ms).fadeIn(duration: 300.ms).slideY(begin: 0.05),
+                    const SizedBox(height: 14),
+                  ],
+                ],
               ),
             ),
-            const _HistoryTab(),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// One choice in the filter sheet: icon, name, one line, radio.
+class _ViewOption extends StatelessWidget {
+  const _ViewOption({required this.view, required this.selected, required this.onTap});
+
+  final _View view;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.palette;
+    return Material(
+      color: palette.surface,
+      borderRadius: BorderRadius.circular(16),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(16),
+        onTap: () {
+          HapticFeedback.selectionClick();
+          onTap();
+        },
+        child: Ink(
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(borderRadius: BorderRadius.circular(16), border: Border.all(color: selected ? AppColors.primary : palette.border, width: selected ? 1.4 : 1)),
+          child: Row(
+            children: [
+              Container(
+                width: 38,
+                height: 38,
+                decoration: BoxDecoration(color: palette.surfaceMuted, borderRadius: BorderRadius.circular(12)),
+                child: Icon(view.icon, size: 18, color: palette.textPrimary),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(view.label, style: TextStyle(fontSize: 14.5, fontWeight: FontWeight.w800, color: palette.textPrimary)),
+                    Text(view.hint, style: TextStyle(fontSize: 12, color: palette.textSecondary)),
+                  ],
+                ),
+              ),
+              AnimatedContainer(
+                duration: const Duration(milliseconds: 200),
+                width: 20,
+                height: 20,
+                decoration: BoxDecoration(shape: BoxShape.circle, border: Border.all(color: selected ? AppColors.primary : palette.border, width: selected ? 6 : 2)),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Summary on top — white card: sessions, people booked, earned.
+class _Overview extends StatelessWidget {
+  const _Overview({required this.sessions});
+
+  final List<HostSession> sessions;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.palette;
+    final booked = sessions.fold<int>(0, (a, s) => a + s.session.bookedCount);
+    final earned = sessions.fold<int>(0, (a, s) => a + s.earned);
+    final today = sessions.fold<int>(0, (a, s) => a + s.bookedToday);
+    return Container(
+      padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
+      decoration: BoxDecoration(
+        color: palette.surface,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: palette.border.withValues(alpha: context.isDark ? 0.55 : 0.8)),
+        boxShadow: context.isDark ? null : const [BoxShadow(color: Color(0x0D101828), blurRadius: 12, offset: Offset(0, 4))],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Text('Your sessions', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w800, color: palette.textPrimary)),
+              const Spacer(),
+              if (today > 0)
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
+                  decoration: BoxDecoration(color: AppColors.success.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(99)),
+                  child: Text('+$today booked today', style: const TextStyle(color: AppColors.success, fontSize: 11.5, fontWeight: FontWeight.w800)),
+                ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              _StatBox(label: 'Upcoming', value: '${sessions.length}'),
+              const SizedBox(width: 8),
+              _StatBox(label: 'People booked', value: '$booked'),
+              const SizedBox(width: 8),
+              _StatBox(label: 'Earned', value: earned == 0 ? '₹0' : Fmt.money(earned)),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _StatBox extends StatelessWidget {
+  const _StatBox({required this.label, required this.value});
+
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.palette;
+    return Expanded(
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+        decoration: BoxDecoration(color: palette.surfaceMuted.withValues(alpha: context.isDark ? 1 : 0.7), borderRadius: BorderRadius.circular(14)),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(value, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 17, fontWeight: FontWeight.w900, color: palette.textPrimary)),
+            const SizedBox(height: 1),
+            Text(label, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: palette.textSecondary)),
           ],
         ),
       ),
@@ -114,15 +323,22 @@ class _SessionsView extends StatelessWidget {
   }
 }
 
-class _SessionCard extends StatelessWidget {
-  const _SessionCard({required this.session});
+enum _More { edit, postpone, tips, cancel }
 
-  final LiveSession session;
+class _SessionCard extends StatelessWidget {
+  const _SessionCard({required this.item});
+
+  final HostSession item;
+
+  LiveSession get session => item.session;
+
+  void _reload(BuildContext context) => context.read<LoadCubit<List<HostSession>>>().refresh();
 
   Future<void> _start(BuildContext context) async {
     // Starts the meeting in-app (LiveKit) — no Zoom, no passcode.
+    HapticFeedback.mediumImpact();
     await openMeetRoom(context, session.id);
-    if (context.mounted) context.read<LoadCubit<List<LiveSession>>>().refresh();
+    if (context.mounted) _reload(context);
   }
 
   Future<void> _end(BuildContext context) async {
@@ -130,7 +346,7 @@ class _SessionCard extends StatelessWidget {
       await sl<ContentRepository>().endLive(session.id);
       return true;
     }, success: 'Session ended');
-    if (ok != null && context.mounted) context.read<LoadCubit<List<LiveSession>>>().refresh();
+    if (ok != null && context.mounted) _reload(context);
   }
 
   Future<void> _cancel(BuildContext context) async {
@@ -146,113 +362,337 @@ class _SessionCard extends StatelessWidget {
       await sl<ContentRepository>().cancelSession(session.id);
       return true;
     }, success: 'Session cancelled');
-    if (ok != null && context.mounted) context.read<LoadCubit<List<LiveSession>>>().refresh();
+    if (ok != null && context.mounted) _reload(context);
   }
 
   Future<void> _edit(BuildContext context) async {
     final updated = await showAppSheet<bool>(context, builder: (_) => SheetActionScope(child: _EditSessionSheet(session: session)));
-    if (updated == true && context.mounted) context.read<LoadCubit<List<LiveSession>>>().refresh();
+    if (updated == true && context.mounted) _reload(context);
   }
 
   Future<void> _postpone(BuildContext context) async {
     final moved = await showAppSheet<bool>(context, builder: (_) => SheetActionScope(child: _PostponeSheet(session: session)));
-    if (moved == true && context.mounted) context.read<LoadCubit<List<LiveSession>>>().refresh();
+    if (moved == true && context.mounted) _reload(context);
+  }
+
+  Future<void> _bookings(BuildContext context) async {
+    HapticFeedback.selectionClick();
+    await SessionBookingsScreen.open(context, sessionId: session.id, title: session.title);
+    if (context.mounted) _reload(context);
+  }
+
+  void _more(BuildContext context, _More m) {
+    switch (m) {
+      case _More.edit:
+        _edit(context);
+      case _More.postpone:
+        _postpone(context);
+      case _More.tips:
+        showAppSheet<void>(context, builder: (_) => _TipsSheet(session: session));
+      case _More.cancel:
+        _cancel(context);
+    }
+  }
+
+  static String _countdown(DateTime at) {
+    final d = at.toLocal().difference(DateTime.now());
+    if (d.isNegative) return 'Starting now';
+    if (d.inMinutes < 60) return 'Starts in ${d.inMinutes.clamp(1, 59)} min';
+    if (d.inHours < 24) return 'Starts in ${d.inHours}h ${d.inMinutes % 60}m';
+    final days = d.inDays;
+    final hours = d.inHours % 24;
+    return hours == 0 ? 'Starts in ${days}d' : 'Starts in ${days}d ${hours}h';
   }
 
   @override
   Widget build(BuildContext context) {
+    final palette = context.palette;
     final actions = context.watch<ActionCubit>().state;
     final s = session;
-    return AppCard(
+    final free = s.type == SessionType.free;
+    final fill = s.maxParticipants == 0 ? 0.0 : (s.bookedCount / s.maxParticipants).clamp(0.0, 1.0);
+    final cover = s.coverImageUrl ?? '';
+    final w = s.scheduledAt.toLocal();
+
+    return Container(
+      decoration: BoxDecoration(
+        color: palette.surface,
+        borderRadius: BorderRadius.circular(22),
+        border: Border.all(color: s.isLive ? AppColors.error.withValues(alpha: 0.45) : palette.border),
+        boxShadow: context.isDark ? null : const [BoxShadow(color: Color(0x0F101828), blurRadius: 16, offset: Offset(0, 6))],
+      ),
+      padding: const EdgeInsets.all(12),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Cover — same card as on the home screen (tap to change)
-          GestureDetector(
-            onTap: s.isLive ? null : () => _edit(context),
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(16),
-              child: AspectRatio(
-                aspectRatio: ImageSlot.meetPoster.aspectRatio,
-                child: Stack(
-                  fit: StackFit.expand,
-                  children: [
-                    MeetPosterPreview(
-                      image: s.coverImageUrl == null || s.coverImageUrl!.isEmpty
-                          ? const DecoratedBox(
-                        decoration: BoxDecoration(gradient: LinearGradient(colors: [Color(0xFF3B1E5E), Color(0xFF1B1B3A)])),
-                        child: Center(child: Icon(AppIcons.videoCamera, color: Colors.white24, size: 48)),
-                      )
-                          : AppNetworkImage(url: s.coverImageUrl!),
-                      title: s.title,
-                      when: s.scheduledAt,
-                      durationMinutes: s.durationMinutes,
-                      isLive: s.isLive,
+          // Top: cover + title + time
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              GestureDetector(
+                onTap: s.isLive ? null : () => _edit(context),
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(16),
+                  child: SizedBox(
+                    width: 92,
+                    height: 92,
+                    child: Stack(
+                      fit: StackFit.expand,
+                      children: [
+                        if (cover.isEmpty)
+                          ColoredBox(
+                            color: palette.surfaceMuted,
+                            child: Center(child: Icon(AppIcons.videoCamera, color: palette.textTertiary, size: 30)),
+                          )
+                        else
+                          AppNetworkImage(url: cover),
+                        Positioned(
+                          left: 6,
+                          top: 6,
+                          child: Container(
+                            width: 36,
+                            padding: const EdgeInsets.symmetric(vertical: 3),
+                            decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(8), boxShadow: const [BoxShadow(color: Color(0x22000000), blurRadius: 4)]),
+                            child: Column(
+                              children: [
+                                Text(MeetPosterPreview._months[w.month - 1], style: const TextStyle(color: Color(0xFF667085), fontSize: 8.5, fontWeight: FontWeight.w900, letterSpacing: 0.5)),
+                                Text('${w.day}', style: const TextStyle(color: Color(0xFF111111), fontSize: 15, fontWeight: FontWeight.w900, height: 1.1)),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
-                    if (!s.isLive)
-                      Positioned(
-                        right: 10,
-                        top: 44,
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                          decoration: BoxDecoration(color: Colors.black.withValues(alpha: 0.55), borderRadius: BorderRadius.circular(999)),
-                          child: const Row(
-                            mainAxisSize: MainAxisSize.min,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        if (s.isLive)
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                            decoration: BoxDecoration(color: AppColors.error, borderRadius: BorderRadius.circular(99)),
+                            child: const Text('● LIVE', style: TextStyle(color: Colors.white, fontSize: 10.5, fontWeight: FontWeight.w900, letterSpacing: 0.4)),
+                          ).animate(onPlay: (c) => c.repeat(reverse: true)).fade(begin: 1, end: 0.55, duration: 800.ms)
+                        else
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                            decoration: BoxDecoration(color: palette.surfaceMuted, borderRadius: BorderRadius.circular(99)),
+                            child: Text(_countdown(s.scheduledAt), style: TextStyle(color: palette.textPrimary, fontSize: 10.5, fontWeight: FontWeight.w800)),
+                          ),
+                        const Spacer(),
+                        if (!s.isLive)
+                          SizedBox(
+                            width: 32,
+                            height: 32,
+                            child: PopupMenuButton<_More>(
+                              padding: EdgeInsets.zero,
+                              tooltip: 'More',
+                              enabled: !actions.isBusy,
+                              icon: Icon(AppIcons.dotsThree, size: 20, color: palette.textSecondary),
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                              onSelected: (m) => _more(context, m),
+                              itemBuilder: (_) => [
+                                const PopupMenuItem(value: _More.edit, child: _MenuRow(icon: AppIcons.pencil, label: 'Edit')),
+                                const PopupMenuItem(value: _More.postpone, child: _MenuRow(icon: AppIcons.calendar, label: 'Postpone')),
+                                const PopupMenuItem(value: _More.tips, child: _MenuRow(icon: AppIcons.gift, label: 'Tips')),
+                                const PopupMenuItem(value: _More.cancel, child: _MenuRow(icon: AppIcons.xCircle, label: 'Cancel session', danger: true)),
+                              ],
+                            ),
+                          ),
+                      ],
+                    ),
+                    const SizedBox(height: 6),
+                    Text(s.title, maxLines: 2, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 15.5, fontWeight: FontWeight.w800, letterSpacing: -0.2, height: 1.25, color: palette.textPrimary)),
+                    const SizedBox(height: 4),
+                    Text(
+                      '${Fmt.weekdayDateTime(w)} · ${s.durationMinutes} min',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(fontSize: 12, color: palette.textSecondary),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      free ? 'Free' : '${Fmt.money(s.price)} · ${s.type.label}',
+                      style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w800, color: free ? AppColors.success : palette.textPrimary),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+
+          // Booking strip → full list of who booked
+          Material(
+            color: palette.background,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16), side: BorderSide(color: palette.border.withValues(alpha: 0.8))),
+            child: InkWell(
+              borderRadius: BorderRadius.circular(16),
+              onTap: () => _bookings(context),
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(12, 10, 10, 10),
+                child: Column(
+                  children: [
+                    Row(
+                      children: [
+                        _AvatarStack(people: item.recentBookers),
+                        if (item.recentBookers.isNotEmpty) const SizedBox(width: 10),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Icon(AppIcons.camera, size: 12, color: Colors.white),
-                              SizedBox(width: 4),
-                              Text('Change', style: TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.w700)),
+                              Text(
+                                s.bookedCount == 0 ? 'No bookings yet' : '${s.bookedCount} ${s.bookedCount == 1 ? 'person' : 'people'} booked',
+                                style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w800, color: palette.textPrimary),
+                              ),
+                              Text(
+                                '${item.seatsLeft} of ${s.maxParticipants} seats left${!free && item.earned > 0 ? ' · ${Fmt.money(item.earned)} earned' : ''}',
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(fontSize: 11.5, color: palette.textSecondary),
+                              ),
                             ],
                           ),
                         ),
+                        if (item.bookedToday > 0)
+                          Container(
+                            margin: const EdgeInsets.only(right: 4),
+                            padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+                            decoration: BoxDecoration(color: AppColors.success.withValues(alpha: 0.12), borderRadius: BorderRadius.circular(99)),
+                            child: Text('+${item.bookedToday} new', style: const TextStyle(fontSize: 10.5, fontWeight: FontWeight.w900, color: AppColors.success)),
+                          ).animate(onPlay: (c) => c.repeat(reverse: true)).scaleXY(begin: 1, end: 1.06, duration: 900.ms),
+                        Icon(AppIcons.chevronRight, size: 18, color: palette.textTertiary),
+                      ],
+                    ),
+                    const SizedBox(height: 9),
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(99),
+                      child: TweenAnimationBuilder<double>(
+                        tween: Tween(begin: 0, end: fill),
+                        duration: const Duration(milliseconds: 700),
+                        curve: Curves.easeOutCubic,
+                        builder: (_, v, __) => LinearProgressIndicator(
+                          value: v,
+                          minHeight: 6,
+                          backgroundColor: palette.surfaceMuted,
+                          color: AppColors.success,
+                        ),
                       ),
+                    ),
                   ],
                 ),
               ),
             ),
           ),
-          const SizedBox(height: AppSpacing.sm),
-          Row(
-            children: [
-              Expanded(child: Text(s.title, style: context.text.titleSmall)),
-              if (s.isLive) const StatusChip(label: 'Live', color: AppColors.error, icon: AppIcons.broadcast) else StatusChip(label: s.type.label, color: context.palette.textSecondary),
-            ],
-          ),
-          const SizedBox(height: 4),
-          Text(
-            '${Fmt.weekdayDateTime(s.scheduledAt)} · ${s.durationMinutes} min · ${s.type == SessionType.free ? 'Free' : Fmt.money(s.price)}',
-            style: context.text.bodySmall,
-          ),
-          Row(
-            children: [
-              Expanded(child: Text('${s.bookedCount}/${s.maxParticipants} booked', style: context.text.bodySmall)),
-              TextButton.icon(
-                onPressed: () => showAppSheet<void>(context, builder: (_) => _TipsSheet(session: s)),
-                icon: const Icon(AppIcons.gift, size: 16),
-                label: const Text('Tips'),
-              ),
-            ],
-          ),
-          const SizedBox(height: AppSpacing.md),
-          Wrap(
-            spacing: AppSpacing.xs,
-            runSpacing: AppSpacing.xs,
-            children: [
-              if (s.isLive) ...[
-                AppButton(label: 'Rejoin', icon: AppIcons.videoCamera, expand: false, height: 42, onPressed: () => _start(context)),
-                AppButton.secondary(label: 'End session', expand: false, height: 42, isLoading: actions.isBusyWith('live-${s.id}'), onPressed: actions.isBusy ? null : () => _end(context)),
-              ] else ...[
-                AppButton(label: 'Go live', icon: AppIcons.broadcast, expand: false, height: 42, isLoading: actions.isBusyWith('live-${s.id}'), onPressed: actions.isBusy ? null : () => _start(context)),
-                AppButton.secondary(label: 'Postpone', icon: AppIcons.calendar, expand: false, height: 42, onPressed: actions.isBusy ? null : () => _postpone(context)),
-                AppButton.secondary(label: 'Edit', icon: AppIcons.pencil, expand: false, height: 42, onPressed: actions.isBusy ? null : () => _edit(context)),
-                TextButton(
-                  style: TextButton.styleFrom(foregroundColor: AppColors.error),
-                  onPressed: actions.isBusy ? null : () => _cancel(context),
-                  child: const Text('Cancel'),
+          const SizedBox(height: 12),
+
+          // Actions
+          if (s.isLive)
+            Row(
+              children: [
+                Expanded(child: AppButton(label: 'Rejoin', icon: AppIcons.videoCamera, height: 44, onPressed: () => _start(context))),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: AppButton.secondary(
+                    label: 'End session',
+                    height: 44,
+                    isLoading: actions.isBusyWith('live-${s.id}'),
+                    onPressed: actions.isBusy ? null : () => _end(context),
+                  ),
                 ),
               ],
-            ],
-          ),
+            )
+          else
+            Row(
+              children: [
+                // Equal halves so both labels fit on small phones too.
+                Expanded(
+                  child: AppButton(
+                    label: 'Go live',
+                    icon: AppIcons.broadcast,
+                    height: 44,
+                    isLoading: actions.isBusyWith('live-${s.id}'),
+                    onPressed: actions.isBusy ? null : () => _start(context),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: AppButton.secondary(label: 'Bookings', height: 44, onPressed: () => _bookings(context)),
+                ),
+              ],
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+class _MenuRow extends StatelessWidget {
+  const _MenuRow({required this.icon, required this.label, this.danger = false});
+
+  final IconData icon;
+  final String label;
+  final bool danger;
+
+  @override
+  Widget build(BuildContext context) {
+    final color = danger ? AppColors.error : context.palette.textPrimary;
+    return Row(
+      children: [
+        Icon(icon, size: 18, color: color),
+        const SizedBox(width: 10),
+        Text(label, style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: color)),
+      ],
+    );
+  }
+}
+
+/// Up to 4 overlapping avatars of the latest bookers.
+class _AvatarStack extends StatelessWidget {
+  const _AvatarStack({required this.people});
+
+  final List<BookerLite> people;
+
+  static String _initials(String name) {
+    final parts = name.trim().split(RegExp(r'\s+')).where((p) => p.isNotEmpty).toList();
+    if (parts.isEmpty) return '?';
+    return (parts.first[0] + (parts.length > 1 ? parts.last[0] : '')).toUpperCase();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (people.isEmpty) {
+      return Container(
+        width: 34,
+        height: 34,
+        margin: const EdgeInsets.only(right: 10),
+        decoration: BoxDecoration(shape: BoxShape.circle, color: context.palette.surfaceMuted),
+        child: Icon(AppIcons.users, size: 17, color: context.palette.textSecondary),
+      );
+    }
+    const size = 30.0;
+    const step = 20.0;
+    final surface = context.palette.surface;
+    return SizedBox(
+      width: size + step * (people.length - 1),
+      height: size,
+      child: Stack(
+        children: [
+          for (var i = 0; i < people.length; i++)
+            Positioned(
+              left: step * i,
+              child: Container(
+                padding: const EdgeInsets.all(1.5),
+                decoration: BoxDecoration(shape: BoxShape.circle, color: surface),
+                child: UserAvatar(initials: _initials(people[i].name), imageUrl: people[i].avatarUrl.isEmpty ? null : people[i].avatarUrl, size: size - 3),
+              ),
+            ),
         ],
       ),
     );
@@ -625,11 +1065,11 @@ class _PostponeSheetState extends State<_PostponeSheet> {
               padding: const EdgeInsets.all(AppSpacing.md),
               decoration: BoxDecoration(
                 borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: _when == null ? palette.border : AppColors.primary, width: _when == null ? 1 : 1.5),
+                border: Border.all(color: _when == null ? palette.border : palette.textPrimary, width: _when == null ? 1 : 1.5),
               ),
               child: Row(
                 children: [
-                  const Icon(AppIcons.calendar, color: AppColors.primary),
+                  Icon(AppIcons.calendar, color: palette.textSecondary),
                   const SizedBox(width: AppSpacing.sm),
                   Expanded(
                     child: Text(
@@ -769,7 +1209,7 @@ class MeetPosterPreview extends StatelessWidget {
 // ---------------------------------------------------------------------------
 
 class _HistoryTab extends StatefulWidget {
-  const _HistoryTab();
+  const _HistoryTab({super.key});
 
   @override
   State<_HistoryTab> createState() => _HistoryTabState();
@@ -872,9 +1312,9 @@ class _HistoryCard extends StatelessWidget {
             Row(
               mainAxisAlignment: MainAxisAlignment.end,
               children: [
-                Text('See who attended', style: context.text.labelMedium?.copyWith(color: AppColors.primary, fontWeight: FontWeight.w700)),
+                Text('See who attended', style: context.text.labelMedium?.copyWith(color: palette.textPrimary, fontWeight: FontWeight.w700)),
                 const SizedBox(width: 2),
-                const Icon(AppIcons.chevronRight, size: 16, color: AppColors.primary),
+                Icon(AppIcons.chevronRight, size: 16, color: palette.textSecondary),
               ],
             ),
           ] else if (s.status == 'missed' && s.bookedCount > 0) ...[

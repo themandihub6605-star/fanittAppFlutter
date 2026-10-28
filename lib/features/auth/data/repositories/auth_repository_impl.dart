@@ -1,3 +1,4 @@
+// File: lib/features/auth/data/repositories/auth_repository_impl.dart
 import '../../../../core/enums/user_role.dart';
 import '../../../../core/network/api_exception.dart';
 import '../../../../core/storage/token_storage.dart';
@@ -5,6 +6,7 @@ import '../../domain/entities/app_user.dart';
 import '../../domain/repositories/auth_repository.dart';
 import '../datasources/auth_remote_data_source.dart';
 import '../models/auth_session.dart';
+import '../services/apple_auth_service.dart';
 import '../services/google_auth_service.dart';
 
 class AuthRepositoryImpl implements AuthRepository {
@@ -12,13 +14,16 @@ class AuthRepositoryImpl implements AuthRepository {
     required AuthRemoteDataSource remote,
     required TokenStorage tokens,
     required GoogleAuthService google,
+    required AppleAuthService apple,
   })  : _remote = remote,
         _tokens = tokens,
-        _google = google;
+        _google = google,
+        _apple = apple;
 
   final AuthRemoteDataSource _remote;
   final TokenStorage _tokens;
   final GoogleAuthService _google;
+  final AppleAuthService _apple;
 
   @override
   Future<AppUser?> restoreSession() async {
@@ -55,15 +60,30 @@ class AuthRepositoryImpl implements AuthRepository {
     final idToken = await _google.getIdToken();
     try {
       final session = await _remote.google(idToken: idToken, role: role, referralCode: referralCode);
-      final user = await _persist(session);
-      // Chose "Fan" on the sign-up screen → finish sign-up now.
-      if (role == UserRole.fan && user.role == UserRole.fan && !user.onboardingCompleted) {
-        return _remote.completeOnboarding();
-      }
-      return user;
+      return _finishSocial(session, role);
     } finally {
       await _google.signOut();
     }
+  }
+
+  @override
+  Future<AppUser> signInWithApple({UserRole? role, String? referralCode}) async {
+    final result = await _apple.signIn();
+    try {
+      final session = await _remote.apple(idToken: result.idToken, name: result.name, role: role, referralCode: referralCode);
+      return _finishSocial(session, role);
+    } finally {
+      await _apple.signOut();
+    }
+  }
+
+  /// Chose "Fan" on the sign-up screen → finish sign-up now.
+  Future<AppUser> _finishSocial(AuthSession session, UserRole? role) async {
+    final user = await _persist(session);
+    if (role == UserRole.fan && user.role == UserRole.fan && !user.onboardingCompleted) {
+      return _remote.completeOnboarding();
+    }
+    return user;
   }
 
   @override
@@ -91,6 +111,7 @@ class AuthRepositoryImpl implements AuthRepository {
     }
     await _tokens.clear();
     await _google.signOut();
+    await _apple.signOut();
   }
 
   Future<AppUser> _persist(AuthSession session) async {

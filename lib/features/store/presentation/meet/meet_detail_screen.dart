@@ -11,6 +11,7 @@ import '../../../../core/guards/profile_gate.dart';
 import '../../../../core/network/api_exception.dart';
 import '../../../../core/router/app_routes.dart';
 import '../../../../core/services/payment_service.dart';
+import '../../../../core/services/purchase_policy.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_icons.dart';
 import '../../../../core/theme/app_palette.dart';
@@ -170,6 +171,9 @@ class _MeetDetailScreenState extends State<MeetDetailScreen> {
         action = _Note(icon: AppIcons.clock, color: AppColors.info, text: 'You can start this meeting 30 minutes before $when.');
       case 'locked':
         action = _Note(icon: AppIcons.lock, color: AppColors.info, text: 'The host has locked this meeting. You can join again when they unlock it.');
+      case 'not_booked' when !m.isFree && !PurchasePolicy.canBuyDigital:
+      // iPhone: paid sessions can't be booked in the app.
+        action = _Note(icon: AppIcons.lock, color: palette.textSecondary, text: 'This session is for booked guests.');
       case 'not_booked':
         action = AppButton(
           label: m.isFree ? 'Book for free' : 'Book · ${Fmt.money(m.price)}',
@@ -243,7 +247,7 @@ class _MeetDetailScreenState extends State<MeetDetailScreen> {
           children: [
             _Chip(icon: AppIcons.calendar, text: when),
             _Chip(icon: AppIcons.clock, text: '${m.durationMinutes} min'),
-            _Chip(icon: AppIcons.rupee, text: m.isFree ? 'Free' : Fmt.money(m.price)),
+            if (m.isFree || PurchasePolicy.canBuyDigital) _Chip(icon: AppIcons.rupee, text: m.isFree ? 'Free' : Fmt.money(m.price)),
             if (m.spotsLeft != null) _Chip(icon: AppIcons.users, text: m.spotsLeft! <= 0 ? 'Full' : '${m.spotsLeft} spots left'),
           ],
         ),

@@ -1,3 +1,4 @@
+// File: lib/features/store/presentation/widgets/store_promo_banner.dart
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -10,13 +11,18 @@ import '../../../../core/enums/user_role.dart';
 import '../../../../core/router/app_routes.dart';
 import '../../../../core/theme/app_spacing.dart';
 import '../../../auth/presentation/bloc/auth_bloc.dart';
+import '../../data/store_access.dart';
 import '../../data/store_repository.dart';
 
-/// The Fanitt Store banner the admin uploads (Fanitt Store → Settings →
-/// Website banner), shown on the app's home screens too — nearly edge to
-/// edge, at the picture's own shape: the whole image, no cropping and no
-/// empty bands. A taller upload (e.g. 1600 × 640) gives a taller banner.
-/// Hidden when the admin switches the banner off or hasn't uploaded one.
+/// "Open your Fanitt Store" banner the admin uploads (Fanitt Store →
+/// Settings → Website banner) — nearly edge to edge, at the picture's own
+/// shape: the whole image, no cropping and no empty bands.
+///
+/// Shown only to a creator who hasn't opened a store yet (or whose store
+/// needs changes). Hidden for brands, fans and agencies, once the creator's
+/// store is live or under review, and when the admin switches the banner off.
+/// (The Fanitt Store switch only controls the physical shop, so it doesn't
+/// hide this banner.)
 class StorePromoBanner extends StatefulWidget {
   const StorePromoBanner({super.key, this.tappable = true, this.aspectRatio = 3.2});
 
@@ -51,14 +57,36 @@ class _StorePromoBannerState extends State<StorePromoBanner> {
   }
 
   void _open(BuildContext context) {
-    final auth = context.read<AuthBloc>().state;
-    final role = auth is AuthAuthenticated ? auth.user.role : null;
     HapticFeedback.selectionClick();
-    context.push(role == UserRole.creator ? AppRoutes.store : AppRoutes.stores);
+    context.push(AppRoutes.store);
   }
 
   @override
   Widget build(BuildContext context) {
+    // Creators only.
+    final auth = context.watch<AuthBloc>().state;
+    if (auth is! AuthAuthenticated || auth.user.role != UserRole.creator) return const SizedBox.shrink();
+    final myId = auth.user.id;
+    // Hidden once this creator has opened a store — rebuilds the moment it changes.
+    return ValueListenableBuilder<StoreGate>(
+      valueListenable: StoreAccess.gate,
+      builder: (context, gate, _) => _needsStore(gate, myId) ? _banner(context) : const SizedBox.shrink(),
+    );
+  }
+
+  /// True while the creator still has to open (or fix) a store.
+  /// Unknown = not checked yet → stay hidden, so it never flashes for a
+  /// creator whose store is already live.
+  bool _needsStore(StoreGate gate, String myId) {
+    if (gate == StoreGate.unknown) {
+      // Not during build — the check updates the gate this widget listens to.
+      WidgetsBinding.instance.addPostFrameCallback((_) => StoreAccess.refresh(myId));
+      return false;
+    }
+    return gate == StoreGate.none || gate == StoreGate.rejected;
+  }
+
+  Widget _banner(BuildContext context) {
     return FutureBuilder<String?>(
       future: _imageUrl,
       builder: (context, snapshot) {

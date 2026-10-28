@@ -1,3 +1,4 @@
+// File: lib/features/store/presentation/shop/store_page_screen.dart
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
@@ -7,6 +8,7 @@ import '../../../../core/bloc/load_cubit.dart';
 import '../../../../core/services/feature_flags.dart';
 import '../../../../core/di/injection.dart';
 import '../../../../core/router/app_routes.dart';
+import '../../../../core/services/purchase_policy.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_icons.dart';
 import '../../../../core/theme/app_palette.dart';
@@ -131,7 +133,7 @@ class _StoreBody extends StatelessWidget {
                   const SizedBox(height: AppSpacing.sm),
                   Text('This is how buyers see your store.', style: context.text.bodySmall?.copyWith(color: AppColors.info)),
                 ],
-                if (!page.isOwner) ...[
+                if (!page.isOwner && PurchasePolicy.canBuyDigital) ...[
                   const SizedBox(height: AppSpacing.md),
                   AppButton.secondary(
                     label: 'Send a FanBox',
@@ -170,6 +172,20 @@ class _StoreBody extends StatelessWidget {
                 if (!page.affiliate.isEmpty) ...[
                   const SizedBox(height: AppSpacing.lg),
                   Text('Recommended by ${store.name}', style: context.text.titleLarge),
+                  const SizedBox(height: 2),
+                  // Affiliate disclosure (ASCI): these are paid links.
+                  Row(
+                    children: [
+                      Icon(AppIcons.info, size: 13, color: context.palette.textSecondary),
+                      const SizedBox(width: 5),
+                      Expanded(
+                        child: Text(
+                          'Affiliate links — ${store.name} may earn a commission when you buy. The price stays the same for you.',
+                          style: context.text.bodySmall?.copyWith(fontSize: 11.5),
+                        ),
+                      ),
+                    ],
+                  ),
                   const SizedBox(height: AppSpacing.sm),
                   _AffiliateSection(storefront: page.affiliate),
                 ],
@@ -321,7 +337,22 @@ class _AffiliateRow extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Expanded(child: ColoredBox(color: Colors.white, child: SizedBox.expand(child: StoreImage(url: p.imageUrl, icon: AppIcons.link, fit: BoxFit.contain)))),
+                    Expanded(
+                      child: Stack(
+                        children: [
+                          Positioned.fill(child: ColoredBox(color: Colors.white, child: StoreImage(url: p.imageUrl, icon: AppIcons.link, fit: BoxFit.contain))),
+                          Positioned(
+                            left: 6,
+                            top: 6,
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                              decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(6), border: Border.all(color: palette.border)),
+                              child: Text('Affiliate', style: TextStyle(color: palette.textSecondary, fontSize: 9.5, fontWeight: FontWeight.w800, letterSpacing: 0.2)),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
                     Padding(
                       padding: const EdgeInsets.all(AppSpacing.xs),
                       child: Column(
@@ -333,7 +364,7 @@ class _AffiliateRow extends StatelessWidget {
                             [if (p.price != null) Fmt.money(p.price!), if (p.merchant.isNotEmpty) p.merchant].join(' · '),
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
-                            style: context.text.bodySmall?.copyWith(color: AppColors.primary),
+                            style: context.text.bodySmall?.copyWith(color: palette.textPrimary, fontWeight: FontWeight.w700),
                           ),
                         ],
                       ),

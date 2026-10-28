@@ -1,3 +1,4 @@
+// File: lib/features/auth/data/datasources/auth_remote_data_source.dart
 import '../../../../core/enums/user_role.dart';
 import '../../../../core/network/api_client.dart';
 import '../../../../core/network/api_endpoints.dart';
@@ -47,6 +48,22 @@ class AuthRemoteDataSource {
       ApiEndpoints.google,
       data: {
         'idToken': idToken,
+        if (role != null) 'role': role.value,
+        if (referralCode != null) 'referralCode': referralCode,
+      },
+      skipAuth: true,
+      parser: _session,
+    );
+    return response.data;
+  }
+
+  /// Sign in with Apple — [name] is only known the first time.
+  Future<AuthSession> apple({required String idToken, String? name, UserRole? role, String? referralCode}) async {
+    final response = await _api.post(
+      ApiEndpoints.apple,
+      data: {
+        'idToken': idToken,
+        if (name != null) 'name': name,
         if (role != null) 'role': role.value,
         if (referralCode != null) 'referralCode': referralCode,
       },

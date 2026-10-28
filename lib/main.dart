@@ -48,10 +48,24 @@ class _BootState extends State<_Boot> {
   bool _ready = false;
   String? _error;
 
+  /// The spinner only appears if set-up is slow — a quick start shows just
+  /// the brand colours, so nothing flashes before the "fanitt" animation.
+  bool _slow = false;
+  Timer? _slowTimer;
+
   @override
   void initState() {
     super.initState();
+    _slowTimer = Timer(const Duration(milliseconds: 1500), () {
+      if (mounted && !_ready) setState(() => _slow = true);
+    });
     _init();
+  }
+
+  @override
+  void dispose() {
+    _slowTimer?.cancel();
+    super.dispose();
   }
 
   Future<void> _init() async {
@@ -78,6 +92,7 @@ class _BootState extends State<_Boot> {
       FeatureFlags.init(sl<ApiClient>(), sl<SharedPreferences>());
 
       if (!mounted) return;
+      _slowTimer?.cancel();
       setState(() => _ready = true);
       debugPrint('[main] app on screen');
 
@@ -113,10 +128,14 @@ class _BootState extends State<_Boot> {
           ),
           child: Center(
             child: _error == null
-                ? const SizedBox(
-              width: 24,
-              height: 24,
-              child: CircularProgressIndicator(strokeWidth: 2.4, valueColor: AlwaysStoppedAnimation<Color>(Colors.white)),
+                ? AnimatedOpacity(
+              opacity: _slow ? 1 : 0,
+              duration: const Duration(milliseconds: 300),
+              child: const SizedBox(
+                width: 24,
+                height: 24,
+                child: CircularProgressIndicator(strokeWidth: 2.4, valueColor: AlwaysStoppedAnimation<Color>(Colors.white)),
+              ),
             )
                 : Padding(
               padding: const EdgeInsets.symmetric(horizontal: 32),

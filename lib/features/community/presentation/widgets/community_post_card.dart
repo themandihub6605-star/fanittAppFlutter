@@ -1,3 +1,4 @@
+// File: lib/features/community/presentation/widgets/community_post_card.dart
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_animate/flutter_animate.dart';
@@ -13,6 +14,7 @@ import '../../../../core/widgets/app_card.dart';
 import '../../../../core/widgets/app_sheet.dart';
 import '../../../../core/widgets/app_snackbar.dart';
 import '../../../../core/widgets/user_avatar.dart';
+import '../../../../core/widgets/report_sheet.dart';
 import '../../data/community_repository.dart';
 import '../community_comments_screen.dart';
 import 'community_post_media.dart';
@@ -180,11 +182,31 @@ class _CommunityPostCardState extends State<CommunityPostCard> {
                 title: Text(_post.isPinned ? 'Unpin' : 'Pin to top'),
                 onTap: () { Navigator.pop(ctx); _pin(); },
               ),
-            ListTile(
-              leading: const Icon(AppIcons.trash, color: AppColors.error),
-              title: const Text('Delete', style: TextStyle(color: AppColors.error)),
-              onTap: () { Navigator.pop(ctx); _delete(); },
-            ),
+            if (_isAuthor || widget.canModerate)
+              ListTile(
+                leading: const Icon(AppIcons.trash, color: AppColors.error),
+                title: const Text('Delete', style: TextStyle(color: AppColors.error)),
+                onTap: () { Navigator.pop(ctx); _delete(); },
+              ),
+            if (!_isAuthor && widget.myUserId != null)
+              ListTile(
+                leading: const Icon(AppIcons.warning, color: AppColors.error),
+                title: const Text('Report post', style: TextStyle(color: AppColors.error)),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  showReportSheet(context, type: ReportType.communityPost, id: _post.id);
+                },
+              ),
+            if (!_isAuthor && widget.myUserId != null)
+              ListTile(
+                leading: const Icon(AppIcons.warning, color: AppColors.error),
+                title: Text('Block ${_post.author.name}', maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: AppColors.error)),
+                subtitle: const Text('You won’t see each other’s posts or messages'),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  confirmBlock(context, userId: _post.author.id, name: _post.author.name);
+                },
+              ),
           ],
         ),
       ),
@@ -192,9 +214,30 @@ class _CommunityPostCardState extends State<CommunityPostCard> {
   }
 
   @override
+  void initState() {
+    super.initState();
+    ReportedItems.instance.addListener(_onReported);
+    BlockedUsers.instance.addListener(_onReported);
+  }
+
+  @override
+  void dispose() {
+    ReportedItems.instance.removeListener(_onReported);
+    BlockedUsers.instance.removeListener(_onReported);
+    super.dispose();
+  }
+
+  void _onReported() {
+    if (mounted) setState(() {});
+  }
+
+  @override
   Widget build(BuildContext context) {
     final palette = context.palette;
     final post = _post;
+    // Reported by me → hidden for me straight away.
+    if (ReportedItems.instance.has(ReportType.communityPost, post.id)) return const SizedBox.shrink();
+    if (BlockedUsers.instance.isHidden(post.author.id)) return const SizedBox.shrink();
 
     return AppCard(
       color: post.isAnnouncement ? palette.primarySoft : null,
@@ -235,7 +278,7 @@ class _CommunityPostCardState extends State<CommunityPostCard> {
                   ],
                 ),
               ),
-              if (_isAuthor || widget.canModerate)
+              if (_isAuthor || widget.canModerate || widget.myUserId != null)
                 IconButton(
                   tooltip: 'Post options',
                   onPressed: _busy ? null : _menu,

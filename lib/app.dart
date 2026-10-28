@@ -141,10 +141,21 @@ class _FanittAppState extends State<FanittApp> {
               data: mediaQuery.copyWith(
                 textScaler: mediaQuery.textScaler.clamp(minScaleFactor: 0.9, maxScaleFactor: 1.25),
               ),
-              child: GestureDetector(
-                onTap: () => FocusManager.instance.primaryFocus?.unfocus(),
-                // Blocks tampered / debuggable phones in release builds (see DeviceSecurityGate).
-                child: DeviceSecurityGate(child: HomeFirstBackScope(router: _router, child: child ?? const SizedBox.shrink())),
+              // Paints the strip behind Android's 3-button bar / iPhone home bar
+              // in the app background, and keeps every screen, sheet and dialog
+              // above it so the last items are never hidden.
+              child: ColoredBox(
+                color: Theme.of(context).scaffoldBackgroundColor,
+                child: SafeArea(
+                  top: false,
+                  left: false,
+                  right: false,
+                  child: GestureDetector(
+                    onTap: () => FocusManager.instance.primaryFocus?.unfocus(),
+                    // Blocks tampered / debuggable phones in release builds (see DeviceSecurityGate).
+                    child: DeviceSecurityGate(child: HomeFirstBackScope(router: _router, child: child ?? const SizedBox.shrink())),
+                  ),
+                ),
               ),
             );
           },

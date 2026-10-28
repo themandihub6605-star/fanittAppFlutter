@@ -1,8 +1,11 @@
 // File: lib/features/auth/presentation/screens/splash_screen.dart
+import 'dart:async';
 import 'dart:math' as math;
 import 'dart:ui' show PathMetric;
 
+import 'package:flutter/foundation.dart' show ValueListenable;
 import 'package:flutter/material.dart';
+import 'package:flutter/scheduler.dart' show Ticker;
 import 'package:flutter/services.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
@@ -72,12 +75,15 @@ class SplashScreen extends StatelessWidget {
                     SizedBox(
                       height: 132,
                       child: BlocBuilder<AuthBloc, AuthState>(
-                        builder: (context, state) => AnimatedSwitcher(
-                          duration: AppDurations.normal,
-                          child: state is AuthUnreachable
-                              ? _Unreachable(key: const ValueKey('offline'), message: state.message)
-                              : const _Loader(key: ValueKey('loading')),
-                        ),
+                        builder: (context, state) {
+                          debugPrint('[Splash] auth state: ${state.runtimeType}');
+                          return AnimatedSwitcher(
+                            duration: AppDurations.normal,
+                            child: state is AuthUnreachable
+                                ? _Unreachable(key: const ValueKey('offline'), message: state.message)
+                                : const _Loader(key: ValueKey('loading')),
+                          );
+                        },
                       ),
                     ),
                     const _VersionLabel(),
@@ -104,25 +110,68 @@ class _WrittenWordmark extends StatefulWidget {
 }
 
 class _WrittenWordmarkState extends State<_WrittenWordmark> with SingleTickerProviderStateMixin {
-  late final AnimationController _c = AnimationController(vsync: this, duration: const Duration(milliseconds: 2800));
+  /// Full writing time. Slow enough to read every stroke.
+  static const _duration = Duration(milliseconds: 3800);
+
+  /// The finished word stays on screen a moment before the app moves on.
+  static const _hold = Duration(milliseconds: 450);
+
+  /// Longest step one frame may take. When the phone is busy starting up and
+  /// frames drop, the drawing slows down a little instead of jumping ahead —
+  /// so it never looks like it started from the middle.
+  static const _maxStep = Duration(milliseconds: 34);
+
+  final _progress = ValueNotifier<double>(0);
   late final _Wordmark _mark = _Wordmark();
+  late final Ticker _ticker = createTicker(_onTick);
+  Duration _last = Duration.zero;
+  Timer? _fallback;
+  Timer? _holdTimer;
 
   @override
   void initState() {
     super.initState();
-    // Start on the next frame so the screen is already on before we draw.
+    // Measure the letters now (not on the first animated frame), then wait
+    // for the screen to settle before the pen starts.
+    if (_mark.metrics.isEmpty) debugPrint('[Splash] wordmark has no outlines');
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
-      _c.forward().whenComplete(() {
-        HapticFeedback.lightImpact();
-        splashDone.value = true;
+      Future<void>.delayed(const Duration(milliseconds: 320), () {
+        if (!mounted) return;
+        _last = Duration.zero;
+        _ticker.start();
+        // Safety net: never hold the app on the splash longer than this.
+        _fallback = Timer(_duration * 2 + _hold, _finish);
       });
     });
   }
 
+  void _onTick(Duration elapsed) {
+    var step = elapsed - _last;
+    _last = elapsed;
+    if (step > _maxStep) step = _maxStep;
+    final next = (_progress.value + step.inMicroseconds / _duration.inMicroseconds).clamp(0.0, 1.0);
+    _progress.value = next;
+    if (next >= 1) {
+      _ticker.stop();
+      _holdTimer = Timer(_hold, _finish);
+    }
+  }
+
+  void _finish() {
+    _fallback?.cancel();
+    _holdTimer?.cancel();
+    if (splashDone.value) return;
+    debugPrint('[Splash] done → router may leave the splash');
+    HapticFeedback.lightImpact();
+    splashDone.value = true;
+  }
+
   @override
   void dispose() {
-    _c.dispose();
+    _fallback?.cancel();
+    _holdTimer?.cancel();
+    _ticker.dispose();
+    _progress.dispose();
     super.dispose();
   }
 
@@ -134,7 +183,7 @@ class _WrittenWordmarkState extends State<_WrittenWordmark> with SingleTickerPro
       child: SizedBox(
         width: width,
         height: height,
-        child: CustomPaint(painter: _WordmarkPainter(_c, _mark)),
+        child: CustomPaint(painter: _WordmarkPainter(_progress, _mark)),
       ),
     );
   }
@@ -159,7 +208,7 @@ class _Wordmark {
 class _WordmarkPainter extends CustomPainter {
   _WordmarkPainter(this.anim, this.mark) : super(repaint: anim);
 
-  final Animation<double> anim;
+  final ValueListenable<double> anim;
   final _Wordmark mark;
 
   /// When each contour is drawn, as a share of the drawing phase:
@@ -256,6 +305,8 @@ class _WordmarkPainter extends CustomPainter {
   bool shouldRepaint(_WordmarkPainter old) => old.mark != mark;
 }
 
+/// Small spinner — only once "fanitt" is fully written and the app is still
+/// waiting (e.g. slow network). Never on top of the animation.
 class _Loader extends StatelessWidget {
   const _Loader({super.key});
 
@@ -263,14 +314,22 @@ class _Loader extends StatelessWidget {
   Widget build(BuildContext context) {
     return Align(
       alignment: Alignment.topCenter,
-      child: SizedBox(
-        width: 22,
-        height: 22,
-        child: CircularProgressIndicator(
-          strokeWidth: 2,
-          valueColor: AlwaysStoppedAnimation<Color>(Colors.white.withValues(alpha: 0.75)),
+      child: ValueListenableBuilder<bool>(
+        valueListenable: splashDone,
+        builder: (context, done, _) => AnimatedOpacity(
+          opacity: done ? 1 : 0,
+          duration: const Duration(milliseconds: 400),
+          curve: Curves.easeOut,
+          child: SizedBox(
+            width: 22,
+            height: 22,
+            child: CircularProgressIndicator(
+              strokeWidth: 2,
+              valueColor: AlwaysStoppedAnimation<Color>(Colors.white.withValues(alpha: 0.75)),
+            ),
+          ),
         ),
-      ).animate(delay: 3000.ms).fadeIn(duration: 300.ms),
+      ),
     );
   }
 }

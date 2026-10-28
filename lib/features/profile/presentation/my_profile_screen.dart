@@ -900,7 +900,7 @@ class _BrandWorkState extends State<_BrandWork> {
   @override
   Widget build(BuildContext context) {
     final d = widget.data;
-    final header = _WorkHeader(title: 'My campaigns', subtitle: 'Hiring, in progress and done', onSeeAll: () => context.go(AppRoutes.brandCampaigns));
+    final header = _WorkHeader(title: 'My campaigns', subtitle: 'Hiring, in progress and done', onSeeAll: () => context.push(AppRoutes.brandCampaigns));
     if (d == null) {
       return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [header, widget.loaded ? _WorkError(onRetry: widget.onChanged) : const _WorkSkeleton()]);
     }
@@ -963,7 +963,7 @@ class _BrandWorkState extends State<_BrandWork> {
               ),
           ],
         ),
-        if (visible.length > 8) _SeeAllButton(label: 'See all ${visible.length} campaigns', onTap: () => context.go(AppRoutes.brandCampaigns)),
+        if (visible.length > 8) _SeeAllButton(label: 'See all ${visible.length} campaigns', onTap: () => context.push(AppRoutes.brandCampaigns)),
         const SizedBox(height: AppSpacing.md),
         _SeeAllButton(label: 'Post a new campaign', icon: AppIcons.plus, onTap: _post),
       ],

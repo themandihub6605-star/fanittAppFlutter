@@ -1,3 +1,4 @@
+// File: lib/features/auth/presentation/screens/login_screen.dart
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
@@ -16,6 +17,7 @@ import '../cubits/login_cubit.dart';
 import '../widgets/auth_scaffold.dart';
 import '../widgets/auth_switch_prompt.dart';
 import '../widgets/or_divider.dart';
+import '../widgets/social_sign_in.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -29,6 +31,7 @@ class _LoginScreenState extends State<LoginScreen> {
   final _email = TextEditingController();
   final _password = TextEditingController();
   bool _attempted = false;
+  bool _appleBusy = false;
 
   @override
   void dispose() {
@@ -42,6 +45,15 @@ class _LoginScreenState extends State<LoginScreen> {
     setState(() => _attempted = true);
     if (!(_formKey.currentState?.validate() ?? false)) return;
     context.read<LoginCubit>().login(email: _email.text.trim(), password: _password.text);
+  }
+
+  Future<void> _continueWithApple() async {
+    FocusScope.of(context).unfocus();
+    setState(() => _appleBusy = true);
+    final user = await runAppleSignIn(context);
+    if (!mounted) return;
+    setState(() => _appleBusy = false);
+    if (user != null) context.read<AuthBloc>().add(AuthLoggedIn(user));
   }
 
   void _onStateChanged(BuildContext context, AuthFormState state) {
@@ -59,6 +71,7 @@ class _LoginScreenState extends State<LoginScreen> {
       listenWhen: (previous, current) => previous.tick != current.tick || previous.user != current.user,
       listener: _onStateChanged,
       builder: (context, state) {
+        final busy = state.isBusy || _appleBusy;
         return AuthScaffold(
           title: 'Welcome back',
           subtitle: 'Log in to your Fanitt account.',
@@ -66,11 +79,11 @@ class _LoginScreenState extends State<LoginScreen> {
             children: [
               const OrDivider(),
               const SizedBox(height: AppSpacing.lg),
-              AppButton.secondary(
-                label: 'Continue with Google',
-                iconWidget: Image.asset('assets/images/google.png'),
-                isLoading: state.loading == AuthMethod.google,
-                onPressed: state.isBusy ? null : context.read<LoginCubit>().continueWithGoogle,
+              SocialSignInRow(
+                googleBusy: state.loading == AuthMethod.google,
+                appleBusy: _appleBusy,
+                onGoogle: busy ? null : context.read<LoginCubit>().continueWithGoogle,
+                onApple: busy ? null : _continueWithApple,
               ),
               const SizedBox(height: AppSpacing.md),
               AuthSwitchPrompt(
@@ -96,7 +109,7 @@ class _LoginScreenState extends State<LoginScreen> {
                     textInputAction: TextInputAction.next,
                     autofillHints: const [AutofillHints.email],
                     validator: Validators.email,
-                    enabled: !state.isBusy,
+                    enabled: !busy,
                   ),
                   const SizedBox(height: AppSpacing.lg),
                   AppTextField(
@@ -109,12 +122,12 @@ class _LoginScreenState extends State<LoginScreen> {
                     autofillHints: const [AutofillHints.password],
                     validator: Validators.password,
                     onSubmitted: (_) => _submit(),
-                    enabled: !state.isBusy,
+                    enabled: !busy,
                   ),
                   Align(
                     alignment: Alignment.centerRight,
                     child: TextButton(
-                      onPressed: state.isBusy ? null : () => context.push(AppRoutes.forgotPassword),
+                      onPressed: busy ? null : () => context.push(AppRoutes.forgotPassword),
                       child: const Text('Forgot password?'),
                     ),
                   ),
@@ -122,7 +135,7 @@ class _LoginScreenState extends State<LoginScreen> {
                   AppButton(
                     label: 'Log in',
                     isLoading: state.loading == AuthMethod.email,
-                    onPressed: state.isBusy ? null : _submit,
+                    onPressed: busy ? null : _submit,
                   ),
                 ],
               ),

@@ -1,0 +1,48 @@
+# File: codemagic.yaml   (project root, next to pubspec.yaml)
+#
+# Builds the iPhone app on Codemagic's Macs and sends it to TestFlight.
+# Before the first build (codemagic.io → Teams → Integrations):
+#   1. Add an App Store Connect API key and name the integration "Fanitt ASC".
+#   2. Create the app in App Store Connect (Bundle ID fanitt.comapp.fanittapp)
+#      and put its Apple ID number in APP_STORE_APPLE_ID below.
+# Then start the "iOS release" workflow by hand from the Codemagic dashboard.
+
+workflows:
+  ios-release:
+    name: iOS release (TestFlight)
+    instance_type: mac_mini_m2
+    max_build_duration: 90
+    integrations:
+      app_store_connect: Fanitt ASC
+    environment:
+      flutter: stable
+      xcode: latest
+      cocoapods: default
+      ios_signing:
+        distribution_type: app_store
+        bundle_identifier: fanitt.comapp.fanittapp
+      vars:
+        # App Store Connect → your app → App Information → Apple ID (a number)
+        APP_STORE_APPLE_ID: "0000000000"
+    scripts:
+      - name: Get Flutter packages
+        script: flutter pub get
+      - name: Install CocoaPods
+        script: |
+          cd ios
+          pod install --repo-update
+      - name: Use signing profiles
+        script: xcode-project use-profiles
+      - name: Build IPA
+        script: |
+          LATEST=$(app-store-connect get-latest-app-store-build-number "$APP_STORE_APPLE_ID" 2>/dev/null || echo 0)
+          flutter build ipa --release \
+            --build-number=$((LATEST + 1)) \
+            --export-options-plist=/Users/builder/export_options.plist
+    artifacts:
+      - build/ios/ipa/*.ipa
+      - /tmp/xcodebuild_logs/*.log
+    publishing:
+      app_store_connect:
+        auth: integration
+        submit_to_testflight: true

@@ -27,6 +27,7 @@ import '../../../dashboard/data/dashboard_repository.dart';
 import '../../../profile/presentation/link_agency_sheet.dart';
 import '../../../subscription/data/subscription_repository.dart';
 import '../widgets/security_sheets.dart';
+import 'blocked_accounts_screen.dart';
 
 /// Every account option (wallet, store, plans, settings, log out…).
 /// Opened from the ☰ on the Profile screen; [showCard] hides the top card
@@ -63,106 +64,100 @@ class AccountScreen extends StatelessWidget {
     final user = auth.user;
     final role = user.role;
 
+    // Things already on the Home "Quick actions" (incl. its More sheet) aren't
+    // repeated here. Agencies have no quick actions, so they see everything.
+    final isCreator = role == UserRole.creator;
+    final isBrand = role == UserRole.brand;
+    final isFan = role == UserRole.fan;
+    final hasQuick = isCreator || isBrand || isFan;
+
     return Scaffold(
       appBar: AppBar(title: Text(showCard ? 'Account' : 'Settings & more')),
       body: RefreshIndicator.adaptive(
         color: AppColors.primary,
         onRefresh: () async => context.read<AuthBloc>().add(const AuthRefreshRequested()),
-        child: ListView(
-          physics: const AlwaysScrollableScrollPhysics(),
-          padding: const EdgeInsets.fromLTRB(AppSpacing.gutter, AppSpacing.xs, AppSpacing.gutter, AppSpacing.xxl),
-          children: [
-            if (showCard) AccountCard(user: user),
-            const SizedBox(height: AppSpacing.xl),
-            const _SectionLabel('Profile'),
-            _Group(children: [
-              _Tile(icon: AppIcons.user, title: 'Edit profile', onTap: () => context.push(AppRoutes.editProfile)),
-              if (role == UserRole.brand) _Tile(icon: AppIcons.image, title: 'My posts & reels', onTap: () => context.push(AppRoutes.posts)),
-              if (role == UserRole.creator) ...[
-                _Tile(icon: AppIcons.image, title: 'My posts & reels', onTap: () => context.push(AppRoutes.posts)),
-                // Hidden for now — Live sessions.
-                // _Tile(icon: AppIcons.videoCamera, title: 'Live sessions', onTap: () => context.push(AppRoutes.sessions)),
-                _Tile(icon: AppIcons.gift, title: 'FanBox gifts', onTap: () => context.push(AppRoutes.gifts)),
+        // The admin's Fanitt Store switch only turns the PHYSICAL shop on/off:
+        // when it's off, "Fanitt Store" (merch) and "My orders" hide. Everything
+        // else — My Fanitt Store, stores, communities, FanBox, library — stays.
+        child: ValueListenableBuilder<bool>(
+          valueListenable: FeatureFlags.store,
+          builder: (context, storeOn, _) {
+            final profile = <Widget>[
+              if (!hasQuick || isFan) _Tile(icon: AppIcons.user, title: 'Edit profile', onTap: () => context.push(AppRoutes.editProfile)),
+              if (isBrand) _Tile(icon: AppIcons.image, title: 'My posts & reels', onTap: () => context.push(AppRoutes.posts)),
+              if (!hasQuick || isBrand) _Tile(icon: AppIcons.bookmark, title: 'Saved posts', onTap: () => context.push(AppRoutes.savedPosts)),
+            ];
+            final store = <Widget>[
+              // Agencies don't shop — no store section for them.
+              if (role != UserRole.agency) ...[
+                // Creators find Explore stores in Home → Quick actions → More.
+                if (!isFan && !isCreator) _Tile(icon: AppIcons.storeFilled, title: 'Explore stores', onTap: () => context.push(AppRoutes.stores)),
+                // Physical shop (merch) — on Home for everyone while it's on.
+                if (storeOn && !hasQuick) _Tile(icon: AppIcons.storeFilled, title: 'Fanitt Store', subtitle: 'Merch & products from creators', onTap: () => context.push(AppRoutes.shop)),
+                if (storeOn && !isFan) _Tile(icon: AppIcons.package, title: 'My orders', subtitle: 'Track your Fanitt Store orders', onTap: () => context.push(AppRoutes.shopOrders)),
+                if (!isFan) _Tile(icon: AppIcons.library, title: 'My library', subtitle: 'Digital products you bought', onTap: () => context.push(AppRoutes.library)),
               ],
-            ]),
-            const SizedBox(height: AppSpacing.lg),
-            // The admin can switch the physical-products shop off; then the
-            // "Fanitt Store · Merch" entry hides (everything else stays).
-            // Agencies don't shop — no store section for them.
-            if (role != UserRole.agency) ...[
-              ValueListenableBuilder<bool>(
-                valueListenable: FeatureFlags.store,
-                builder: (context, storeOn, _) => Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    const _SectionLabel('Fanitt Store'),
-                    _Group(children: [
-                      if (role == UserRole.creator) _Tile(icon: AppIcons.store, title: 'My Fanitt Store', subtitle: 'Sell, stream and earn', onTap: () => context.push(AppRoutes.store)),
-                      if (role != UserRole.fan) _Tile(icon: AppIcons.storeFilled, title: 'Explore stores', onTap: () => context.push(AppRoutes.stores)),
-                      _Tile(icon: AppIcons.package, title: 'My orders', subtitle: 'Track your Fanitt Store orders', onTap: () => context.push(AppRoutes.shopOrders)),
-                      if (storeOn) _Tile(icon: AppIcons.storeFilled, title: 'Fanitt Store', subtitle: 'Merch & products from creators', onTap: () => context.push(AppRoutes.shop)),
-                      _Tile(icon: AppIcons.library, title: 'My library', subtitle: 'Digital products you bought', onTap: () => context.push(AppRoutes.library)),
-                      // Hidden for now — Virtual Meets.
-                      // _Tile(icon: AppIcons.videoCamera, title: 'Virtual Meets', subtitle: 'Book and join meetings in the app', onTap: () => context.push(AppRoutes.meets)),
-                      _Tile(icon: AppIcons.bookmark, title: 'Saved posts', onTap: () => context.push(AppRoutes.savedPosts)),
-                    ]),
-                  ],
-                ),
-              ),
-              const SizedBox(height: AppSpacing.lg),
-            ],
-            const _SectionLabel('Discover'),
-            _Group(children: [
-              if (role != UserRole.creator && role != UserRole.agency) _Tile(icon: AppIcons.feed, title: role == UserRole.brand ? 'Feed · post, reels & stories' : 'Feed', onTap: () => context.push(AppRoutes.feed)),
-              if (role != UserRole.brand)
-                _Tile(icon: AppIcons.creators, title: 'Creators', onTap: () => context.push(AppRoutes.creatorsDirectory)),
-              if (role == UserRole.creator || role == UserRole.agency) _Tile(icon: AppIcons.brand, title: 'Brands', onTap: () => context.push(AppRoutes.brands)),
-              if (role != UserRole.agency) _Tile(icon: AppIcons.users, title: 'Communities', onTap: () => context.push(AppRoutes.communities)),
-              if (role != UserRole.agency) _Tile(icon: AppIcons.userPlus, title: 'Following', onTap: () => context.push(AppRoutes.following)),
-            ]),
-            const SizedBox(height: AppSpacing.lg),
-            const _SectionLabel('Money'),
-            _Group(children: [
-              if (role != UserRole.agency && role != UserRole.fan) _Tile(icon: AppIcons.crown, title: 'Plans & billing', onTap: () => context.push(AppRoutes.plans)),
-              if (role == UserRole.creator || role == UserRole.brand || role == UserRole.fan)
+            ];
+            final discover = <Widget>[
+              if (role == UserRole.agency) _Tile(icon: AppIcons.creators, title: 'Creators', onTap: () => context.push(AppRoutes.creatorsDirectory)),
+              if (role == UserRole.agency) _Tile(icon: AppIcons.brand, title: 'Brands', onTap: () => context.push(AppRoutes.brands)),
+            ];
+            final money = <Widget>[
+              if (role == UserRole.agency) _Tile(icon: AppIcons.receipt, title: 'All activity', onTap: () => context.push(AppRoutes.transactions)),
+              if (isFan) ...[
                 _Tile(icon: AppIcons.wallet, title: 'Wallet', subtitle: Fmt.money(user.walletBalance), onTap: () => context.push(AppRoutes.wallet)),
-              _Tile(icon: AppIcons.receipt, title: 'All activity', onTap: () => context.push(AppRoutes.transactions)),
-              if (role != UserRole.agency) _Tile(icon: AppIcons.gift, title: 'Refer & earn', onTap: () => context.push(AppRoutes.referrals)),
-              if (role == UserRole.creator || role == UserRole.brand)
+                _Tile(icon: AppIcons.receipt, title: 'All activity', onTap: () => context.push(AppRoutes.transactions)),
+              ],
+              if (isBrand) _Tile(icon: AppIcons.gift, title: 'Refer & earn', onTap: () => context.push(AppRoutes.referrals)),
+              if (isCreator || isBrand)
                 _Tile(
                   icon: AppIcons.agency,
                   title: 'Join an agency',
                   onTap: () async {
-                    final linked = await showLinkAgencySheet(context, asCreator: role == UserRole.creator);
+                    final linked = await showLinkAgencySheet(context, asCreator: isCreator);
                     if (linked && context.mounted) AppSnackbar.success(context, 'You’ve joined the agency');
                   },
                 ),
-            ]),
-            const SizedBox(height: AppSpacing.lg),
-            const _SectionLabel('Help'),
-            _Group(children: [
-              _Tile(icon: AppIcons.bell, title: 'Notifications', onTap: () => context.push(AppRoutes.notifications)),
-              _Tile(icon: AppIcons.mail, title: 'Contact support', subtitle: AppConfig.supportEmail, onTap: () => _contactSupport(context)),
-              _Tile(icon: AppIcons.shieldCheck, title: 'Privacy policy', onTap: () => context.push(AppRoutes.privacyPolicy)),
-              _Tile(icon: AppIcons.fileText, title: 'Terms of use', onTap: () => context.push(AppRoutes.termsOfUse)),
-              Builder(builder: (ctx) => _Tile(icon: AppIcons.share, title: 'Share Fanitt', subtitle: 'Invite friends to the app', onTap: () => ShareService.send(ctx, ShareService.app()))),
-              _Tile(icon: AppIcons.star, title: 'Rate Fanitt', subtitle: 'Leave a rating on Google Play', onTap: AppRating.rateNow),
-            ]),
-            const SizedBox(height: AppSpacing.lg),
-            const _SectionLabel('Security'),
-            _Group(children: [
-              if (user.authProvider != 'google')
-                _Tile(
-                  icon: AppIcons.lock,
-                  title: 'Change password',
-                  onTap: () async {
-                    if (await showChangePasswordSheet(context) && context.mounted) AppSnackbar.success(context, 'Password updated');
-                  },
-                ),
-              _Tile(icon: AppIcons.signOut, title: 'Log out', onTap: () => _logout(context)),
-              _Tile(icon: AppIcons.trash, title: 'Delete account', destructive: true, onTap: () => showDeleteAccountSheet(context)),
-            ]),
-          ],
+            ];
+
+            // No section titles — the screen is just "Settings & more":
+            // your things in one card, then help, then security.
+            final main = [...profile, ...store, ...discover, ...money];
+
+            return ListView(
+              physics: const AlwaysScrollableScrollPhysics(),
+              padding: const EdgeInsets.fromLTRB(AppSpacing.gutter, AppSpacing.xs, AppSpacing.gutter, AppSpacing.xxl),
+              children: [
+                if (showCard) AccountCard(user: user),
+                SizedBox(height: showCard ? AppSpacing.xl : AppSpacing.xs),
+                if (main.isNotEmpty) ...[
+                  _Group(children: main),
+                  const SizedBox(height: AppSpacing.lg),
+                ],
+                _Group(children: [
+                  _Tile(icon: AppIcons.lock, title: 'Blocked accounts', subtitle: 'People you blocked', onTap: () => BlockedAccountsScreen.open(context)),
+                  _Tile(icon: AppIcons.mail, title: 'Contact support', subtitle: AppConfig.supportEmail, onTap: () => _contactSupport(context)),
+                  _Tile(icon: AppIcons.shieldCheck, title: 'Privacy policy', onTap: () => context.push(AppRoutes.privacyPolicy)),
+                  _Tile(icon: AppIcons.fileText, title: 'Terms of use', onTap: () => context.push(AppRoutes.termsOfUse)),
+                  Builder(builder: (ctx) => _Tile(icon: AppIcons.share, title: 'Share Fanitt', subtitle: 'Invite friends to the app', onTap: () => ShareService.send(ctx, ShareService.app()))),
+                  _Tile(icon: AppIcons.star, title: 'Rate Fanitt', subtitle: 'Leave a rating on Google Play', onTap: AppRating.rateNow),
+                ]),
+                const SizedBox(height: AppSpacing.lg),
+                _Group(children: [
+                  if (user.authProvider != 'google')
+                    _Tile(
+                      icon: AppIcons.lock,
+                      title: 'Change password',
+                      onTap: () async {
+                        if (await showChangePasswordSheet(context) && context.mounted) AppSnackbar.success(context, 'Password updated');
+                      },
+                    ),
+                  _Tile(icon: AppIcons.signOut, title: 'Log out', onTap: () => _logout(context)),
+                  _Tile(icon: AppIcons.trash, title: 'Delete account', destructive: true, onTap: () => showDeleteAccountSheet(context)),
+                ]),
+              ],
+            );
+          },
         ),
       ),
     );
@@ -254,8 +249,7 @@ class AccountCardState extends State<AccountCard> {
           color: AppColors.success,
           label: 'Earnings',
           value: _dashboard == null ? null : Fmt.money(_dashboard!.totalEarnings),
-          hint: 'Details',
-          hintColor: AppColors.primary,
+          hint: _dashboard == null ? null : 'Details',
           loading: !_loaded,
           onTap: () => context.push(AppRoutes.wallet),
         ),
@@ -593,18 +587,6 @@ class _ProposalMeter extends StatelessWidget {
       ),
     );
   }
-}
-
-class _SectionLabel extends StatelessWidget {
-  const _SectionLabel(this.text);
-
-  final String text;
-
-  @override
-  Widget build(BuildContext context) => Padding(
-    padding: const EdgeInsets.only(left: AppSpacing.xxs, bottom: AppSpacing.xs),
-    child: Text(text, style: context.text.labelMedium?.copyWith(color: context.palette.textSecondary)),
-  );
 }
 
 class _Group extends StatelessWidget {

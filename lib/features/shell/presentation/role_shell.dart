@@ -4,11 +4,15 @@ import 'dart:ui' show ImageFilter;
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../core/enums/user_role.dart';
 import '../../../core/services/app_rating.dart';
 import '../../../core/services/feature_flags.dart';
 import '../../../core/theme/app_palette.dart';
+import '../../../core/widgets/app_tour.dart';
+import '../../auth/presentation/bloc/auth_bloc.dart';
 
 class ShellDestination {
   const ShellDestination(this.label, this.icon, this.selectedIcon, {this.whenStoreOff});
@@ -53,8 +57,75 @@ class _RoleShellState extends State<RoleShell> with SingleTickerProviderStateMix
   @override
   void initState() {
     super.initState();
-    // On Home: maybe ask for a Google Play rating (rules in AppRating).
-    WidgetsBinding.instance.addPostFrameCallback((_) => _maybeAskRating());
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      // First time on this account → the walkthrough; otherwise maybe ask
+      // for a Google Play rating (rules in AppRating). Never both at once.
+      final id = _tourId();
+      if (id != null && !AppTour.seen(id)) {
+        Future<void>.delayed(const Duration(milliseconds: 1200), () {
+          if (mounted && _shell.currentIndex == 0) AppTour.start(context, id: id, steps: _tourSteps());
+        });
+      } else {
+        _maybeAskRating();
+      }
+    });
+  }
+
+  // ---------------------------------------------------------------------------
+  // First-time walkthrough — one per role, shown once per account.
+  // ---------------------------------------------------------------------------
+
+  UserRole? get _role {
+    final auth = context.read<AuthBloc>().state;
+    return auth is AuthAuthenticated ? auth.user.role : null;
+  }
+
+  String? _tourId() {
+    final auth = context.read<AuthBloc>().state;
+    if (auth is! AuthAuthenticated) return null;
+    final role = auth.user.role;
+    // Agencies have their own dashboard — no walkthrough for them.
+    if (role != UserRole.creator && role != UserRole.brand && role != UserRole.fan) return null;
+    return '${role.name}_${auth.user.id}';
+  }
+
+  List<TourStep> _tourSteps() {
+    final steps = <TourStep>[];
+    void tab(String label, String title, String body) {
+      final i = widget.destinations.indexWhere((d) => d.label == label);
+      if (i >= 0 && i < 5) steps.add(TourStep(target: TourTargets.tab(i), title: title, body: body));
+    }
+
+    void home(GlobalKey key, String title, String body) => steps.add(TourStep(target: key, title: title, body: body));
+
+    switch (_role) {
+      case UserRole.creator:
+        home(TourTargets.quickActions, 'Everything in one tap', 'Your store, Live, Live sessions, Communities and Plans. Tap More for the rest.');
+        home(TourTargets.search, 'Find anything', 'Search creators, brands, stores and more.');
+        tab('Feed', 'Share your work', 'Post photos, reels and stories — and see what other creators share.');
+        tab('Campaigns', 'Want paid brand deals?', 'Open campaigns, send proposals and track every deal here.');
+        tab('Messages', 'Talk to brands', 'All your chats with brands and fans in one place.');
+        tab('Profile', 'Your account & settings', 'Edit your profile, see your earnings and open Settings & more.');
+        tab('Home', 'Your control center', 'Come back to Home for everything new.');
+      case UserRole.brand:
+        home(TourTargets.quickActions, 'Run your brand from here', 'My campaigns, Find creators, Live, Live sessions and Communities.');
+        home(TourTargets.search, 'Find the right creators', 'Search creators, stores and more by name or niche.');
+        tab('Feed', 'Show your brand', 'Post photos, reels and stories, and see what creators share.');
+        tab('Messages', 'Chat with creators', 'Every conversation with the creators you work with.');
+        tab('Profile', 'Your brand profile', 'Edit your brand page, see your plan and open Settings & more.');
+        tab('Home', 'Your control center', 'Come back to Home for everything new.');
+      case UserRole.fan:
+        home(TourTargets.quickActions, 'Everything for fans', 'Fanitt Store, Live, Live sessions, Communities and more. Tap More for the rest.');
+        home(TourTargets.search, 'Find anything', 'Search creators, lives, products and stores.');
+        tab('Feed', 'See what creators post', 'Photos, reels and stories from the creators you follow.');
+        tab('Creators', 'Discover creators', 'Find creators you love and follow them.');
+        tab('Messages', 'Chat with creators', 'Your conversations, all in one place.');
+        tab('Profile', 'Your library & orders', 'Purchases, orders, saved posts and Settings & more.');
+        tab('Home', 'Your control center', 'Come back to Home for everything new.');
+      default:
+        break;
+    }
+    return steps;
   }
 
   @override
@@ -68,6 +139,9 @@ class _RoleShellState extends State<RoleShell> with SingleTickerProviderStateMix
   }
 
   void _maybeAskRating() {
+    // Not on top of (or right after starting) the walkthrough.
+    final id = _tourId();
+    if (AppTour.isRunning || (id != null && !AppTour.seen(id))) return;
     if (mounted && _shell.currentIndex == 0) AppRating.maybeAsk(context);
   }
 
@@ -209,7 +283,11 @@ class _ProNavBar extends StatelessWidget {
                               curve: Curves.easeOutCubic,
                               width: i == index ? selectedW : otherW,
                               height: _dockHeight,
-                              child: _NavItem(destination: destinations[i], selected: i == index, onTap: () => onSelected(i)),
+                              // Keyed so the first-time walkthrough can point at each tab.
+                              child: KeyedSubtree(
+                                key: i < 5 ? TourTargets.tab(i) : null,
+                                child: _NavItem(destination: destinations[i], selected: i == index, onTap: () => onSelected(i)),
+                              ),
                             ),
                         ],
                       );

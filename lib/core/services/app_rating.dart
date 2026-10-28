@@ -1,6 +1,10 @@
+// File: lib/core/services/app_rating.dart
+import 'dart:io' show Platform;
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:in_app_review/in_app_review.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../di/injection.dart';
@@ -10,21 +14,20 @@ import '../theme/app_palette.dart';
 import '../theme/app_spacing.dart';
 import '../widgets/app_button.dart';
 import '../widgets/app_sheet.dart';
+import 'link_opener.dart';
 
 /// "Rate Fanitt on Google Play".
 ///
 /// * On Home (any role), after the app has been opened a few times, a small
-///   sheet asks the user to rate Fanitt on Google Play.
-/// * "Rate on Google Play" opens Google's own rating popup inside the app
-///   (stars + review go straight to Google Play / Play Console). After that
-///   we never ask again.
-/// * "Not now" or closing the sheet → ask again after 7 days.
+///   sheet asks the user to rate Fanitt.
+/// * "Rate on Google Play" (and "Rate Fanitt" in Settings & more) open
+///   Fanitt's **Play Store page** — always. There the user picks the stars
+///   and writes the review, and it's posted publicly on the store.
 ///
-/// Google's rules: the stars and the review are only ever chosen by the user
-/// in Google's popup (the app can't fill them in), we don't ask how they
-/// like the app first, and everyone gets the same button whatever they think.
-/// Google also decides if its popup appears — when it can't, the Play Store
-/// page opens instead.
+/// Why not Google's in-app review popup: Google lets that popup appear only
+/// a few times per user and never tells the app if it showed — so tapping a
+/// button often did nothing. Google also says not to start it from a button.
+/// The store page always opens.
 abstract final class AppRating {
   static const _doneKey = 'app_rating_done';
   static const _nextKey = 'app_rating_next_at';
@@ -65,10 +68,13 @@ abstract final class AppRating {
     }
   }
 
-  /// "Rate Fanitt" from the Account screen — straight to Google's popup.
+  /// "Rate Fanitt" from Settings & more — opens the Play Store page.
   static Future<void> rateNow() async {
-    await _prefs.setBool(_doneKey, true);
-    await _openGoogle();
+    HapticFeedback.selectionClick();
+    try {
+      await _prefs.setBool(_doneKey, true);
+    } catch (_) {}
+    await _openStorePage();
   }
 
   static Future<void> _ask(BuildContext context) async {
@@ -83,24 +89,27 @@ abstract final class AppRating {
     }
   }
 
-  static Future<void> _openGoogle() async {
-    final review = InAppReview.instance;
+  /// Play Store app first; if that can't open, the Play Store website.
+  static Future<void> _openStorePage() async {
     try {
-      if (await review.isAvailable()) {
-        await review.requestReview();
-      } else {
-        await review.openStoreListing();
-      }
-    } catch (_) {
-      try {
-        await review.openStoreListing();
-      } catch (e) {
-        debugPrint('[AppRating] could not open Play Store: $e');
-      }
+      await InAppReview.instance.openStoreListing();
+      return;
+    } catch (e) {
+      debugPrint('[AppRating] store app did not open: $e');
+    }
+    try {
+      final info = await PackageInfo.fromPlatform();
+      final url = Platform.isIOS
+          ? 'https://apps.apple.com/search?term=fanitt'
+          : 'https://play.google.com/store/apps/details?id=${info.packageName}';
+      await LinkOpener.open(url);
+    } catch (e) {
+      debugPrint('[AppRating] could not open the store page: $e');
     }
   }
 }
 
+/// Calm white sheet: star badge, five stars, one orange button.
 class _RateSheet extends StatelessWidget {
   const _RateSheet();
 
@@ -117,12 +126,8 @@ class _RateSheet extends StatelessWidget {
             Container(
               width: 68,
               height: 68,
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(22),
-                gradient: const LinearGradient(begin: Alignment.topLeft, end: Alignment.bottomRight, colors: [Color(0xFFF4511E), Color(0xFFEC2A78)]),
-                boxShadow: [BoxShadow(color: AppColors.primary.withValues(alpha: 0.35), blurRadius: 18, offset: const Offset(0, 8))],
-              ),
-              child: const Icon(AppIcons.starFilled, color: Colors.white, size: 34),
+              decoration: BoxDecoration(color: AppColors.warning.withValues(alpha: 0.12), borderRadius: BorderRadius.circular(22)),
+              child: const Icon(AppIcons.starFilled, color: Color(0xFFFFB400), size: 34),
             ),
             const SizedBox(height: AppSpacing.md),
             // Five stars — just a picture, the user picks theirs on Google Play.
@@ -137,24 +142,25 @@ class _RateSheet extends StatelessWidget {
               ],
             ),
             const SizedBox(height: AppSpacing.md),
-            Text('Rate Fanitt on Google Play', textAlign: TextAlign.center, style: context.text.titleLarge),
+            Text('Rate Fanitt on Google Play', textAlign: TextAlign.center, style: TextStyle(fontSize: 20, fontWeight: FontWeight.w900, letterSpacing: -0.4, color: palette.textPrimary)),
             const SizedBox(height: AppSpacing.xs),
             Text(
               'Your rating helps more creators, brands and fans find Fanitt. It only takes a few seconds.',
               textAlign: TextAlign.center,
-              style: context.text.bodyMedium?.copyWith(color: palette.textSecondary, height: 1.45),
+              style: TextStyle(fontSize: 14, height: 1.45, color: palette.textSecondary),
             ),
             const SizedBox(height: AppSpacing.xl),
             AppButton(
               label: 'Rate on Google Play',
               icon: AppIcons.starFilled,
-              onPressed: () {
-                HapticFeedback.selectionClick();
-                Navigator.of(context).pop(true);
-              },
+              onPressed: () => Navigator.of(context).pop(true),
             ),
             const SizedBox(height: AppSpacing.xs),
-            TextButton(onPressed: () => Navigator.of(context).pop(false), child: const Text('Not now')),
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              style: TextButton.styleFrom(foregroundColor: palette.textSecondary),
+              child: const Text('Not now', style: TextStyle(fontWeight: FontWeight.w700)),
+            ),
           ],
         ),
       ),

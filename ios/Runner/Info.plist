@@ -1,11 +1,12 @@
 <?xml version="1.0" encoding="UTF-8"?>
+<!-- File: ios/Runner/Info.plist -->
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
 	<key>CFBundleDevelopmentRegion</key>
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
 	<key>CFBundleDisplayName</key>
-	<string>Fanittapp</string>
+	<string>Fanitt</string>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>
@@ -13,7 +14,7 @@
 	<key>CFBundleInfoDictionaryVersion</key>
 	<string>6.0</string>
 	<key>CFBundleName</key>
-	<string>fanittapp</string>
+	<string>Fanitt</string>
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
@@ -28,11 +29,11 @@
 	<string>LaunchScreen</string>
 	<key>UIMainStoryboardFile</key>
 	<string>Main</string>
+
+	<!-- The app is portrait only (same as Android). -->
 	<key>UISupportedInterfaceOrientations</key>
 	<array>
 		<string>UIInterfaceOrientationPortrait</string>
-		<string>UIInterfaceOrientationLandscapeLeft</string>
-		<string>UIInterfaceOrientationLandscapeRight</string>
 	</array>
 	<key>UISupportedInterfaceOrientations~ipad</key>
 	<array>
@@ -45,5 +46,62 @@
 	<true/>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
+
+	<!-- Permission messages (shown by iOS when the app asks). -->
+	<key>NSCameraUsageDescription</key>
+	<string>Fanitt uses the camera so you can take photos and videos for posts, stories and your profile, and to show your video in live sessions and calls.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Fanitt uses the microphone for live sessions, calls and when you record videos.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>Fanitt needs access to your photos so you can choose pictures and videos for posts, stories, your profile and campaigns.</string>
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>Fanitt saves photos and files you download (like invoices and purchases) to your photo library.</string>
+
+	<!-- Keeps live-session audio going when the phone locks; delivers push notifications. -->
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>audio</string>
+		<string>remote-notification</string>
+	</array>
+
+	<!-- Only standard HTTPS encryption is used — no export paperwork needed. -->
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<false/>
+
+	<!-- Apps Fanitt can open: UPI apps for payments, social apps, WhatsApp. -->
+	<key>LSApplicationQueriesSchemes</key>
+	<array>
+		<string>https</string>
+		<string>http</string>
+		<string>tel</string>
+		<string>mailto</string>
+		<string>whatsapp</string>
+		<string>instagram</string>
+		<string>youtube</string>
+		<string>upi</string>
+		<string>tez</string>
+		<string>gpay</string>
+		<string>phonepe</string>
+		<string>paytmmp</string>
+		<string>credpay</string>
+		<string>bhim</string>
+		<string>mobikwik</string>
+		<string>freecharge</string>
+		<string>amazonpay</string>
+	</array>
+
+	<!-- Google / Apple sign-in through Firebase return to the app with these. -->
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleTypeRole</key>
+			<string>Editor</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>com.googleusercontent.apps.771316915553-v1oi4gq2qnnvsbfkfphboui7ki39d3ss</string>
+				<string>app-1-771316915553-ios-60ba7c7a2664a9d192b920</string>
+			</array>
+		</dict>
+	</array>
 </dict>
 </plist>

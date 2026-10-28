@@ -1,3 +1,4 @@
+// File: lib/features/subscription/presentation/plans_screen.dart
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
@@ -10,6 +11,7 @@ import '../../../core/bloc/load_cubit.dart';
 import '../../../core/di/injection.dart';
 import '../../../core/enums/user_role.dart';
 import '../../../core/services/payment_service.dart';
+import '../../../core/services/purchase_policy.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_icons.dart';
 import '../../../core/theme/app_palette.dart';
@@ -152,8 +154,12 @@ class _PlansViewState extends State<_PlansView> {
           state: cubit.state,
           onRetry: cubit.load,
           builder: (data) {
-            final hasCycles = data.plans.any((p) => p.isYearly) && data.plans.any((p) => !p.isYearly && !p.isFree);
-            final visible = data.plans.where((p) => p.isFree || !hasCycles || p.isYearly == _yearly).toList()
+            // iPhone: plans can't be bought in the app — show only the current plan.
+            final canBuy = PurchasePolicy.canBuyDigital;
+            final hasCycles = canBuy && data.plans.any((p) => p.isYearly) && data.plans.any((p) => !p.isYearly && !p.isFree);
+            final visible = (canBuy
+                ? data.plans.where((p) => p.isFree || !hasCycles || p.isYearly == _yearly).toList()
+                : data.plans.where((p) => p.id == data.current.plan.id).toList())
               ..sort((a, b) => a.price.compareTo(b.price));
             final current = data.current;
             final paid = visible.where((p) => !p.isFree).toList();

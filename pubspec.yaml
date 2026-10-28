@@ -2,7 +2,7 @@
 name: fanitt
 description: Fanitt — the creator, brand and agency app.
 publish_to: 'none'
-version: 1.0.0+23
+version: 1.0.0+24
 
 environment:
   sdk: ^3.7.0
@@ -68,3 +68,5 @@ flutter:
     - assets/images/appLogo.png
     - assets/images/google.png
     - assets/images/splash_screenlogo.png
+    - assets/images/apple.png
+    - assets/images/fanitt_wordmark.png

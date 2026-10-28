@@ -1,3 +1,4 @@
+// File: lib/features/store/presentation/shop/products_screen.dart
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -98,9 +99,12 @@ class _ProductsViewState extends State<_ProductsView> {
     final palette = context.palette;
     final state = context.watch<PagedCubit<DigitalProduct>>().state;
     final filtersOn = _price != null || _sort != 'new';
+    // Card height = picture + title (2 lines) + store/price row — no empty space.
+    final cellWidth = (MediaQuery.sizeOf(context).width - AppSpacing.gutter * 2 - 12) / 2;
+    final cardHeight = MarketProductCard.heightFor(cellWidth, MediaQuery.textScalerOf(context));
 
     return Scaffold(
-      appBar: AppBar(title: const Text('All products')),
+      appBar: AppBar(title: const Text('Digital products')),
       body: Column(
         children: [
           // Search + filter
@@ -161,7 +165,9 @@ class _ProductsViewState extends State<_ProductsView> {
                       showCheckmark: false,
                       selectedColor: AppColors.primary,
                       labelStyle: TextStyle(color: _category == entry.key ? Colors.white : palette.textPrimary, fontWeight: FontWeight.w600, fontSize: 13),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                      shape: const StadiumBorder(),
+                      side: BorderSide(color: _category == entry.key ? AppColors.primary : palette.border.withValues(alpha: 0.8)),
+                      backgroundColor: palette.surface,
                       onSelected: (_) {
                         HapticFeedback.selectionClick();
                         setState(() => _category = entry.key);
@@ -176,7 +182,7 @@ class _ProductsViewState extends State<_ProductsView> {
             child: state.isFirstLoad
                 ? GridView.builder(
               padding: const EdgeInsets.fromLTRB(AppSpacing.gutter, AppSpacing.xs, AppSpacing.gutter, AppSpacing.xl),
-              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: 2, mainAxisSpacing: 12, crossAxisSpacing: 12, mainAxisExtent: 250),
+              gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: 2, mainAxisSpacing: 14, crossAxisSpacing: 12, mainAxisExtent: cardHeight),
               itemCount: 6,
               itemBuilder: (_, _) => DecoratedBox(
                 decoration: BoxDecoration(color: palette.surfaceMuted, borderRadius: BorderRadius.circular(16)),
@@ -195,7 +201,7 @@ class _ProductsViewState extends State<_ProductsView> {
                 controller: _scroll,
                 physics: const AlwaysScrollableScrollPhysics(),
                 padding: const EdgeInsets.fromLTRB(AppSpacing.gutter, AppSpacing.xs, AppSpacing.gutter, AppSpacing.xl),
-                gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: 2, mainAxisSpacing: 12, crossAxisSpacing: 12, mainAxisExtent: 250),
+                gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: 2, mainAxisSpacing: 14, crossAxisSpacing: 12, mainAxisExtent: cardHeight),
                 itemCount: state.items.length + (state.hasMore ? 2 : 0),
                 itemBuilder: (context, i) {
                   if (i >= state.items.length) {
@@ -219,6 +225,16 @@ class MarketProductCard extends StatefulWidget {
   final DigitalProduct product;
   final int index;
   final double? width;
+
+  static const double _imageRatio = 1.3;
+
+  /// Exact card height for a card [width] wide: picture + 2-line title +
+  /// store/price row + paddings. Grids use it so cards have no empty space.
+  static double heightFor(double width, TextScaler scaler) {
+    final title = scaler.scale(14) * 1.25 * 2;
+    final row = scaler.scale(13.5) * 1.4;
+    return width / _imageRatio + 8 + title + 6 + (row < 20 ? 20 : row) + 10 + 2;
+  }
 
   @override
   State<MarketProductCard> createState() => _MarketProductCardState();
@@ -244,13 +260,17 @@ class _MarketProductCardState extends State<MarketProductCard> {
         duration: const Duration(milliseconds: 110),
         child: Container(
           width: widget.width,
-          decoration: BoxDecoration(color: palette.surface, borderRadius: BorderRadius.circular(16), border: Border.all(color: palette.border)),
+          decoration: BoxDecoration(
+            color: palette.surface,
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: palette.border.withValues(alpha: context.isDark ? 0.55 : 0.7)),
+          ),
           clipBehavior: Clip.antiAlias,
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               AspectRatio(
-                aspectRatio: 1.3,
+                aspectRatio: MarketProductCard._imageRatio,
                 child: Stack(
                   fit: StackFit.expand,
                   children: [
@@ -286,13 +306,13 @@ class _MarketProductCardState extends State<MarketProductCard> {
                   ],
                 ),
               ),
+              // Title, then store + price right under it (no Spacer = no big gap).
               Padding(
                 padding: const EdgeInsets.fromLTRB(10, 8, 10, 0),
-                child: Text(p.title, maxLines: 2, overflow: TextOverflow.ellipsis, style: context.text.titleSmall?.copyWith(fontWeight: FontWeight.w700, height: 1.25)),
+                child: Text(p.title, maxLines: 2, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, height: 1.25, color: palette.textPrimary)),
               ),
-              const Spacer(),
               Padding(
-                padding: const EdgeInsets.fromLTRB(10, 0, 10, 10),
+                padding: const EdgeInsets.fromLTRB(10, 6, 10, 10),
                 child: Row(
                   children: [
                     if (p.storeName.isNotEmpty) ...[

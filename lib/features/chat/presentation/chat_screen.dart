@@ -1,3 +1,4 @@
+// File: lib/features/chat/presentation/chat_screen.dart
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
@@ -12,6 +13,7 @@ import '../../../core/utils/formatters.dart';
 import '../../../core/widgets/app_snackbar.dart';
 import '../../../core/widgets/async_view.dart';
 import '../../../core/widgets/user_avatar.dart';
+import '../../../core/widgets/report_sheet.dart';
 import '../../auth/presentation/bloc/auth_bloc.dart';
 import '../data/chat_models.dart';
 import '../data/chat_repository.dart';
@@ -105,6 +107,28 @@ class _ChatViewState extends State<_ChatView> {
             ),
           ],
         ),
+        actions: [
+          // Report the other person (their id comes from their messages).
+          BlocSelector<ChatCubit, ChatState, String?>(
+            selector: (s) {
+              for (final m in s.messages) {
+                if (m.senderId.isNotEmpty && m.senderId != widget.myUserId) return m.senderId;
+              }
+              return null;
+            },
+            builder: (context, otherId) => otherId == null
+                ? const SizedBox.shrink()
+                : IconButton(
+              tooltip: 'More',
+              icon: const Icon(AppIcons.dotsThree),
+              onPressed: () async {
+                final done = await showContentActions(context, type: ReportType.user, id: otherId, name: widget.args.title, userId: otherId);
+                // Blocked → this chat closes.
+                if (done == 'blocked' && context.mounted) Navigator.of(context).maybePop();
+              },
+            ),
+          ),
+        ],
       ),
       body: BlocConsumer<ChatCubit, ChatState>(
         listenWhen: (p, c) => p.tick != c.tick,
@@ -123,22 +147,35 @@ class _ChatViewState extends State<_ChatView> {
                 child: reversed.isEmpty
                     ? const MessageView(icon: AppIcons.messages, title: 'Say hello', message: 'Messages you send appear here.')
                     : ListView.builder(
-                        reverse: true,
-                        keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
-                        padding: const EdgeInsets.fromLTRB(AppSpacing.md, AppSpacing.md, AppSpacing.md, AppSpacing.xs),
-                        itemCount: reversed.length,
-                        itemBuilder: (context, index) {
-                          final message = reversed[index];
-                          final older = index + 1 < reversed.length ? reversed[index + 1] : null;
-                          final showDay = older == null || !_sameDay(older.createdAt, message.createdAt);
-                          return Column(
-                            children: [
-                              if (showDay) _DayLabel(date: message.createdAt),
-                              _Bubble(message: message, mine: message.senderId == widget.myUserId),
-                            ],
-                          );
-                        },
-                      ),
+                  reverse: true,
+                  keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+                  padding: const EdgeInsets.fromLTRB(AppSpacing.md, AppSpacing.md, AppSpacing.md, AppSpacing.xs),
+                  itemCount: reversed.length,
+                  itemBuilder: (context, index) {
+                    final message = reversed[index];
+                    final older = index + 1 < reversed.length ? reversed[index + 1] : null;
+                    final showDay = older == null || !_sameDay(older.createdAt, message.createdAt);
+                    return Column(
+                      children: [
+                        if (showDay) _DayLabel(date: message.createdAt),
+                        if (!ReportedItems.instance.has(ReportType.message, message.id))
+                          GestureDetector(
+                            // Long-press their message to report it.
+                            onLongPress: message.senderId == widget.myUserId || message.isPending
+                                ? null
+                                : () => showContentActions(context, type: ReportType.message, id: message.id, name: widget.args.title, userId: message.senderId).then((done) {
+                              if (done == 'blocked' && context.mounted) {
+                                Navigator.of(context).maybePop();
+                                return;
+                              }
+                              if (mounted) setState(() {});
+                            }),
+                            child: _Bubble(message: message, mine: message.senderId == widget.myUserId),
+                          ),
+                      ],
+                    );
+                  },
+                ),
               ),
               _Composer(
                 controller: _input,

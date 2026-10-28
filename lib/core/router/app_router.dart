@@ -68,6 +68,7 @@ import '../../features/store/presentation/shop/products_screen.dart';
 import '../../features/store/presentation/affiliate/my_affiliate_screen.dart';
 import '../../features/store/presentation/analytics/store_analytics_screen.dart';
 import '../../features/store/presentation/call/call_screen.dart';
+import '../../features/store/presentation/call/talk_experts_screen.dart';
 import '../../features/store/presentation/fanbox/fanbox_received_screen.dart';
 import '../../features/store/presentation/meet/meet_detail_screen.dart';
 import '../../features/store/presentation/meet/meet_room_screen.dart';
@@ -76,6 +77,7 @@ import '../../features/dashboard/presentation/home_search_screen.dart';
 import '../../features/store/presentation/call/call_settings_screen.dart';
 import '../../features/store/presentation/live/create_live_screen.dart';
 import '../../features/store/presentation/live/live_detail_screen.dart';
+import '../../features/store/presentation/live/live_discover_screen.dart';
 import '../../features/store/presentation/live/live_room_screen.dart';
 import '../../features/store/presentation/live/my_lives_screen.dart';
 import '../enums/user_role.dart';
@@ -199,6 +201,8 @@ class AppRouter {
     _page(AppRoutes.creatorProfilePath, (s) => CreatorProfileScreen(slug: s.pathParameters['slug']!)),
     _page(AppRoutes.brands, (_) => const BrandsScreen()),
     _page(AppRoutes.creatorsDirectory, (_) => const CreatorsScreen()),
+    // Brand → My campaigns (a page now, not a tab).
+    _page(AppRoutes.brandCampaigns, (_) => const BrandCampaignsScreen()),
     _page(AppRoutes.brandProfilePath, (s) => BrandProfileScreen(slug: s.pathParameters['slug']!)),
     _page(AppRoutes.communities, (_) => const CommunitiesScreen()),
     _page(AppRoutes.communityDetailPath, (s) => CommunityDetailScreen(slug: s.pathParameters['slug']!)),
@@ -239,6 +243,12 @@ class AppRouter {
     _page(AppRoutes.library, (_) => const SecureScreen(child: LibraryScreen())),
     _page(AppRoutes.stores, (_) => const StoreDiscoverScreen(showBack: true)),
     _page(AppRoutes.storeLives, (_) => const MyLivesScreen()),
+    // Other creators' lives (Home → Live). Own lives: My store → Stream Live.
+    _page(LiveDiscoverScreen.route, (_) => const LiveDiscoverScreen()),
+    // Communities I own (My store → Community). Discover: AppRoutes.communities.
+    _page(MyCommunitiesScreen.route, (_) => const MyCommunitiesScreen()),
+    // Talk 1:1 with experts — See all (search + categories).
+    _page(TalkExpertsScreen.route, (_) => const TalkExpertsScreen()),
     _page(AppRoutes.storeLiveNew, (state) => CreateLiveScreen(communityId: state.uri.queryParameters['community'])),
     _page(AppRoutes.storeCalls, (_) => const CallSettingsScreen()),
     _page(AppRoutes.liveDetailPath, (s) => LiveDetailScreen(liveId: s.pathParameters['id']!, invite: s.uri.queryParameters['invite'])),
@@ -408,15 +418,17 @@ class AppRouter {
     'brand',
     const [
       ShellDestination('Home', AppIcons.home, AppIcons.homeFilled),
-      ShellDestination('Campaigns', AppIcons.campaigns, AppIcons.campaignsFilled),
-      ShellDestination('Creators', AppIcons.creators, AppIcons.creatorsFilled),
+      ShellDestination('Feed', AppIcons.feed, AppIcons.feedFilled),
       ShellDestination('Messages', AppIcons.messages, AppIcons.messagesFilled),
       ShellDestination('Profile', AppIcons.account, AppIcons.accountFilled),
     ],
     [
       _branch(AppRoutes.brandHome, const BrandHomeScreen()),
-      _branch(AppRoutes.brandCampaigns, const BrandCampaignsScreen()),
-      _branch(AppRoutes.brandCreators, const ProfileGatedTab(title: 'Creators', child: CreatorsScreen())),
+      // Campaigns is no longer a tab for brands (4 tabs: Home, Feed, Messages,
+      // Profile) — it opens as a page from Home / Profile.
+      // Tab path stays /brand/creators; the tab is now Feed (see, post, reels,
+      // stories). Find creators opens from Home → Quick actions.
+      _branch(AppRoutes.brandCreators, const ProfileGatedTab(title: 'Feed', child: FeedScreen())),
       _branch(AppRoutes.brandMessages, const ProfileGatedTab(title: 'Messages', child: ConversationsScreen())),
       _branch(AppRoutes.brandAccount, const MyProfileScreen()),
     ],

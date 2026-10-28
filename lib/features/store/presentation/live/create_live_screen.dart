@@ -1,5 +1,7 @@
+// File: lib/features/store/presentation/live/create_live_screen.dart
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_animate/flutter_animate.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
 
@@ -14,7 +16,6 @@ import '../../../../core/theme/app_palette.dart';
 import '../../../../core/theme/app_spacing.dart';
 import '../../../../core/utils/formatters.dart';
 import '../../../../core/widgets/action_scope.dart';
-import '../../../../core/widgets/app_button.dart';
 import '../../../../core/widgets/app_snackbar.dart';
 import '../../../../core/widgets/app_text_field.dart';
 import '../../../../core/widgets/form_controls.dart';
@@ -153,11 +154,35 @@ class _CreateLiveViewState extends State<_CreateLiveView> {
     final communities = (context.watch<LoadCubit<List<Community>>>().state.data ?? const <Community>[]).where((c) => c.canModerate).toList();
 
     return Scaffold(
-      appBar: AppBar(title: const Text('New live')),
+      appBar: AppBar(
+        leading: const BackButton(),
+        title: const Text('New live', style: TextStyle(fontWeight: FontWeight.w800, letterSpacing: -0.3)),
+      ),
+      bottomNavigationBar: SafeArea(
+        top: false,
+        child: Container(
+          padding: const EdgeInsets.fromLTRB(AppSpacing.gutter, 10, AppSpacing.gutter, 10),
+          decoration: BoxDecoration(color: palette.surface, border: Border(top: BorderSide(color: palette.border))),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              const InlineActionError(),
+              _PrimaryButton(
+                label: _now ? 'Go live now' : 'Schedule live',
+                icon: _now ? AppIcons.broadcast : AppIcons.calendar,
+                busy: busy,
+                onTap: busy ? null : _submit,
+              ),
+            ],
+          ),
+        ),
+      ),
       body: Form(
         key: _formKey,
         child: ListView(
-          padding: const EdgeInsets.fromLTRB(AppSpacing.gutter, AppSpacing.xs, AppSpacing.gutter, AppSpacing.huge),
+          keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+          padding: const EdgeInsets.fromLTRB(AppSpacing.gutter, AppSpacing.xs, AppSpacing.gutter, AppSpacing.xl),
           children: [
             // Same shape and look as the live card on the home screen.
             ListenableBuilder(
@@ -180,102 +205,406 @@ class _CreateLiveViewState extends State<_CreateLiveView> {
                   priceLabel: _free ? 'FREE' : (Fmt.rupeesToPaise(_price.text) == null ? 'PAID' : Fmt.money(Fmt.rupeesToPaise(_price.text)!)),
                 ),
               ),
-            ),
-            const SizedBox(height: AppSpacing.md),
-            AppTextField(
-              label: 'Title',
-              hint: 'e.g. Sunday Q&A — ask me anything',
-              controller: _title,
-              maxLength: 120,
-              textCapitalization: TextCapitalization.sentences,
-              validator: (v) => (v?.trim().length ?? 0) < 3 ? 'Enter at least 3 characters' : null,
-            ),
-            const SizedBox(height: AppSpacing.sm),
-            AppTextField(label: 'Description (optional)', controller: _description, minLines: 2, maxLines: 5, maxLength: 2000, textCapitalization: TextCapitalization.sentences),
-            const SizedBox(height: AppSpacing.md),
-            const FieldLabel('When'),
-            ChoicePills<bool>(options: const [true, false], selected: {_now}, labelOf: (v) => v ? 'Go live now' : 'Schedule', onChanged: (v) => setState(() => _now = v)),
-            if (!_now) ...[
-              const SizedBox(height: AppSpacing.sm),
-              OutlinedButton.icon(
-                onPressed: busy ? null : _pickWhen,
-                icon: const Icon(AppIcons.calendar, size: 18),
-                label: Text(_when == null ? 'Pick date & time' : Fmt.weekdayDateTime(_when!)),
+            ).animate().fadeIn(duration: 300.ms),
+            const SizedBox(height: 18),
+
+            _Section(
+              title: 'Details',
+              child: Column(
+                children: [
+                  AppTextField(
+                    label: 'Title',
+                    hint: 'e.g. Sunday Q&A — ask me anything',
+                    controller: _title,
+                    maxLength: 120,
+                    textCapitalization: TextCapitalization.sentences,
+                    validator: (v) => (v?.trim().length ?? 0) < 3 ? 'Enter at least 3 characters' : null,
+                  ),
+                  const SizedBox(height: AppSpacing.sm),
+                  AppTextField(label: 'Description (optional)', controller: _description, minLines: 2, maxLines: 5, maxLength: 2000, textCapitalization: TextCapitalization.sentences),
+                ],
               ),
-            ],
-            const SizedBox(height: AppSpacing.md),
-            const FieldLabel('Who can watch'),
-            ChoicePills<_Audience>(
-              scrollable: true,
-              options: _Audience.values,
-              selected: {_audience},
-              labelOf: (a) => switch (a) {
-                _Audience.public => 'Everyone',
-                _Audience.invite => 'Invite code',
-                _Audience.community => 'My community',
-              },
-              onChanged: (a) => setState(() => _audience = a),
             ),
-            if (_audience == _Audience.invite) ...[
-              const SizedBox(height: AppSpacing.xs),
-              Text('You’ll get a code to share. Only people with it can join.', style: context.text.bodySmall),
-            ],
-            if (_audience == _Audience.community) ...[
-              const SizedBox(height: AppSpacing.sm),
-              if (communities.isEmpty)
-                Text('You don’t run a community yet. Create one from Communities first.', style: context.text.bodySmall?.copyWith(color: AppColors.warning))
-              else
-                AppDropdown<String>(
-                  label: 'Community',
-                  items: communities.map((c) => c.id).toList(),
-                  // Only a community from this list (avoids a dropdown error).
-                  value: communities.any((c) => c.id == _communityId) ? _communityId : null,
-                  labelOf: (id) => communities.firstWhere((c) => c.id == id).name,
-                  onChanged: (id) => setState(() => _communityId = id),
-                ),
-            ],
-            const SizedBox(height: AppSpacing.md),
-            SwitchListTile.adaptive(
-              contentPadding: EdgeInsets.zero,
-              value: !_free,
-              activeTrackColor: AppColors.primary,
-              onChanged: (v) => setState(() => _free = !v),
-              title: Text('Paid ticket', style: context.text.titleSmall),
-              subtitle: Text('Viewers buy a ticket to join', style: context.text.bodySmall),
-            ),
-            if (!_free)
-              AppTextField(
-                label: 'Ticket price (₹)',
-                controller: _price,
-                prefixIcon: AppIcons.rupee,
-                keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'[0-9.]'))],
-                validator: (v) {
-                  final paise = Fmt.rupeesToPaise(v ?? '');
-                  if (paise == null || paise <= 0) return 'Enter a price, or make it free';
-                  return null;
-                },
+
+            _Section(
+              title: 'When',
+              child: Column(
+                children: [
+                  Row(
+                    children: [
+                      Expanded(
+                        child: _OptionTile(
+                          icon: AppIcons.lightning,
+                          title: 'Go live now',
+                          subtitle: 'Start right away',
+                          selected: _now,
+                          accent: AppColors.error,
+                          onTap: () => setState(() => _now = true),
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: _OptionTile(
+                          icon: AppIcons.calendar,
+                          title: 'Schedule',
+                          subtitle: 'Followers get told',
+                          selected: !_now,
+                          onTap: () => setState(() => _now = false),
+                        ),
+                      ),
+                    ],
+                  ),
+                  AnimatedSize(
+                    duration: const Duration(milliseconds: 220),
+                    curve: Curves.easeOut,
+                    child: _now
+                        ? const SizedBox(width: double.infinity)
+                        : Padding(
+                      padding: const EdgeInsets.only(top: 10),
+                      child: _PickRow(
+                        icon: AppIcons.clock,
+                        label: _when == null ? 'Pick date & time' : Fmt.weekdayDateTime(_when!),
+                        highlight: _when == null,
+                        onTap: busy ? null : _pickWhen,
+                      ),
+                    ),
+                  ),
+                ],
               ),
-            SwitchListTile.adaptive(
-              contentPadding: EdgeInsets.zero,
-              value: _chat,
-              activeTrackColor: AppColors.primary,
-              onChanged: (v) => setState(() => _chat = v),
-              title: Text('Live chat', style: context.text.titleSmall),
-              subtitle: Text('Viewers can send messages and hearts', style: context.text.bodySmall),
             ),
-            const SizedBox(height: AppSpacing.md),
-            const InlineActionError(),
-            AppButton(
-              label: _now ? 'Go live' : 'Schedule live',
-              icon: _now ? AppIcons.broadcast : AppIcons.calendar,
-              isLoading: busy,
-              onPressed: busy ? null : _submit,
+
+            _Section(
+              title: 'Who can watch',
+              child: Column(
+                children: [
+                  for (final a in _Audience.values) ...[
+                    _OptionRow(
+                      icon: switch (a) {
+                        _Audience.public => AppIcons.globe,
+                        _Audience.invite => AppIcons.link,
+                        _Audience.community => AppIcons.users,
+                      },
+                      title: switch (a) {
+                        _Audience.public => 'Everyone',
+                        _Audience.invite => 'Invite code',
+                        _Audience.community => 'My community',
+                      },
+                      subtitle: switch (a) {
+                        _Audience.public => 'Anyone on Fanitt can find and watch',
+                        _Audience.invite => 'You get a code — only people with it can join',
+                        _Audience.community => 'Only members of a community you run',
+                      },
+                      selected: _audience == a,
+                      onTap: () => setState(() => _audience = a),
+                    ),
+                    if (a != _Audience.values.last) const SizedBox(height: 8),
+                  ],
+                  if (_audience == _Audience.community) ...[
+                    const SizedBox(height: AppSpacing.sm),
+                    if (communities.isEmpty)
+                      Text('You don’t run a community yet. Create one from Communities first.', style: context.text.bodySmall?.copyWith(color: AppColors.warning))
+                    else
+                      AppDropdown<String>(
+                        label: 'Community',
+                        items: communities.map((c) => c.id).toList(),
+                        // Only a community from this list (avoids a dropdown error).
+                        value: communities.any((c) => c.id == _communityId) ? _communityId : null,
+                        labelOf: (id) => communities.firstWhere((c) => c.id == id).name,
+                        onChanged: (id) => setState(() => _communityId = id),
+                      ),
+                  ],
+                ],
+              ),
+            ),
+
+            _Section(
+              title: 'Ticket',
+              child: Column(
+                children: [
+                  Row(
+                    children: [
+                      Expanded(
+                        child: _OptionTile(
+                          icon: AppIcons.gift,
+                          title: 'Free',
+                          subtitle: 'Anyone allowed joins',
+                          selected: _free,
+                          accent: AppColors.success,
+                          onTap: () => setState(() => _free = true),
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: _OptionTile(
+                          icon: AppIcons.receipt,
+                          title: 'Paid ticket',
+                          subtitle: 'Viewers buy to join',
+                          selected: !_free,
+                          onTap: () => setState(() => _free = false),
+                        ),
+                      ),
+                    ],
+                  ),
+                  AnimatedSize(
+                    duration: const Duration(milliseconds: 220),
+                    curve: Curves.easeOut,
+                    child: _free
+                        ? const SizedBox(width: double.infinity)
+                        : Padding(
+                      padding: const EdgeInsets.only(top: 12),
+                      child: AppTextField(
+                        label: 'Ticket price (₹)',
+                        controller: _price,
+                        prefixIcon: AppIcons.rupee,
+                        keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                        inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'[0-9.]'))],
+                        validator: (v) {
+                          if (_free) return null;
+                          final paise = Fmt.rupeesToPaise(v ?? '');
+                          if (paise == null || paise <= 0) return 'Enter a price, or make it free';
+                          return null;
+                        },
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+
+            _Section(
+              title: 'Extras',
+              child: SwitchListTile.adaptive(
+                contentPadding: EdgeInsets.zero,
+                value: _chat,
+                activeTrackColor: AppColors.primary,
+                onChanged: (v) => setState(() => _chat = v),
+                title: Text('Live chat', style: context.text.titleSmall),
+                subtitle: Text('Viewers can send messages and hearts', style: context.text.bodySmall),
+              ),
             ),
           ],
         ),
       ),
     );
+  }
+}
+
+/// White rounded card with a small heading.
+class _Section extends StatelessWidget {
+  const _Section({required this.title, required this.child});
+
+  final String title;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.palette;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 14),
+      child: Container(
+        padding: const EdgeInsets.fromLTRB(14, 14, 14, 14),
+        decoration: BoxDecoration(
+          color: palette.surface,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: palette.border),
+          boxShadow: context.isDark ? null : const [BoxShadow(color: Color(0x0A101828), blurRadius: 12, offset: Offset(0, 4))],
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text(title, style: TextStyle(fontSize: 15.5, fontWeight: FontWeight.w800, letterSpacing: -0.2, color: palette.textPrimary)),
+            const SizedBox(height: 12),
+            child,
+          ],
+        ),
+      ),
+    ).animate().fadeIn(duration: 300.ms).slideY(begin: 0.04);
+  }
+}
+
+/// Big square-ish choice tile (When / Ticket).
+class _OptionTile extends StatelessWidget {
+  const _OptionTile({required this.icon, required this.title, required this.subtitle, required this.selected, required this.onTap, this.accent = AppColors.primary});
+
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final bool selected;
+  final Color accent;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.palette;
+    return GestureDetector(
+      onTap: () {
+        HapticFeedback.selectionClick();
+        onTap();
+      },
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 200),
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: selected ? accent.withValues(alpha: context.isDark ? 0.18 : 0.08) : palette.surface,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: selected ? accent : palette.border, width: selected ? 1.6 : 1),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Container(
+                  width: 34,
+                  height: 34,
+                  decoration: BoxDecoration(shape: BoxShape.circle, color: selected ? accent : palette.surfaceMuted),
+                  child: Icon(icon, size: 17, color: selected ? Colors.white : palette.textSecondary),
+                ),
+                const Spacer(),
+                AnimatedScale(
+                  scale: selected ? 1 : 0,
+                  duration: const Duration(milliseconds: 200),
+                  curve: Curves.easeOutBack,
+                  child: Icon(AppIcons.checkCircle, size: 20, color: accent),
+                ),
+              ],
+            ),
+            const SizedBox(height: 10),
+            Text(title, style: TextStyle(fontSize: 14, fontWeight: FontWeight.w800, color: palette.textPrimary)),
+            const SizedBox(height: 2),
+            Text(subtitle, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 11.5, color: palette.textSecondary)),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Full-width radio row (Who can watch).
+class _OptionRow extends StatelessWidget {
+  const _OptionRow({required this.icon, required this.title, required this.subtitle, required this.selected, required this.onTap});
+
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.palette;
+    return GestureDetector(
+      onTap: () {
+        HapticFeedback.selectionClick();
+        onTap();
+      },
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 200),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
+        decoration: BoxDecoration(
+          color: selected ? AppColors.primary.withValues(alpha: context.isDark ? 0.18 : 0.07) : palette.surface,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: selected ? AppColors.primary : palette.border, width: selected ? 1.5 : 1),
+        ),
+        child: Row(
+          children: [
+            Icon(icon, size: 20, color: selected ? AppColors.primary : palette.textSecondary),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(title, style: TextStyle(fontSize: 14, fontWeight: FontWeight.w800, color: palette.textPrimary)),
+                  Text(subtitle, style: TextStyle(fontSize: 11.5, color: palette.textSecondary)),
+                ],
+              ),
+            ),
+            AnimatedContainer(
+              duration: const Duration(milliseconds: 200),
+              width: 20,
+              height: 20,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                border: Border.all(color: selected ? AppColors.primary : palette.border, width: selected ? 6 : 2),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _PickRow extends StatelessWidget {
+  const _PickRow({required this.icon, required this.label, required this.highlight, required this.onTap});
+
+  final IconData icon;
+  final String label;
+  final bool highlight;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.palette;
+    return Material(
+      color: AppColors.primary.withValues(alpha: context.isDark ? 0.14 : 0.06),
+      borderRadius: BorderRadius.circular(14),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(14),
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.all(14),
+          child: Row(
+            children: [
+              Icon(icon, size: 19, color: AppColors.primary),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(label, style: TextStyle(fontSize: 14, fontWeight: FontWeight.w800, color: highlight ? AppColors.primary : palette.textPrimary)),
+              ),
+              Text(highlight ? 'Choose' : 'Change', style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w800, color: AppColors.primary)),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Gradient main button (red → orange), with a soft shine while idle.
+class _PrimaryButton extends StatelessWidget {
+  const _PrimaryButton({required this.label, required this.icon, required this.busy, required this.onTap});
+
+  final String label;
+  final IconData icon;
+  final bool busy;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final button = GestureDetector(
+      onTap: onTap,
+      child: Container(
+        height: 54,
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(99),
+          gradient: const LinearGradient(colors: [Color(0xFFFF3B5C), AppColors.primary, Color(0xFFFF8A4C)]),
+          boxShadow: [BoxShadow(color: AppColors.error.withValues(alpha: 0.3), blurRadius: 14, offset: const Offset(0, 6))],
+        ),
+        child: busy
+            ? const SizedBox(width: 22, height: 22, child: CircularProgressIndicator(strokeWidth: 2.4, color: Colors.white))
+            : Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, color: Colors.white, size: 20),
+            const SizedBox(width: 8),
+            Text(label, style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w900)),
+          ],
+        ),
+      ),
+    );
+    if (busy) return button;
+    return button.animate(onPlay: (c) => c.repeat()).shimmer(delay: 1800.ms, duration: 1200.ms, color: Colors.white.withValues(alpha: 0.35));
   }
 }
 

@@ -1,3 +1,4 @@
+// File: lib/features/community/presentation/community_chat_screen.dart
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -16,6 +17,7 @@ import '../../../core/widgets/app_sheet.dart';
 import '../../../core/widgets/app_snackbar.dart';
 import '../../../core/widgets/async_view.dart';
 import '../../../core/widgets/user_avatar.dart';
+import '../../../core/widgets/report_sheet.dart';
 import '../../auth/presentation/bloc/auth_bloc.dart';
 import '../data/community_repository.dart';
 import 'widgets/community_widgets.dart';
@@ -252,11 +254,22 @@ class _CommunityChatScreenState extends State<CommunityChatScreen> {
                 final grouped = older != null && older.sender.id == m.sender.id;
                 final mine = m.sender.id == myId;
                 final canDelete = !m.isRemoved && (mine || widget.community.canModerate);
+                // Long-press someone else's message to report it.
+                final canReport = !m.isRemoved && !mine && myId != null;
+                if (canReport && ReportedItems.instance.has(ReportType.communityMessage, m.id)) return const SizedBox.shrink();
+                // Messages from blocked people (also ones arriving live) stay hidden.
+                if (!mine && BlockedUsers.instance.isHidden(m.sender.id)) return const SizedBox.shrink();
                 return _Bubble(
                   message: m,
                   mine: mine,
                   grouped: grouped,
-                  onLongPress: canDelete ? () => _delete(m) : null,
+                  onLongPress: canDelete
+                      ? () => _delete(m)
+                      : canReport
+                      ? () => showContentActions(context, type: ReportType.communityMessage, id: m.id, name: m.sender.name, userId: m.sender.id).then((_) {
+                    if (mounted) setState(() {});
+                  })
+                      : null,
                 );
               },
             ),

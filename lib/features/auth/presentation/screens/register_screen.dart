@@ -1,3 +1,4 @@
+// File: lib/features/auth/presentation/screens/register_screen.dart
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -19,6 +20,7 @@ import '../../../../core/utils/validators.dart';
 import '../../../../core/widgets/app_button.dart';
 import '../../../../core/widgets/app_snackbar.dart';
 import '../../../../core/widgets/app_text_field.dart';
+import '../../../../core/widgets/terms_gate.dart';
 import '../../domain/repositories/auth_repository.dart';
 import '../bloc/auth_bloc.dart';
 import '../cubits/auth_form_state.dart';
@@ -26,6 +28,7 @@ import '../cubits/register_cubit.dart';
 import '../widgets/auth_scaffold.dart';
 import '../widgets/auth_switch_prompt.dart';
 import '../widgets/or_divider.dart';
+import '../widgets/social_sign_in.dart';
 import '../widgets/role_card.dart';
 
 /// Three steps: choose a role, enter account details, then confirm the
@@ -49,6 +52,9 @@ class _RegisterScreenState extends State<RegisterScreen> {
 
   UserRole? _role;
   bool _onDetails = false;
+  // "I agree to the Terms" — needed before sending the code or using Google.
+  bool _agreed = false;
+  bool _appleBusy = false;
   bool _onOtp = false;
   bool _attempted = false;
 
@@ -108,6 +114,11 @@ class _RegisterScreenState extends State<RegisterScreen> {
     FocusScope.of(context).unfocus();
     setState(() => _attempted = true);
     if (!(_formKey.currentState?.validate() ?? false)) return;
+    if (!_agreed) {
+      AppSnackbar.error(context, 'Please agree to the Terms of Use to continue');
+      return;
+    }
+    TermsGate.markAgreed();
     final email = _email.text.trim().toLowerCase();
     // Same email and the last code is still fresh → just reopen the code step.
     if (email == _otpEmail && _resendIn > 0) {
@@ -170,8 +181,40 @@ class _RegisterScreenState extends State<RegisterScreen> {
     );
   }
 
+  Future<void> _continueWithApple() async {
+    FocusScope.of(context).unfocus();
+    if (!appleSignInAvailable) {
+      await runAppleSignIn(context); // shows "works on iPhone"
+      return;
+    }
+    final referralError = Validators.optionalReferralCode(_referral.text);
+    if (referralError != null) {
+      setState(() => _attempted = true);
+      _formKey.currentState?.validate();
+      AppSnackbar.error(context, referralError);
+      return;
+    }
+    if (!_agreed) {
+      setState(() => _attempted = true);
+      AppSnackbar.error(context, 'Please agree to the Terms of Use to continue');
+      return;
+    }
+    TermsGate.markAgreed();
+    setState(() => _appleBusy = true);
+    final user = await runAppleSignIn(context, role: _role, referralCode: _referralCode);
+    if (!mounted) return;
+    setState(() => _appleBusy = false);
+    if (user != null) context.read<AuthBloc>().add(AuthLoggedIn(user));
+  }
+
   void _continueWithGoogle() {
     FocusScope.of(context).unfocus();
+    if (!_agreed) {
+      setState(() => _attempted = true);
+      AppSnackbar.error(context, 'Please agree to the Terms of Use to continue');
+      return;
+    }
+    TermsGate.markAgreed();
     // Only the referral code matters for Google sign-up — check just that.
     final referralError = Validators.optionalReferralCode(_referral.text);
     if (referralError != null) {
@@ -358,7 +401,14 @@ class _RegisterScreenState extends State<RegisterScreen> {
               onSubmitted: (_) => _submit(),
               enabled: !busy,
             ),
-            const SizedBox(height: AppSpacing.xl),
+            const SizedBox(height: AppSpacing.lg),
+            TermsCheckbox(
+              value: _agreed,
+              showError: _attempted,
+              enabled: !busy,
+              onChanged: (v) => setState(() => _agreed = v),
+            ),
+            const SizedBox(height: AppSpacing.md),
             AppButton(
               label: 'Continue',
               isLoading: _sending,
@@ -381,15 +431,15 @@ class _RegisterScreenState extends State<RegisterScreen> {
       children: [
         const OrDivider(),
         const SizedBox(height: AppSpacing.lg),
-        AppButton.secondary(
-          label: 'Sign up with Google',
-          iconWidget: Image.asset('assets/images/google.png'),
-          isLoading: state.loading == AuthMethod.google,
-          onPressed: state.isBusy || _sending ? null : _continueWithGoogle,
+        SocialSignInRow(
+          googleBusy: state.loading == AuthMethod.google,
+          appleBusy: _appleBusy,
+          onGoogle: state.isBusy || _sending || _appleBusy ? null : _continueWithGoogle,
+          onApple: state.isBusy || _sending || _appleBusy ? null : _continueWithApple,
         ),
         const SizedBox(height: AppSpacing.md),
         Text(
-          'By creating an account you agree to Fanitt’s Terms of Service and Privacy Policy.',
+          'Tick the box above to agree to the Terms of Use before signing up with Google or Apple.',
           textAlign: TextAlign.center,
           style: context.text.bodySmall?.copyWith(color: context.palette.textTertiary),
         ),

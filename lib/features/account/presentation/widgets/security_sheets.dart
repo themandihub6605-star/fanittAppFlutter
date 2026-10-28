@@ -1,3 +1,4 @@
+// File: lib/features/account/presentation/widgets/security_sheets.dart
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
@@ -12,6 +13,7 @@ import '../../../../core/widgets/action_scope.dart';
 import '../../../../core/widgets/app_button.dart';
 import '../../../../core/widgets/app_card.dart';
 import '../../../../core/widgets/app_sheet.dart';
+import '../../../../core/widgets/app_snackbar.dart';
 import '../../../../core/widgets/app_text_field.dart';
 import '../../../auth/presentation/bloc/auth_bloc.dart';
 import '../../../profile/data/profile_repository.dart';
@@ -26,6 +28,7 @@ Future<bool> showChangePasswordSheet(BuildContext context) async {
 Future<void> showDeleteAccountSheet(BuildContext context) async {
   final deleted = await showAppSheet<bool>(context, builder: (_) => const SheetActionScope(child: _DeleteAccountSheet()));
   if ((deleted ?? false) && context.mounted) {
+    AppSnackbar.success(context, 'Your account is locked and will be deleted within 7 days.');
     context.read<AuthBloc>().add(const AuthLogoutRequested());
   }
 }
@@ -128,9 +131,10 @@ class _DeleteAccountSheetState extends State<_DeleteAccountSheet> {
             color: AppColors.error.withValues(alpha: 0.08),
             borderColor: Colors.transparent,
             child: Text(
-              'Your request goes to the Fanitt team and your account is locked right away. '
-                  'Once approved, your account is permanently deleted and you can sign up again with the same email. '
-                  'Withdraw any wallet balance first — it can’t be recovered after deletion.',
+              'Your account is locked right away and permanently deleted within 7 days — your profile, '
+                  'posts, stories and community posts are removed. Payment records are kept only as required by law. '
+                  'Withdraw any wallet balance first — it can’t be recovered after deletion. '
+                  'You can sign up again later with the same email.',
               style: context.text.bodyMedium?.copyWith(color: context.palette.textPrimary),
             ),
           ),
@@ -144,7 +148,7 @@ class _DeleteAccountSheetState extends State<_DeleteAccountSheet> {
           const SizedBox(height: AppSpacing.lg),
           const InlineActionError(),
           AppButton(
-            label: 'Request deletion',
+            label: 'Delete my account',
             variant: AppButtonVariant.danger,
             isLoading: busy,
             onPressed: busy || !ready ? null : _delete,

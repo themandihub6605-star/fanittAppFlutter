@@ -1,8 +1,10 @@
+// File: lib/features/community/presentation/community_paid_join.dart
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 
 import '../../../core/di/injection.dart';
+import '../../../core/services/purchase_policy.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_icons.dart';
 import '../../../core/theme/app_palette.dart';
@@ -19,15 +21,21 @@ import '../data/community_repository.dart';
 const _brand = LinearGradient(begin: Alignment.topLeft, end: Alignment.bottomRight, colors: [Color(0xFFF4511E), Color(0xFFEC2A78)]);
 
 /// "₹199/month" for the cheapest plan, or '' for free communities.
+/// iPhone: "Members only" (no prices — see PurchasePolicy).
 String communityPriceLabel(Community c) {
   final p = c.cheapestPlan;
   if (!c.isPaid || p == null) return '';
+  if (!PurchasePolicy.canBuyDigital) return 'Members only';
   return '${Fmt.money(p.price)}${p.key.suffix}';
 }
 
 /// Shows the plans and pays. Returns true when the member is in.
 Future<bool> joinPaidCommunity(BuildContext context, Community c) async {
   if (c.plans.isEmpty) return false;
+  if (!PurchasePolicy.canBuyDigital) {
+    await showAppSheet<void>(context, builder: (_) => _MembersOnlySheet(name: c.name));
+    return false;
+  }
   final plan = await showAppSheet<CommunityPlan>(context, builder: (_) => _PlansSheet(community: c));
   if (plan == null || !context.mounted) return false;
   final order = await payForStoreItem(
@@ -206,6 +214,22 @@ class _PlanTile extends StatelessWidget {
   }
 }
 
+/// iPhone: explains that this community is members-only (nothing to buy here).
+class _MembersOnlySheet extends StatelessWidget {
+  const _MembersOnlySheet({required this.name});
+
+  final String name;
+
+  @override
+  Widget build(BuildContext context) {
+    return SheetBody(
+      title: 'Members-only community',
+      subtitle: '$name is open to its members. When you’re a member, it unlocks here automatically.',
+      child: AppButton(label: 'OK', onPressed: () => Navigator.of(context).pop()),
+    );
+  }
+}
+
 /// Owner / member status strip for a paid community (detail screen).
 class PaidCommunityStrip extends StatelessWidget {
   const PaidCommunityStrip({super.key, required this.community, required this.onRenew});
@@ -231,8 +255,8 @@ class PaidCommunityStrip extends StatelessWidget {
     } else if (c.isExpired) {
       icon = AppIcons.hourglass;
       title = 'Your membership ended';
-      sub = 'Renew to get back into posts, chat and lives.';
-      showRenew = true;
+      sub = PurchasePolicy.canBuyDigital ? 'Renew to get back into posts, chat and lives.' : 'Your access to posts, chat and lives has ended.';
+      showRenew = PurchasePolicy.canBuyDigital;
     } else if (m != null && m.isActive && m.isPaid) {
       icon = AppIcons.crown;
       if (m.plan == CommunityPlanKey.lifetime || m.paidUntil == null) {
@@ -242,7 +266,7 @@ class PaidCommunityStrip extends StatelessWidget {
         final daysLeft = m.paidUntil!.difference(DateTime.now()).inDays;
         title = '${m.plan?.label ?? 'Paid'} member';
         sub = 'Active till ${Fmt.date(m.paidUntil!)}${daysLeft <= 3 ? ' · ends soon' : ''}';
-        showRenew = daysLeft <= 7;
+        showRenew = daysLeft <= 7 && PurchasePolicy.canBuyDigital;
       }
     } else if (m != null && m.isActive) {
       icon = AppIcons.gift;

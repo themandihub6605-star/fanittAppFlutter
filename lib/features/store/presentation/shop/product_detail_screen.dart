@@ -1,3 +1,4 @@
+// File: lib/features/store/presentation/shop/product_detail_screen.dart
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
@@ -9,6 +10,7 @@ import '../../../../core/network/api_exception.dart';
 import '../../../../core/router/app_routes.dart';
 import '../../../../core/services/link_opener.dart';
 import '../../../../core/services/share_service.dart';
+import '../../../../core/services/purchase_policy.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_icons.dart';
 import '../../../../core/theme/app_palette.dart';
@@ -230,6 +232,15 @@ class _BuyBarState extends State<_BuyBar> {
           padding: const EdgeInsets.fromLTRB(AppSpacing.gutter, AppSpacing.sm, AppSpacing.gutter, AppSpacing.sm),
           child: page.owned
               ? AppButton(label: 'Open in my library', icon: AppIcons.library, onPressed: () => context.push(AppRoutes.library))
+          // iPhone: paid digital products can't be bought in the app.
+              : !p.isFree && !PurchasePolicy.canBuyDigital
+              ? Row(
+            children: [
+              Icon(AppIcons.lock, size: 18, color: palette.textSecondary),
+              const SizedBox(width: AppSpacing.sm),
+              Expanded(child: Text('Owners can open this in My library.', style: context.text.bodyMedium?.copyWith(color: palette.textSecondary))),
+            ],
+          )
               : Row(
             children: [
               Expanded(

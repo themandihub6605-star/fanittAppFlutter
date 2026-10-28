@@ -1,3 +1,4 @@
+// File: lib/core/di/injection.dart
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:get_it/get_it.dart';
@@ -5,6 +6,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../features/auth/data/datasources/auth_remote_data_source.dart';
 import '../../features/auth/data/repositories/auth_repository_impl.dart';
+import '../../features/auth/data/services/apple_auth_service.dart';
 import '../../features/auth/data/services/google_auth_service.dart';
 import '../../features/auth/domain/repositories/auth_repository.dart';
 import '../../features/agency/data/agency_repository.dart';
@@ -53,9 +55,10 @@ Future<void> configureDependencies() async {
 
   // Auth
     ..registerLazySingleton<GoogleAuthService>(() => GoogleAuthService(FirebaseAuth.instance))
+    ..registerLazySingleton<AppleAuthService>(() => AppleAuthService(FirebaseAuth.instance))
     ..registerLazySingleton<AuthRemoteDataSource>(() => AuthRemoteDataSource(sl()))
     ..registerLazySingleton<AuthRepository>(
-          () => AuthRepositoryImpl(remote: sl(), tokens: sl(), google: sl()),
+          () => AuthRepositoryImpl(remote: sl(), tokens: sl(), google: sl(), apple: sl()),
     )
     ..registerLazySingleton<AuthBloc>(() => AuthBloc(repository: sl(), sessionEvents: sl(), socket: sl(), push: sl()))
 

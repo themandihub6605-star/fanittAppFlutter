@@ -1,3 +1,4 @@
+// File: lib/features/store/data/store_repository.dart
 import 'dart:io';
 
 import 'package:dio/dio.dart';
@@ -273,6 +274,33 @@ class StoreRepository {
       ))
           .data;
 
+  /// The host's lives with tickets sold + latest buyers. tab: upcoming | past.
+  Future<List<HostLive>> myHostLives({required String tab}) async =>
+      (await _api.get('/store/me/lives', query: {'tab': tab}, parser: (d) => J.listOf(d, HostLive.fromJson))).data;
+
+  /// Everyone who bought a ticket for one of the host's lives.
+  Future<LiveTickets> liveTickets(String liveId) async => (await _api.get(
+    '/store/me/lives/$liveId',
+    parser: (d) {
+      final m = J.asMap(d);
+      return LiveTickets(live: LiveStream.fromJson(J.map(m, 'live') ?? const {}), tickets: J.list(m, 'tickets', LiveTicket.fromJson));
+    },
+  ))
+      .data;
+
+  /// Edits a scheduled live. A new time tells every ticket holder.
+  Future<LiveStream> updateLive(String liveId, {String? title, String? description, DateTime? scheduledAt, bool? chatEnabled}) async => (await _api.patch(
+    '/store/me/lives/$liveId',
+    data: {
+      if (title != null) 'title': title,
+      if (description != null) 'description': description,
+      if (scheduledAt != null) 'scheduledAt': scheduledAt.toUtc().toIso8601String(),
+      if (chatEnabled != null) 'chatEnabled': chatEnabled,
+    },
+    parser: _live,
+  ))
+      .data;
+
   Future<LiveStream> uploadLiveCover(String liveId, PickedMedia image) async {
     final form = FormData()..files.add(MapEntry('image', await multipartFrom(image)));
     return (await _api.post('/store/me/lives/$liveId/cover', data: form, parser: _live)).data;
@@ -319,6 +347,15 @@ class StoreRepository {
   ))
       .data;
 
+  /// Creators I follow who are live right now (feed stories), with each
+  /// host's user id so the feed can put the LIVE ring on their story.
+  Future<List<({LiveStream live, String hostId})>> followingLives() async => (await _api.get(
+    '/store/lives/discover',
+    query: {'following': '1', 'limit': 30},
+    parser: (d) => J.list(J.asMap(d), 'lives', (j) => (live: LiveStream.fromJson(j), hostId: J.refId(j, 'host') ?? '')),
+  ))
+      .data;
+
   /// Lives made for one community (shown on its page; locked for non-members).
   Future<({List<LiveStream> lives, bool isMember})> communityLives(String communityId) async => (await _api.get(
     '/store/lives/community/$communityId',
@@ -353,10 +390,46 @@ class StoreRepository {
 
   /// Creators taking 1-to-1 calls right now (online first), each with
   /// their audio / video rate per minute (0 = free).
-  Future<List<({StoreInfo store, CallInfo calls})>> callCreators({int page = 1}) async => (await _api.get(
+  Future<List<({StoreInfo store, CallInfo calls, ExpertCreator creator})>> callCreators({int page = 1}) async => (await _api.get(
     '/store/calls/available',
     query: {'page': page},
-    parser: (d) => J.list(J.asMap(d), 'stores', (j) => (store: StoreInfo.fromJson(j), calls: CallInfo.fromJson(J.map(j, 'calls')))),
+    parser: (d) => J.list(
+      J.asMap(d),
+      'stores',
+          (j) => (store: StoreInfo.fromJson(j), calls: CallInfo.fromJson(J.map(j, 'calls')), creator: ExpertCreator.fromJson(J.map(j, 'creator'), category: J.map(j, 'category'))),
+    ),
+  ))
+      .data;
+
+  /// "Talk 1:1 with experts" See all: experts taking calls, with filters.
+  /// [category] = a category id · [online] = only online now. Page 1 also
+  /// returns the categories that have experts (for the filter chips).
+  Future<CallExpertsPage> callExperts({int page = 1, String? category, String? search, bool online = false}) async => (await _api.get(
+    '/store/calls/available',
+    query: {
+      'page': page,
+      if (category != null && category.isNotEmpty) 'category': category,
+      if (search != null && search.trim().isNotEmpty) 'search': search.trim(),
+      if (online) 'online': '1',
+    },
+    parser: (d) {
+      final m = J.asMap(d);
+      return CallExpertsPage(
+        items: J.list(m, 'stores', (j) {
+          final c = J.map(j, 'category');
+          return CallExpert(
+            store: StoreInfo.fromJson(j),
+            calls: CallInfo.fromJson(J.map(j, 'calls')),
+            category: c == null ? '' : J.str(c, 'label'),
+            creator: ExpertCreator.fromJson(J.map(j, 'creator'), category: c),
+          );
+        }),
+        page: J.integer(m, 'page', 1),
+        pages: J.integer(m, 'pages', 1),
+        total: J.integer(m, 'total'),
+        categories: J.list(m, 'categories', (j) => ExpertCategory(id: J.id(j), label: J.str(j, 'label'), count: J.integer(j, 'count'))),
+      );
+    },
   ))
       .data;
 
@@ -459,6 +532,16 @@ class StoreRepository {
         ? (await _api.post('/store/me/affiliate/products', data: body, parser: _aff)).data
         : (await _api.patch('/store/me/affiliate/products/$id', data: body, parser: _aff)).data;
   }
+
+  /// Ids of my affiliate products whose link stopped working (weekly check).
+  Future<Set<String>> brokenAffiliateIds() async => (await _api.get(
+    '/store/me/affiliate/products',
+    parser: (d) => {
+      for (final j in (d is List ? d : const []).whereType<Map<String, dynamic>>())
+        if (J.boolean(j, 'linkBroken')) J.id(j),
+    },
+  ))
+      .data;
 
   Future<AffiliateProduct> setAffiliateHidden(String id, bool hidden) async =>
       (await _api.patch('/store/me/affiliate/products/$id', data: {'hidden': hidden}, parser: _aff)).data;
@@ -621,5 +704,183 @@ class StoreRepository {
 
   Future<void> endMeet(String id) async {
     await _api.post('/store/meets/$id/end', parser: (_) => null);
+  }
+}
+
+/// One expert taking 1:1 calls.
+class CallExpert {
+  const CallExpert({required this.store, required this.calls, required this.category, required this.creator});
+
+  final StoreInfo store;
+  final CallInfo calls;
+
+  /// The person you talk to (name, photo, title, bio…).
+  final ExpertCreator creator;
+
+  /// Category label from the expert's creator profile ('' when none).
+  final String category;
+}
+
+/// A category that has experts taking calls (filter chip).
+class ExpertCategory {
+  const ExpertCategory({required this.id, required this.label, required this.count});
+
+  final String id;
+  final String label;
+  final int count;
+}
+
+class CallExpertsPage {
+  const CallExpertsPage({required this.items, required this.page, required this.pages, required this.total, required this.categories});
+
+  final List<CallExpert> items;
+  final int page;
+  final int pages;
+  final int total;
+
+  /// Only filled on page 1.
+  final List<ExpertCategory> categories;
+
+  bool get hasMore => page < pages;
+}
+
+/// One of the host's lives + ticket info for the Stream Live screen.
+class HostLive {
+  const HostLive({required this.live, required this.ticketsToday, required this.recentBuyers, required this.missed, required this.cancelledReason});
+
+  factory HostLive.fromJson(Map<String, dynamic> json) {
+    final stats = J.map(json, 'stats') ?? const <String, dynamic>{};
+    return HostLive(
+      // Owner rows carry the full stats object; LiveStream reads it.
+      live: LiveStream.fromJson({...json, 'stats': stats}),
+      ticketsToday: J.integer(json, 'ticketsToday'),
+      recentBuyers: J.list(json, 'recentBuyers', (j) => LiveBuyerLite(name: J.str(j, 'name', 'Fanitt user'), avatarUrl: J.str(j, 'avatarUrl'))),
+      missed: J.boolean(json, 'missed'),
+      cancelledReason: J.str(json, 'cancelledReason'),
+    );
+  }
+
+  final LiveStream live;
+
+  /// Tickets bought in the last 24 hours.
+  final int ticketsToday;
+  final List<LiveBuyerLite> recentBuyers;
+
+  /// Scheduled but never started → cancelled and refunded automatically.
+  final bool missed;
+  final String cancelledReason;
+}
+
+class LiveBuyerLite {
+  const LiveBuyerLite({required this.name, required this.avatarUrl});
+
+  final String name;
+  final String avatarUrl;
+}
+
+/// Host view: the live + everyone who bought a ticket.
+class LiveTickets {
+  const LiveTickets({required this.live, required this.tickets});
+
+  final LiveStream live;
+  final List<LiveTicket> tickets;
+
+  List<LiveTicket> get paid => tickets.where((t) => !t.refunded).toList();
+  int get earned => paid.fold(0, (a, t) => a + t.earning);
+}
+
+class LiveTicket {
+  const LiveTicket({required this.name, required this.avatarUrl, required this.amount, required this.earning, required this.refunded, this.paidAt});
+
+  factory LiveTicket.fromJson(Map<String, dynamic> json) {
+    final buyer = J.map(json, 'buyer') ?? const <String, dynamic>{};
+    final amount = J.integer(json, 'amount');
+    return LiveTicket(
+      name: J.str(buyer, 'name', 'Fanitt user'),
+      avatarUrl: J.str(buyer, 'avatarUrl'),
+      amount: amount,
+      earning: J.integer(json, 'creatorEarning', amount),
+      refunded: J.str(json, 'status') == 'refunded',
+      paidAt: J.date(json, 'paidAt'),
+    );
+  }
+
+  final String name;
+  final String avatarUrl;
+
+  /// Paise the buyer paid.
+  final int amount;
+
+  /// Paise the creator keeps after the platform fee.
+  final int earning;
+  final bool refunded;
+  final DateTime? paidAt;
+
+  bool get isNew => paidAt != null && DateTime.now().difference(paidAt!).inHours < 24;
+}
+
+/// The creator behind a store that takes calls — what fans see and call.
+class ExpertCreator {
+  const ExpertCreator({
+    required this.userId,
+    required this.name,
+    required this.avatarUrl,
+    required this.slug,
+    required this.title,
+    required this.bio,
+    required this.category,
+    required this.languages,
+    required this.rating,
+    required this.reviews,
+    required this.followers,
+    required this.verified,
+  });
+
+  factory ExpertCreator.fromJson(Map<String, dynamic>? json, {Map<String, dynamic>? category}) {
+    final j = json ?? const <String, dynamic>{};
+    return ExpertCreator(
+      userId: J.str(j, 'userId'),
+      name: J.str(j, 'name'),
+      avatarUrl: J.str(j, 'avatarUrl'),
+      slug: J.str(j, 'slug'),
+      title: J.str(j, 'title'),
+      bio: J.str(j, 'bio'),
+      category: category == null ? '' : J.str(category, 'label'),
+      languages: J.strings(j, 'languages'),
+      rating: J.dbl(j, 'rating'),
+      reviews: J.integer(j, 'reviews'),
+      followers: J.integer(j, 'followers'),
+      verified: J.boolean(j, 'verified'),
+    );
+  }
+
+  final String userId;
+  final String name;
+  final String avatarUrl;
+
+  /// Creator profile slug ('' when the profile is missing).
+  final String slug;
+
+  /// Short headline, e.g. "Fitness coach · 8 yrs".
+  final String title;
+  final String bio;
+  final String category;
+  final List<String> languages;
+  final double rating;
+  final int reviews;
+  final int followers;
+  final bool verified;
+
+  String get initials {
+    final parts = name.trim().split(RegExp(r'\s+')).where((p) => p.isNotEmpty).toList();
+    if (parts.isEmpty) return '?';
+    return (parts.first[0] + (parts.length > 1 ? parts.last[0] : '')).toUpperCase();
+  }
+
+  /// One line about them: title, else bio, else category.
+  String get headline {
+    if (title.trim().isNotEmpty) return title.trim();
+    if (bio.trim().isNotEmpty) return bio.trim().replaceAll(RegExp(r'\s+'), ' ');
+    return category;
   }
 }

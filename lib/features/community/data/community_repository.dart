@@ -1,3 +1,4 @@
+// File: lib/features/community/data/community_repository.dart
 import 'dart:convert';
 
 import 'package:dio/dio.dart';
@@ -229,6 +230,11 @@ class CommunityRepository {
 
   Future<void> manageMember(String id, String userId, MemberAction action) async {
     await _api.patch('/communities/$id/members/$userId', data: {'action': action.value}, parser: (_) => null);
+  }
+
+  /// Owner only: hands the community to [userId]; you stay as a moderator.
+  Future<void> transferOwnership(String id, String userId) async {
+    await _api.patch('/communities/$id/members/$userId', data: {'action': 'make_owner'}, parser: (_) => null);
   }
 
   // --- Posts ---------------------------------------------------------------

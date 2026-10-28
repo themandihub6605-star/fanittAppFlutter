@@ -3,6 +3,7 @@ import '../../../core/di/injection.dart';
 import '../../../core/models/common_models.dart';
 import '../../../core/network/api_client.dart';
 import '../../../core/utils/json.dart';
+import '../../content/data/content_repository.dart';
 
 /// Host controls for a Virtual Meet, and the "who attended" report for meets
 /// and live streams. Backend: src/FanittStore/controllers/meetHost.controller.js
@@ -44,6 +45,14 @@ class MeetHostApi {
   static Future<AttendanceReport> liveAttendance(String liveId) async =>
       (await _api.get('/store/me/lives/$liveId/attendance', parser: (d) => AttendanceReport.fromJson(J.asMap(d)))).data;
 
+  /// The host's sessions that are live or can still start, with booking stats.
+  static Future<List<HostSession>> myUpcoming() async =>
+      (await _api.get('/sessions/mine/upcoming', parser: (d) => J.listOf(d, HostSession.fromJson))).data;
+
+  /// Everyone who booked one of the host's sessions.
+  static Future<SessionBookings> bookings(String sessionId) async =>
+      (await _api.get('/sessions/$sessionId/bookings', parser: (d) => SessionBookings.fromJson(J.asMap(d)))).data;
+
   /// The host's past live sessions (ended, cancelled or missed), newest first.
   static Future<Paged<PastSession>> sessionHistory(int page) async {
     final res = await _api.get(
@@ -61,6 +70,104 @@ class MeetHostApi {
     );
     return res.data;
   }
+}
+
+/// An upcoming session of the host + who booked it.
+class HostSession {
+  const HostSession({required this.session, required this.earned, required this.bookedToday, required this.recentBookers});
+
+  factory HostSession.fromJson(Map<String, dynamic> json) => HostSession(
+    session: LiveSession.fromJson(json),
+    earned: J.integer(json, 'earned'),
+    bookedToday: J.integer(json, 'bookedToday'),
+    recentBookers: J.list(json, 'recentBookers', BookerLite.fromJson),
+  );
+
+  final LiveSession session;
+
+  /// Paise paid by everyone who booked.
+  final int earned;
+
+  /// Bookings in the last 24 hours.
+  final int bookedToday;
+
+  /// Up to 4 latest bookers (for the avatar stack).
+  final List<BookerLite> recentBookers;
+
+  int get seatsLeft => (session.maxParticipants - session.bookedCount).clamp(0, 1 << 30);
+}
+
+class BookerLite {
+  const BookerLite({required this.name, required this.avatarUrl});
+
+  factory BookerLite.fromJson(Map<String, dynamic> json) => BookerLite(name: J.str(json, 'name', 'Fanitt user'), avatarUrl: J.str(json, 'avatarUrl'));
+
+  final String name;
+  final String avatarUrl;
+}
+
+/// Host view: everyone who booked a session.
+class SessionBookings {
+  const SessionBookings({
+    required this.title,
+    required this.isLive,
+    required this.isFree,
+    required this.maxParticipants,
+    required this.booked,
+    required this.seatsLeft,
+    required this.earned,
+    required this.bookedToday,
+    required this.people,
+    this.scheduledAt,
+  });
+
+  factory SessionBookings.fromJson(Map<String, dynamic> json) => SessionBookings(
+    title: J.str(json, 'title'),
+    isLive: J.boolean(json, 'isLive'),
+    isFree: J.str(json, 'type', 'free') == 'free',
+    maxParticipants: J.integer(json, 'maxParticipants'),
+    booked: J.integer(json, 'booked'),
+    seatsLeft: J.integer(json, 'seatsLeft'),
+    earned: J.integer(json, 'earned'),
+    bookedToday: J.integer(json, 'bookedToday'),
+    people: J.list(json, 'people', SessionBooker.fromJson),
+    scheduledAt: J.date(json, 'scheduledAt'),
+  );
+
+  final String title;
+  final bool isLive;
+  final bool isFree;
+  final int maxParticipants;
+  final int booked;
+  final int seatsLeft;
+  final int earned;
+  final int bookedToday;
+  final List<SessionBooker> people;
+  final DateTime? scheduledAt;
+}
+
+class SessionBooker {
+  const SessionBooker({required this.name, required this.avatarUrl, required this.paid, required this.attended, this.userId, this.bookedAt});
+
+  factory SessionBooker.fromJson(Map<String, dynamic> json) => SessionBooker(
+    userId: J.strOrNull(json, 'userId'),
+    name: J.str(json, 'name', 'Fanitt user'),
+    avatarUrl: J.str(json, 'avatarUrl'),
+    paid: J.integer(json, 'paid'),
+    attended: J.boolean(json, 'attended'),
+    bookedAt: J.date(json, 'bookedAt'),
+  );
+
+  final String? userId;
+  final String name;
+  final String avatarUrl;
+
+  /// Paise.
+  final int paid;
+  final bool attended;
+  final DateTime? bookedAt;
+
+  bool get isNew => bookedAt != null && DateTime.now().difference(bookedAt!).inHours < 24;
 }
 
 /// One row of the host's session history.

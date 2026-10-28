@@ -1,3 +1,4 @@
+// File: lib/features/store/presentation/affiliate/my_affiliate_screen.dart
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_animate/flutter_animate.dart';
@@ -38,18 +39,40 @@ class MyAffiliateScreen extends StatelessWidget {
         BlocProvider(create: (_) => LoadCubit<List<AffiliateProduct>>(repo.myAffiliateProducts)),
         BlocProvider(create: (_) => LoadCubit<List<AffiliateCollection>>(repo.myCollections)),
         BlocProvider(create: (_) => LoadCubit<AffiliateEarnings>(repo.affiliateEarnings)),
+        BlocProvider(create: (_) => LoadCubit<Set<String>>(repo.brokenAffiliateIds)),
       ],
       child: DefaultTabController(
         length: 3,
         child: Scaffold(
           appBar: AppBar(
-            title: const Text('Affiliate Store'),
-            bottom: TabBar(
-              labelColor: AppColors.primary,
-              unselectedLabelColor: palette.textSecondary,
-              indicatorColor: AppColors.primary,
-              dividerColor: palette.border,
-              tabs: const [Tab(text: 'Products'), Tab(text: 'Collections'), Tab(text: 'Earnings')],
+            leading: const BackButton(),
+            title: const Text('Affiliate Store', style: TextStyle(fontWeight: FontWeight.w800, letterSpacing: -0.3)),
+            bottom: PreferredSize(
+              preferredSize: const Size.fromHeight(58),
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(AppSpacing.gutter, 2, AppSpacing.gutter, 12),
+                child: Container(
+                  height: 42,
+                  padding: const EdgeInsets.all(4),
+                  decoration: BoxDecoration(color: palette.surfaceMuted, borderRadius: BorderRadius.circular(99)),
+                  child: TabBar(
+                    dividerHeight: 0,
+                    indicatorSize: TabBarIndicatorSize.tab,
+                    splashBorderRadius: BorderRadius.circular(99),
+                    // Calm: a white pill on a grey track, orange text.
+                    indicator: BoxDecoration(
+                      color: palette.surface,
+                      borderRadius: BorderRadius.circular(99),
+                      boxShadow: const [BoxShadow(color: Color(0x14101828), blurRadius: 6, offset: Offset(0, 2))],
+                    ),
+                    labelColor: AppColors.primary,
+                    unselectedLabelColor: palette.textSecondary,
+                    labelStyle: const TextStyle(fontSize: 13, fontWeight: FontWeight.w800),
+                    unselectedLabelStyle: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700),
+                    tabs: const [Tab(height: 34, text: 'Products'), Tab(height: 34, text: 'Collections'), Tab(height: 34, text: 'Earnings')],
+                  ),
+                ),
+              ),
             ),
           ),
           body: const TabBarView(children: [_ProductsTab(), _CollectionsTab(), _EarningsTab()]),
@@ -66,12 +89,16 @@ class _ProductsTab extends StatelessWidget {
 
   Future<void> _edit(BuildContext context, [AffiliateProduct? product]) async {
     final saved = await showAppSheet<bool>(context, builder: (_) => SheetActionScope(child: _ProductSheet(product: product)));
-    if (saved == true && context.mounted) context.read<LoadCubit<List<AffiliateProduct>>>().refresh();
+    if (saved == true && context.mounted) {
+      context.read<LoadCubit<List<AffiliateProduct>>>().refresh();
+      context.read<LoadCubit<Set<String>>>().refresh();
+    }
   }
 
   @override
   Widget build(BuildContext context) {
     final cubit = context.watch<LoadCubit<List<AffiliateProduct>>>();
+    final broken = context.watch<LoadCubit<Set<String>>>().state.data ?? const <String>{};
     return Scaffold(
       floatingActionButton: FloatingActionButton.extended(
         heroTag: 'add-affiliate',
@@ -83,50 +110,157 @@ class _ProductsTab extends StatelessWidget {
         state: cubit.state,
         onRetry: cubit.load,
         builder: (items) => AppRefresh(
-          onRefresh: cubit.refresh,
+          onRefresh: () async {
+            await cubit.refresh();
+            if (context.mounted) await context.read<LoadCubit<Set<String>>>().refresh();
+          },
           child: items.isEmpty
               ? const ScrollableMessage(
-                  child: MessageView(
-                    icon: AppIcons.link,
-                    title: 'Share products you love',
-                    message: 'Paste your affiliate link from Amazon, Nykaa, Flipkart and more. We count every click; the shop pays your commission.',
-                  ),
-                )
-              : ListView.separated(
-                  physics: const AlwaysScrollableScrollPhysics(),
-                  padding: const EdgeInsets.fromLTRB(AppSpacing.gutter, AppSpacing.sm, AppSpacing.gutter, 100),
-                  itemCount: items.length,
-                  separatorBuilder: (_, _) => const SizedBox(height: AppSpacing.sm),
-                  itemBuilder: (context, i) {
-                    final p = items[i];
-                    return AppCard(
-                      onTap: p.isRemoved ? null : () => _edit(context, p),
-                      child: Row(
-                        children: [
-                          ClipRRect(
-                            borderRadius: BorderRadius.circular(AppRadius.sm),
-                            child: SizedBox(width: 60, height: 60, child: StoreImage(url: p.imageUrl, icon: AppIcons.link, fit: BoxFit.contain)),
-                          ),
-                          const SizedBox(width: AppSpacing.sm),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(p.title, maxLines: 2, overflow: TextOverflow.ellipsis, style: context.text.titleSmall),
-                                Text(
-                                  [if (p.merchant.isNotEmpty) p.merchant, if (p.price != null) Fmt.money(p.price!), '${p.clicks} clicks'].join(' · '),
-                                  style: context.text.bodySmall,
-                                ),
-                                if (p.isRemoved) Text('Removed by Fanitt: ${p.removedReason}', style: context.text.bodySmall?.copyWith(color: AppColors.error)),
-                              ],
-                            ),
-                          ),
-                          if (p.isHidden) StatusChip(label: 'Hidden', color: context.palette.textSecondary),
-                        ],
-                      ),
-                    ).animate(delay: (30 * i.clamp(0, 10)).ms).fadeIn(duration: 250.ms);
-                  },
+            child: MessageView(
+              icon: AppIcons.link,
+              title: 'Share products you love',
+              message: 'Paste your affiliate link from Amazon, Nykaa, Flipkart and more. We count every click; the shop pays your commission.',
+            ),
+          )
+              : ListView(
+            physics: const AlwaysScrollableScrollPhysics(),
+            padding: const EdgeInsets.fromLTRB(AppSpacing.gutter, AppSpacing.xs, AppSpacing.gutter, 100),
+            children: [
+              _AffiliateSummary(items: items, broken: broken.length),
+              const SizedBox(height: 14),
+              for (final (i, p) in items.indexed) ...[
+                _AffiliateRow(product: p, broken: broken.contains(p.id), onTap: p.isRemoved ? null : () => _edit(context, p))
+                    .animate(delay: (30 * i.clamp(0, 10)).ms)
+                    .fadeIn(duration: 250.ms),
+                const SizedBox(height: 10),
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Products · clicks · links needing attention.
+class _AffiliateSummary extends StatelessWidget {
+  const _AffiliateSummary({required this.items, required this.broken});
+
+  final List<AffiliateProduct> items;
+  final int broken;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.palette;
+    final clicks = items.fold<int>(0, (a, p) => a + p.clicks);
+    final live = items.where((p) => !p.isHidden && !p.isRemoved).length;
+    Widget cell(String value, String label, {Color? color}) => Expanded(
+      child: Column(
+        children: [
+          Text(value, style: TextStyle(fontSize: 16, fontWeight: FontWeight.w900, color: color ?? palette.textPrimary)),
+          const SizedBox(height: 2),
+          Text(label, style: TextStyle(fontSize: 11, color: palette.textSecondary)),
+        ],
+      ),
+    );
+    Widget gap() => Container(width: 1, height: 30, color: palette.border);
+    return Container(
+      padding: const EdgeInsets.symmetric(vertical: 14),
+      decoration: BoxDecoration(color: palette.surface, borderRadius: BorderRadius.circular(18), border: Border.all(color: palette.border)),
+      child: Row(
+        children: [
+          cell('$live', 'Showing'),
+          gap(),
+          cell(Fmt.compact(clicks), 'Clicks'),
+          gap(),
+          cell('$broken', 'Broken links', color: broken > 0 ? AppColors.warning : null),
+        ],
+      ),
+    );
+  }
+}
+
+class _AffiliateRow extends StatelessWidget {
+  const _AffiliateRow({required this.product, required this.broken, required this.onTap});
+
+  final AffiliateProduct product;
+  final bool broken;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.palette;
+    final p = product;
+    return Material(
+      color: palette.surface,
+      borderRadius: BorderRadius.circular(18),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(18),
+        onTap: onTap,
+        child: Ink(
+          padding: const EdgeInsets.all(10),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(18),
+            border: Border.all(color: broken ? AppColors.warning.withValues(alpha: 0.5) : palette.border),
+          ),
+          child: Row(
+            children: [
+              ClipRRect(
+                borderRadius: BorderRadius.circular(12),
+                child: Container(
+                  width: 64,
+                  height: 64,
+                  color: Colors.white,
+                  child: StoreImage(url: p.imageUrl, icon: AppIcons.link, fit: BoxFit.contain),
                 ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(p.title, maxLines: 2, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, height: 1.25, color: palette.textPrimary)),
+                    const SizedBox(height: 3),
+                    Text(
+                      [if (p.merchant.isNotEmpty) p.merchant, if (p.price != null) Fmt.money(p.price!)].join(' · '),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(fontSize: 12, color: palette.textSecondary),
+                    ),
+                    if (p.isRemoved)
+                      Text('Removed by Fanitt: ${p.removedReason}', style: const TextStyle(fontSize: 12, color: AppColors.error))
+                    else if (broken)
+                      const Padding(
+                        padding: EdgeInsets.only(top: 3),
+                        child: Row(
+                          children: [
+                            Icon(AppIcons.warning, size: 13, color: AppColors.warning),
+                            SizedBox(width: 4),
+                            Flexible(child: Text('Link not working — tap to update', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: AppColors.warning))),
+                          ],
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 8),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  Text(Fmt.compact(p.clicks), style: TextStyle(fontSize: 15, fontWeight: FontWeight.w900, color: palette.textPrimary)),
+                  Text('clicks', style: TextStyle(fontSize: 11, color: palette.textSecondary)),
+                  if (p.isHidden) ...[
+                    const SizedBox(height: 4),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                      decoration: BoxDecoration(color: palette.surfaceMuted, borderRadius: BorderRadius.circular(99)),
+                      child: Text('Hidden', style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.w800, color: palette.textSecondary)),
+                    ),
+                  ],
+                ],
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -259,9 +393,9 @@ class _ProductSheetState extends State<_ProductSheet> {
                   onTap: busy
                       ? null
                       : () async {
-                          final picked = await sl<MediaPicker>().image();
-                          if (picked != null) setState(() => _image = picked);
-                        },
+                    final picked = await sl<MediaPicker>().image();
+                    if (picked != null) setState(() => _image = picked);
+                  },
                   child: ClipRRect(
                     borderRadius: BorderRadius.circular(AppRadius.sm),
                     child: SizedBox(
@@ -346,22 +480,22 @@ class _CollectionsTab extends StatelessWidget {
           child: items.isEmpty
               ? const ScrollableMessage(child: MessageView(icon: AppIcons.package, title: 'No collections', message: 'Group products, like “My skincare picks” or “Travel gear”.'))
               : ListView.separated(
-                  physics: const AlwaysScrollableScrollPhysics(),
-                  padding: const EdgeInsets.fromLTRB(AppSpacing.gutter, AppSpacing.sm, AppSpacing.gutter, 100),
-                  itemCount: items.length,
-                  separatorBuilder: (_, _) => const SizedBox(height: AppSpacing.sm),
-                  itemBuilder: (context, i) => AppCard(
-                    onTap: () => _edit(context, products, items[i]),
-                    child: Row(
-                      children: [
-                        const Icon(AppIcons.package, color: AppColors.primary),
-                        const SizedBox(width: AppSpacing.sm),
-                        Expanded(child: Text(items[i].title, style: context.text.titleSmall)),
-                        Text('${items[i].productIds.length} products', style: context.text.bodySmall),
-                      ],
-                    ),
-                  ),
-                ),
+            physics: const AlwaysScrollableScrollPhysics(),
+            padding: const EdgeInsets.fromLTRB(AppSpacing.gutter, AppSpacing.sm, AppSpacing.gutter, 100),
+            itemCount: items.length,
+            separatorBuilder: (_, _) => const SizedBox(height: AppSpacing.sm),
+            itemBuilder: (context, i) => AppCard(
+              onTap: () => _edit(context, products, items[i]),
+              child: Row(
+                children: [
+                  const Icon(AppIcons.package, color: AppColors.primary),
+                  const SizedBox(width: AppSpacing.sm),
+                  Expanded(child: Text(items[i].title, style: context.text.titleSmall)),
+                  Text('${items[i].productIds.length} products', style: context.text.bodySmall),
+                ],
+              ),
+            ),
+          ),
         ),
       ),
     );

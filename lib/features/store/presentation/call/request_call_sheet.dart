@@ -1,3 +1,4 @@
+// File: lib/features/store/presentation/call/request_call_sheet.dart
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
@@ -75,7 +76,7 @@ class _RequestCallSheetState extends State<_RequestCallSheet> {
     final presets = _presets.where((m) => m >= info.minMinutes && m <= info.maxMinutes).toList();
     return SheetBody(
       title: 'Call ${widget.store.name}',
-      subtitle: 'You pay for the minutes up front. Unused minutes come back to your Fanitt wallet.',
+      subtitle: 'Pay for the minutes up front. The first 15 seconds are free, and unused minutes come back to your Fanitt wallet.',
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
