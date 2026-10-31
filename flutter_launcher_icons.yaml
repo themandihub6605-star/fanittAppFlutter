@@ -1,0 +1,17 @@
+# File: flutter_launcher_icons.yaml  (project root, next to pubspec.yaml)
+# Run:  dart run flutter_launcher_icons
+flutter_launcher_icons:
+  # Android: replaces the default ic_launcher icons
+  android: true
+  min_sdk_android: 21
+  image_path_android: "assets/icon/app_icon.png"
+  # Adaptive icon (Android 8+): splash gradient behind the white Fanitt mark
+  adaptive_icon_background: "assets/icon/app_icon_background.png"
+  adaptive_icon_foreground: "assets/icon/app_icon_foreground.png"
+  # Android 13+ themed icons use the white mark only
+  adaptive_icon_monochrome: "assets/icon/app_icon_foreground.png"
+
+  # iOS: App Store needs a full square icon without transparency
+  ios: true
+  image_path_ios: "assets/icon/app_icon.png"
+  remove_alpha_ios: true

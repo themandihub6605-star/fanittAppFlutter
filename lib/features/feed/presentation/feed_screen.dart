@@ -156,6 +156,16 @@ class _FeedViewState extends State<_FeedView> {
 
   Future<bool> _addStory() => CreatePostScreen.open(context, mode: CreateMode.story);
 
+  /// Photo button on the composer → straight to a new post.
+  Future<void> _newPost() async {
+    HapticFeedback.selectionClick();
+    final made = await CreatePostScreen.open(context, mode: CreateMode.post);
+    if (!made || !mounted) return;
+    _page = 1;
+    _hasMore = true;
+    context.read<LoadCubit<List<Post>>>().refresh();
+  }
+
   @override
   Widget build(BuildContext context) {
     final palette = context.palette;
@@ -165,62 +175,41 @@ class _FeedViewState extends State<_FeedView> {
     // Creators and brands can post (backend rule).
     final canPost = auth is AuthAuthenticated && (auth.user.role == UserRole.creator || auth.user.role == UserRole.brand);
     final showCreate = canPost && _isMainFeed;
-    final firstName = auth is AuthAuthenticated ? auth.user.name.trim().split(' ').first : '';
     final posts = state.data;
     final canPop = Navigator.of(context).canPop();
 
     final slivers = <Widget>[
-      // Header: big title + round buttons. Floats back in on scroll up.
+      // Header: title + round buttons. Floats back in on scroll up.
       SliverAppBar(
         floating: true,
         snap: true,
         automaticallyImplyLeading: false,
-        backgroundColor: palette.background,
+        backgroundColor: palette.surface,
         surfaceTintColor: Colors.transparent,
         elevation: 0,
         scrolledUnderElevation: 0,
-        toolbarHeight: 72,
-        titleSpacing: _isMainFeed && !canPop ? AppSpacing.gutter : 12,
-        title: _isMainFeed
-            ? Row(
+        systemOverlayStyle: context.isDark ? SystemUiOverlayStyle.light : SystemUiOverlayStyle.dark,
+        titleSpacing: _isMainFeed && !canPop ? 16 : 12,
+        title: Row(
           children: [
-            // Opened as a page (e.g. brands from Home) → a way back.
-            if (canPop) ...[
+            // Opened as a page (Saved, a shared post, brands from Home) → back.
+            if (canPop || !_isMainFeed) ...[
               _RoundButton(icon: AppIcons.back, onTap: () => Navigator.of(context).maybePop()),
               const SizedBox(width: 12),
             ],
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text('Feed', style: TextStyle(fontSize: 28, fontWeight: FontWeight.w900, letterSpacing: -0.9, height: 1.1, color: palette.textPrimary)),
-                  const SizedBox(height: 2),
-                  Text(
-                    firstName.isEmpty ? 'Fresh from creators and brands' : 'Hi $firstName — here’s what’s new',
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(fontSize: 13, fontWeight: FontWeight.w500, color: palette.textSecondary),
-                  ),
-                ],
-              ),
-            ),
-          ],
-        )
-            : Row(
-          children: [
-            _RoundButton(icon: AppIcons.back, onTap: () => Navigator.of(context).maybePop()),
-            const SizedBox(width: 12),
-            Text(widget.single ? 'Post' : 'Saved posts', style: TextStyle(fontSize: 20, fontWeight: FontWeight.w900, letterSpacing: -0.5, color: palette.textPrimary)),
+            // Same heading style as Messages / Campaigns (the app bar theme).
+            Text(_isMainFeed ? 'Feed' : (widget.single ? 'Post' : 'Saved posts')),
           ],
         ),
         actions: [
           if (showCreate) _RoundButton(icon: AppIcons.plus, onTap: _create),
           if (_isMainFeed && auth is AuthAuthenticated) ...[
-            const SizedBox(width: 10),
+            const SizedBox(width: 8),
             const _RoundShell(child: ActivityButton()),
           ],
-          const SizedBox(width: AppSpacing.gutter - 4),
+          const SizedBox(width: 12),
         ],
+        bottom: PreferredSize(preferredSize: const Size.fromHeight(1), child: Divider(height: 1, thickness: 1, color: palette.border)),
       ),
     ];
 
@@ -232,14 +221,29 @@ class _FeedViewState extends State<_FeedView> {
       );
     } else {
       if (_isMainFeed) {
+        // "What's on your mind?" — creators and brands.
+        if (showCreate && auth is AuthAuthenticated) {
+          slivers.add(
+            SliverToBoxAdapter(
+              child: _Composer(
+                name: auth.user.name,
+                avatarUrl: auth.user.avatarUrl,
+                onCompose: _create,
+                onPhoto: _newPost,
+              ),
+            ),
+          );
+          slivers.add(const SliverToBoxAdapter(child: _SectionGap()));
+        }
         slivers.add(
           SliverToBoxAdapter(
-            child: Padding(
-              padding: const EdgeInsets.only(bottom: 6),
+            child: ColoredBox(
+              color: palette.surface,
               child: StoriesBar(canPost: canPost, onAddStory: _addStory, refresh: _storiesTick),
             ),
           ),
         );
+        slivers.add(const SliverToBoxAdapter(child: _SectionGap()));
       }
       if (posts.isEmpty && _reels.isEmpty) {
         slivers.add(
@@ -257,18 +261,25 @@ class _FeedViewState extends State<_FeedView> {
             itemBuilder: (context, i) {
               final card = _FeedPost(key: ValueKey(posts[i].id), post: posts[i], savedOnly: widget.savedOnly);
               final withReels = _isMainFeed && _reels.isNotEmpty && (i == _reelsAfter - 1 || (posts.length < _reelsAfter && i == posts.length - 1));
-              final animated = i < 4 ? card.animate(delay: (60 * i).ms).fadeIn(duration: 350.ms).slideY(begin: 0.04, curve: Curves.easeOutCubic) : card;
+              final animated = i < 3 ? card.animate(delay: (50 * i).ms).fadeIn(duration: 300.ms) : card;
               if (!withReels) return animated;
-              return Column(mainAxisSize: MainAxisSize.min, children: [animated, ReelsRow(reels: _reels)]);
+              return Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  animated,
+                  ColoredBox(color: palette.surface, child: ReelsRow(reels: _reels)),
+                  const _SectionGap(),
+                ],
+              );
             },
           ),
         );
-        if (posts.isEmpty && _isMainFeed) slivers.add(SliverToBoxAdapter(child: ReelsRow(reels: _reels)));
+        if (posts.isEmpty && _isMainFeed) slivers.add(SliverToBoxAdapter(child: ColoredBox(color: palette.surface, child: ReelsRow(reels: _reels))));
       }
       slivers.add(
         SliverToBoxAdapter(
           child: Padding(
-            padding: const EdgeInsets.fromLTRB(AppSpacing.gutter, 8, AppSpacing.gutter, 28),
+            padding: const EdgeInsets.fromLTRB(AppSpacing.gutter, 12, AppSpacing.gutter, 28),
             child: Center(
               child: _loadingMore
                   ? const SizedBox(width: 22, height: 22, child: CircularProgressIndicator(strokeWidth: 2.2))
@@ -280,17 +291,29 @@ class _FeedViewState extends State<_FeedView> {
     }
 
     return Scaffold(
-      backgroundColor: palette.background,
-      body: SafeArea(
-        bottom: false,
-        child: AppRefresh(
-          onRefresh: _refresh,
-          child: CustomScrollView(
-            controller: _isMainFeed ? _scroll : null,
-            physics: const AlwaysScrollableScrollPhysics(),
-            slivers: slivers,
+      // The grey shows between sections, like Facebook.
+      backgroundColor: palette.surfaceMuted,
+      // No top SafeArea: the white header runs up behind the status bar /
+      // camera (the app bar adds the status-bar space itself).
+      body: Stack(
+        children: [
+          AppRefresh(
+            onRefresh: _refresh,
+            child: CustomScrollView(
+              controller: _isMainFeed ? _scroll : null,
+              physics: const AlwaysScrollableScrollPhysics(),
+              slivers: slivers,
+            ),
           ),
-        ),
+          // Status bar strip stays white even when the header slides away.
+          Positioned(
+            left: 0,
+            right: 0,
+            top: 0,
+            height: MediaQuery.paddingOf(context).top,
+            child: ColoredBox(color: palette.surface),
+          ),
+        ],
       ),
     );
   }
@@ -469,157 +492,149 @@ class _FeedPostState extends State<_FeedPost> {
     // Blocked either way → hidden.
     if (BlockedUsers.instance.isHidden(post.creatorUserId)) return const SizedBox.shrink();
 
-    return Container(
-      margin: const EdgeInsets.fromLTRB(12, 0, 12, 14),
-      decoration: BoxDecoration(
-        color: palette.surface,
-        borderRadius: BorderRadius.circular(24),
-        border: Border.all(color: palette.border),
-        boxShadow: context.isDark ? null : const [BoxShadow(color: Color(0x0D101828), blurRadius: 24, offset: Offset(0, 8))],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          // Header: avatar · name ✓ · Brand tag · time — Follow
-          Padding(
-            padding: EdgeInsets.fromLTRB(14, 14, !isOwnPost && myId != null ? 2 : 12, 12),
-            child: Row(
-              children: [
-                GestureDetector(
-                  onTap: openAuthor,
-                  child: Container(
-                    padding: const EdgeInsets.all(2),
-                    decoration: BoxDecoration(shape: BoxShape.circle, border: Border.all(color: post.isFollowingCreator ? AppColors.primary.withValues(alpha: 0.45) : palette.border, width: 1.5)),
-                    child: UserAvatar(initials: name.substring(0, 1).toUpperCase(), imageUrl: post.creatorAvatarUrl, size: 38),
-                  ),
-                ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: GestureDetector(
-                    behavior: HitTestBehavior.opaque,
-                    onTap: openAuthor,
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          children: [
-                            Flexible(
-                              child: Text(name, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 14.5, fontWeight: FontWeight.w800, letterSpacing: -0.2, color: palette.textPrimary)),
-                            ),
-                            if (post.verified) ...[
-                              const SizedBox(width: 4),
-                              const Icon(AppIcons.sealCheck, size: 15, color: AppColors.info),
-                            ],
-                          ],
-                        ),
-                        const SizedBox(height: 2),
-                        Row(
-                          children: [
-                            if (post.isBrand) ...[
-                              Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
-                                decoration: BoxDecoration(color: AppColors.info.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(5)),
-                                child: const Text('Brand', style: TextStyle(color: AppColors.info, fontSize: 10, fontWeight: FontWeight.w800)),
-                              ),
-                              const SizedBox(width: 6),
-                            ],
-                            Icon(AppIcons.clock, size: 11, color: palette.textTertiary),
-                            const SizedBox(width: 3),
-                            Text(Fmt.relative(post.createdAt), style: TextStyle(fontSize: 12, color: palette.textTertiary)),
-                          ],
-                        ),
-                      ],
+    final subtle = palette.textSecondary;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        ColoredBox(
+          color: palette.surface,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              // Header: photo · Name ✓ · Follow   /   Brand · time · 🌐      ⋯
+              Padding(
+                padding: EdgeInsets.fromLTRB(12, 12, !isOwnPost && myId != null ? 0 : 12, 8),
+                child: Row(
+                  children: [
+                    GestureDetector(
+                      onTap: openAuthor,
+                      child: UserAvatar(initials: name.substring(0, 1).toUpperCase(), imageUrl: post.creatorAvatarUrl, size: 42),
                     ),
-                  ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: GestureDetector(
+                        behavior: HitTestBehavior.opaque,
+                        onTap: openAuthor,
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                Flexible(
+                                  child: Text(name, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 15.5, fontWeight: FontWeight.w700, letterSpacing: -0.2, color: palette.textPrimary)),
+                                ),
+                                if (post.verified) ...[
+                                  const SizedBox(width: 4),
+                                  const Icon(AppIcons.sealCheck, size: 15, color: AppColors.info),
+                                ],
+                                if (!isOwnPost && post.creatorId != null && myId != null) ...[
+                                  Text('  ·  ', style: TextStyle(fontSize: 14, color: subtle)),
+                                  _FollowLink(following: post.isFollowingCreator, busy: _followBusy, onTap: _toggleFollow),
+                                ],
+                              ],
+                            ),
+                            const SizedBox(height: 2),
+                            Row(
+                              children: [
+                                if (post.isBrand) ...[
+                                  const Text('Brand', style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700, color: AppColors.info)),
+                                  Text(' · ', style: TextStyle(fontSize: 12.5, color: subtle)),
+                                ],
+                                Text(Fmt.relative(post.createdAt), style: TextStyle(fontSize: 12.5, color: subtle)),
+                                Text(' · ', style: TextStyle(fontSize: 12.5, color: subtle)),
+                                Icon(AppIcons.globe, size: 12, color: subtle),
+                              ],
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                    // ⋯ Report / Block (needed for App Store UGC rules).
+                    if (!isOwnPost && myId != null)
+                      IconButton(
+                        tooltip: 'More',
+                        icon: Icon(AppIcons.dotsThree, color: palette.textSecondary, size: 24),
+                        onPressed: () => showContentActions(context, type: ReportType.post, id: post.id, name: name, userId: post.creatorUserId),
+                      ),
+                  ],
                 ),
-                if (!isOwnPost && post.creatorId != null) ...[
-                  const SizedBox(width: 8),
-                  _FollowButton(following: post.isFollowingCreator, busy: _followBusy, onTap: _toggleFollow),
-                ],
-                // ⋮ Report / Block (needed for App Store UGC rules).
-                if (!isOwnPost && myId != null)
-                  IconButton(
-                    tooltip: 'More',
-                    visualDensity: VisualDensity.compact,
-                    icon: Icon(AppIcons.dotsThree, color: palette.textSecondary, size: 22),
-                    onPressed: () => showContentActions(context, type: ReportType.post, id: post.id, name: name, userId: post.creatorUserId),
-                  ),
-              ],
-            ),
-          ),
+              ),
 
-          // Caption first — reads like a story, then the picture.
-          if (post.caption.isNotEmpty)
-            Padding(
-              padding: EdgeInsets.fromLTRB(16, 0, 16, hasMedia ? 12 : 6),
-              child: _ExpandableCaption(text: post.caption, large: !hasMedia),
-            ),
+              // Caption above the picture.
+              if (post.caption.isNotEmpty)
+                Padding(
+                  padding: EdgeInsets.fromLTRB(12, 0, 12, hasMedia ? 10 : 4),
+                  child: _ExpandableCaption(text: post.caption, large: !hasMedia),
+                ),
 
-          // Media — framed inside the card with soft corners.
-          if (hasMedia)
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 10),
-              child: GestureDetector(
-                onDoubleTap: () => _toggleLike(fromDoubleTap: true),
-                child: PostMediaGrid(
-                  media: post.media,
-                  radius: 18,
-                  onOpen: _openViewer,
-                  overlay: Center(
-                    child: AnimatedScale(
-                      scale: _burst ? 1 : 0,
-                      duration: const Duration(milliseconds: 260),
-                      curve: Curves.easeOutBack,
-                      child: AnimatedOpacity(
-                        opacity: _burst ? 1 : 0,
-                        duration: const Duration(milliseconds: 200),
-                        child: Container(
-                          width: 104,
-                          height: 104,
-                          decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.22), shape: BoxShape.circle),
-                          child: const Icon(AppIcons.heartFilled, size: 60, color: Colors.white),
+              // Media — full width, edge to edge.
+              if (hasMedia)
+                GestureDetector(
+                  onDoubleTap: () => _toggleLike(fromDoubleTap: true),
+                  child: PostMediaGrid(
+                    media: post.media,
+                    radius: 0,
+                    gap: 2,
+                    background: palette.surface,
+                    onOpen: _openViewer,
+                    overlay: Center(
+                      child: AnimatedScale(
+                        scale: _burst ? 1 : 0,
+                        duration: const Duration(milliseconds: 260),
+                        curve: Curves.easeOutBack,
+                        child: AnimatedOpacity(
+                          opacity: _burst ? 1 : 0,
+                          duration: const Duration(milliseconds: 200),
+                          child: Container(
+                            width: 104,
+                            height: 104,
+                            decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.22), shape: BoxShape.circle),
+                            child: const Icon(AppIcons.heartFilled, size: 60, color: Colors.white),
+                          ),
                         ),
                       ),
                     ),
                   ),
                 ),
-              ),
-            ),
 
-          // Like · Share ............ Save
-          Padding(
-            padding: const EdgeInsets.fromLTRB(12, 12, 12, 0),
-            child: Row(
-              children: [
-                _ActionPill(
-                  icon: liked ? AppIcons.heartFilled : AppIcons.heart,
-                  label: post.likeCount > 0 ? Fmt.compact(post.likeCount) : 'Like',
-                  active: liked,
-                  onTap: _toggleLike,
+              // ♥ 7.6K   ↗ Share ..................... 🔖
+              Padding(
+                padding: const EdgeInsets.fromLTRB(4, 4, 4, 0),
+                child: Row(
+                  children: [
+                    _ActionButton(
+                      icon: liked ? AppIcons.heartFilled : AppIcons.heart,
+                      label: post.likeCount > 0 ? Fmt.compact(post.likeCount) : 'Like',
+                      active: liked,
+                      onTap: _toggleLike,
+                    ),
+                    Builder(builder: (ctx) => _ActionButton(icon: AppIcons.share, label: 'Share', active: false, onTap: () => _share(ctx, myId))),
+                    const Spacer(),
+                    _SaveButton(saved: post.isSaved, onTap: _toggleSave),
+                  ],
                 ),
-                const SizedBox(width: 8),
-                Builder(builder: (ctx) => _ActionPill(icon: AppIcons.share, label: 'Share', active: false, onTap: () => _share(ctx, myId))),
-                const Spacer(),
-                _SaveButton(saved: post.isSaved, onTap: _toggleSave),
-              ],
-            ),
-          ),
+              ),
 
-          // Liked by …
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 10, 16, 14),
-            child: post.likeCount > 0
-                ? _LikedBy(post: post, myId: myId, onTap: () => showLikersSheet(context, postId: post.id, likeCount: post.likeCount))
-                : Text('Be the first to like this', style: TextStyle(fontSize: 12.5, color: palette.textTertiary)),
+              // Liked by …
+              if (post.likeCount > 0)
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+                  child: _LikedBy(post: post, myId: myId, onTap: () => showLikersSheet(context, postId: post.id, likeCount: post.likeCount)),
+                )
+              else
+                const SizedBox(height: 6),
+            ],
           ),
-        ],
-      ),
+        ),
+        const _SectionGap(),
+      ],
     );
   }
 }
 
-class _FollowButton extends StatelessWidget {
-  const _FollowButton({required this.following, required this.busy, required this.onTap});
+/// "Follow" / "Following" next to the name, like Facebook.
+class _FollowLink extends StatelessWidget {
+  const _FollowLink({required this.following, required this.busy, required this.onTap});
 
   final bool following;
   final bool busy;
@@ -628,37 +643,21 @@ class _FollowButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final palette = context.palette;
-    final color = following ? palette.textSecondary : AppColors.primary;
+    if (busy) return const SizedBox(width: 12, height: 12, child: CircularProgressIndicator(strokeWidth: 1.8));
     return GestureDetector(
-      onTap: busy ? null : onTap,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 200),
-        height: 34,
-        padding: const EdgeInsets.symmetric(horizontal: 14),
-        alignment: Alignment.center,
-        decoration: BoxDecoration(
-          color: following ? palette.background : AppColors.primary.withValues(alpha: context.isDark ? 0.18 : 0.07),
-          borderRadius: BorderRadius.circular(99),
-          border: Border.all(color: following ? palette.border : AppColors.primary.withValues(alpha: 0.35)),
-        ),
-        child: busy
-            ? SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2, color: color))
-            : Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(following ? AppIcons.check : AppIcons.plus, size: 13, color: color),
-            const SizedBox(width: 4),
-            Text(following ? 'Following' : 'Follow', style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w800, color: color)),
-          ],
-        ),
+      behavior: HitTestBehavior.opaque,
+      onTap: onTap,
+      child: Text(
+        following ? 'Following' : 'Follow',
+        style: TextStyle(fontSize: 14.5, fontWeight: FontWeight.w700, color: following ? palette.textSecondary : AppColors.primary),
       ),
     );
   }
 }
 
-/// Soft pill: icon + count / label.
-class _ActionPill extends StatelessWidget {
-  const _ActionPill({required this.icon, required this.label, required this.active, required this.onTap});
+/// Plain icon + label action (Like / Share), no pill — clean like Facebook.
+class _ActionButton extends StatelessWidget {
+  const _ActionButton({required this.icon, required this.label, required this.active, required this.onTap});
 
   final IconData icon;
   final String label;
@@ -668,31 +667,26 @@ class _ActionPill extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final palette = context.palette;
-    final color = active ? AppColors.primary : palette.textPrimary;
-    return Material(
-      color: active ? AppColors.primary.withValues(alpha: context.isDark ? 0.18 : 0.07) : palette.background,
-      shape: StadiumBorder(side: BorderSide(color: active ? AppColors.primary.withValues(alpha: 0.3) : palette.border)),
-      child: InkWell(
-        customBorder: const StadiumBorder(),
-        onTap: onTap,
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(icon, size: 19, color: color)
-                  .animate(key: ValueKey(active), target: active ? 1 : 0)
-                  .scaleXY(begin: 1, end: 1.3, duration: 130.ms, curve: Curves.easeOut)
-                  .then()
-                  .scaleXY(begin: 1.3, end: 1, duration: 160.ms, curve: Curves.easeIn),
-              const SizedBox(width: 6),
-              AnimatedSwitcher(
-                duration: const Duration(milliseconds: 200),
-                transitionBuilder: (child, a) => FadeTransition(opacity: a, child: SlideTransition(position: Tween(begin: const Offset(0, 0.4), end: Offset.zero).animate(a), child: child)),
-                child: Text(label, key: ValueKey(label), style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: active ? AppColors.primary : palette.textPrimary)),
-              ),
-            ],
-          ),
+    final color = active ? AppColors.error : palette.textSecondary;
+    return InkWell(
+      borderRadius: BorderRadius.circular(8),
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: 23, color: color)
+                .animate(key: ValueKey(active), target: active ? 1 : 0)
+                .scaleXY(begin: 1, end: 1.3, duration: 130.ms, curve: Curves.easeOut)
+                .then()
+                .scaleXY(begin: 1.3, end: 1, duration: 160.ms, curve: Curves.easeIn),
+            const SizedBox(width: 6),
+            AnimatedSwitcher(
+              duration: const Duration(milliseconds: 200),
+              child: Text(label, key: ValueKey(label), style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: color)),
+            ),
+          ],
         ),
       ),
     );
@@ -708,20 +702,67 @@ class _SaveButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final palette = context.palette;
-    return Material(
-      color: saved ? AppColors.primary.withValues(alpha: context.isDark ? 0.18 : 0.07) : palette.background,
-      shape: CircleBorder(side: BorderSide(color: saved ? AppColors.primary.withValues(alpha: 0.3) : palette.border)),
-      child: InkWell(
-        customBorder: const CircleBorder(),
-        onTap: onTap,
-        child: SizedBox(
-          width: 38,
-          height: 38,
-          child: Icon(saved ? AppIcons.bookmarkFilled : AppIcons.bookmark, size: 18, color: saved ? AppColors.primary : palette.textPrimary)
-              .animate(key: ValueKey(saved), target: saved ? 1 : 0)
-              .scaleXY(begin: 1, end: 1.25, duration: 130.ms)
-              .then()
-              .scaleXY(begin: 1.25, end: 1, duration: 150.ms),
+    return IconButton(
+      tooltip: saved ? 'Saved' : 'Save',
+      onPressed: onTap,
+      icon: Icon(saved ? AppIcons.bookmarkFilled : AppIcons.bookmark, size: 23, color: saved ? AppColors.primary : palette.textSecondary)
+          .animate(key: ValueKey(saved), target: saved ? 1 : 0)
+          .scaleXY(begin: 1, end: 1.25, duration: 130.ms)
+          .then()
+          .scaleXY(begin: 1.25, end: 1, duration: 150.ms),
+    );
+  }
+}
+
+/// Grey band between sections (composer, stories, each post).
+class _SectionGap extends StatelessWidget {
+  const _SectionGap();
+
+  @override
+  Widget build(BuildContext context) => SizedBox(height: 8, child: ColoredBox(color: context.palette.surfaceMuted));
+}
+
+/// "What's on your mind?" row — opens the create menu; the photo icon goes
+/// straight to a new post.
+class _Composer extends StatelessWidget {
+  const _Composer({required this.name, required this.avatarUrl, required this.onCompose, required this.onPhoto});
+
+  final String name;
+  final String? avatarUrl;
+  final VoidCallback onCompose;
+  final VoidCallback onPhoto;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.palette;
+    return ColoredBox(
+      color: palette.surface,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(12, 10, 4, 10),
+        child: Row(
+          children: [
+            UserAvatar(initials: name.isEmpty ? '?' : name.substring(0, 1).toUpperCase(), imageUrl: avatarUrl, size: 42),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Material(
+                color: palette.surface,
+                shape: StadiumBorder(side: BorderSide(color: palette.border)),
+                child: InkWell(
+                  customBorder: const StadiumBorder(),
+                  onTap: onCompose,
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 11),
+                    child: Text('What’s on your mind?', style: TextStyle(fontSize: 15, color: palette.textSecondary)),
+                  ),
+                ),
+              ),
+            ),
+            IconButton(
+              tooltip: 'Photo / video',
+              onPressed: onPhoto,
+              icon: const Icon(AppIcons.image, size: 26, color: AppColors.success),
+            ),
+          ],
         ),
       ),
     );
@@ -818,7 +859,7 @@ class _ExpandableCaptionState extends State<_ExpandableCaption> {
     final palette = context.palette;
     final lines = widget.large ? 6 : 3;
     final style = TextStyle(
-      fontSize: widget.large ? 16 : 14.5,
+      fontSize: widget.large ? 17 : 15,
       height: 1.45,
       fontWeight: widget.large ? FontWeight.w500 : FontWeight.w400,
       color: palette.textPrimary,
@@ -846,7 +887,7 @@ class _ExpandableCaptionState extends State<_ExpandableCaption> {
                 if (overflows)
                   Padding(
                     padding: const EdgeInsets.only(top: 4),
-                    child: Text(_expanded ? 'See less' : 'See more', style: TextStyle(fontSize: 13, color: palette.textSecondary, fontWeight: FontWeight.w800)),
+                    child: Text(_expanded ? 'See less' : '… more', style: TextStyle(fontSize: 14, color: palette.textSecondary, fontWeight: FontWeight.w600)),
                   ),
               ],
             ),
@@ -945,43 +986,47 @@ class _FeedSkeleton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final palette = context.palette;
-    Widget box(double w, double h, {double r = 10, bool circle = false}) => Container(
+    Widget box(double w, double h, {double r = 8, bool circle = false}) => Container(
       width: w,
       height: h,
       decoration: BoxDecoration(color: palette.surfaceMuted, shape: circle ? BoxShape.circle : BoxShape.rectangle, borderRadius: circle ? null : BorderRadius.circular(r)),
     );
     final width = MediaQuery.sizeOf(context).width;
-    Widget card() => Container(
-      margin: const EdgeInsets.fromLTRB(12, 0, 12, 14),
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(color: palette.surface, borderRadius: BorderRadius.circular(24), border: Border.all(color: palette.border)),
+    Widget post() => Container(
+      color: palette.surface,
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.symmetric(vertical: 12),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(children: [box(42, 42, circle: true), const SizedBox(width: 10), Column(crossAxisAlignment: CrossAxisAlignment.start, children: [box(120, 12), const SizedBox(height: 6), box(70, 10)])]),
-          const SizedBox(height: 14),
-          box(width * 0.7, 12),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            child: Row(children: [box(42, 42, circle: true), const SizedBox(width: 10), Column(crossAxisAlignment: CrossAxisAlignment.start, children: [box(130, 12), const SizedBox(height: 6), box(80, 10)])]),
+          ),
           const SizedBox(height: 12),
-          box(double.infinity, width * 0.8, r: 18),
+          Padding(padding: const EdgeInsets.symmetric(horizontal: 12), child: box(width * 0.7, 12)),
           const SizedBox(height: 12),
-          Row(children: [box(70, 34, r: 99), const SizedBox(width: 8), box(80, 34, r: 99), const Spacer(), box(38, 38, circle: true)]),
+          box(width, width * 0.9, r: 0),
+          const SizedBox(height: 12),
+          Padding(padding: const EdgeInsets.symmetric(horizontal: 12), child: Row(children: [box(60, 20), const SizedBox(width: 16), box(70, 20), const Spacer(), box(24, 24)])),
         ],
       ),
     );
     return Column(
       children: [
-        SizedBox(
-          height: 104,
+        Container(
+          color: palette.surface,
+          margin: const EdgeInsets.only(bottom: 8),
+          height: 210,
           child: ListView(
             scrollDirection: Axis.horizontal,
             physics: const NeverScrollableScrollPhysics(),
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-            children: [for (var i = 0; i < 6; i++) Padding(padding: const EdgeInsets.only(right: 14), child: Column(children: [box(64, 64, circle: true), const SizedBox(height: 8), box(48, 8)]))],
+            padding: const EdgeInsets.all(10),
+            children: [for (var i = 0; i < 4; i++) Padding(padding: const EdgeInsets.only(right: 8), child: box(112, 190, r: 14))],
           ),
         ),
-        const SizedBox(height: 6),
-        card(),
-        card(),
+        post(),
+        post(),
       ],
     ).animate(onPlay: (c) => c.repeat()).shimmer(duration: 1200.ms, color: palette.surface.withValues(alpha: 0.6));
   }

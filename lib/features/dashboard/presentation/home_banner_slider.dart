@@ -16,15 +16,14 @@ import '../../../core/theme/app_icons.dart';
 import '../../../core/theme/app_palette.dart';
 import '../../../core/theme/app_spacing.dart';
 import '../../../core/utils/json.dart';
-import '../../../core/widgets/user_avatar.dart';
 import '../../auth/presentation/bloc/auth_bloc.dart';
 import '../../notifications/data/notification_repository.dart';
 import 'home_discover.dart' show homeRefreshTick;
 import 'home_widgets.dart' show HomeAppBar;
-
+import '../../../core/widgets/user_avatar.dart';
 // Full-bleed home hero slider (banners from Admin → Home Slider).
 //
-// • Edge to edge at the very top, under the status bar, with the avatar,
+// • Edge to edge at the very top, under the status bar, with the logo,
 //   bell and messages floating on it.
 // • The picture melts into the page at the bottom; dots sit below it.
 // • Auto-slides every 4s, loops, pauses while held; tap opens the link.
@@ -83,7 +82,8 @@ Future<void> openHomeBanner(BuildContext context, HomeBanner b) async {
         if (role == 'creator') {
           context.go(AppRoutes.creatorCampaigns);
         } else if (role == 'brand') {
-          context.go(AppRoutes.brandCampaigns);
+          // Brand campaigns is a pushed page (not a tab) — push keeps Back working.
+          context.push(AppRoutes.brandCampaigns).ignore();
         } else {
           context.push(AppRoutes.search).ignore();
         }
@@ -312,7 +312,7 @@ class _HomeHeroSliderState extends State<HomeHeroSlider> with AutomaticKeepAlive
                     // Solid last pixels: no thin line at the edge while scrolling
                     // or pulling to refresh.
                     Positioned(left: 0, right: 0, bottom: -1, height: 4, child: IgnorePointer(child: ColoredBox(color: bg))),
-                    // Floating header: avatar · bell
+                    // Floating header: logo · greeting · bell
                     Positioned(
                       left: AppSpacing.gutter,
                       right: AppSpacing.gutter,
@@ -464,7 +464,7 @@ class _HeroText extends StatelessWidget {
   }
 }
 
-/// Left: avatar + "Good morning, Name 👋". Right: notification bell.
+/// Left: Fanitt logo + "Good morning, Name 👋". Right: notification bell.
 class _HeroHeader extends StatelessWidget {
   const _HeroHeader();
 

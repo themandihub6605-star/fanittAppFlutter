@@ -50,7 +50,14 @@ abstract interface class AuthRepository {
   /// Returns the server's confirmation message.
   Future<String> forgotPassword(String email);
 
-  /// Sets a new password with the token from the reset email.
+  /// Forgot password step 1: emails a 6-digit code. Returns seconds until
+  /// another code can be requested.
+  Future<int> requestResetCode(String email);
+
+  /// Step 2: checks the code and returns a one-time reset token.
+  Future<String> verifyResetCode({required String email, required String otp});
+
+  /// Step 3 (or website link): sets a new password with the reset token.
   Future<String> resetPassword({required String token, required String newPassword});
 
   Future<void> logout();

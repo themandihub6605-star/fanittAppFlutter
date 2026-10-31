@@ -593,7 +593,7 @@ class StoreRepository {
 
   Future<FanBoxConfig> fanboxConfig() async => (await _api.get('/store/fanbox/config', parser: (d) => FanBoxConfig.fromJson(J.asMap(d)))).data;
 
-  Future<CheckoutStart> sendFanBox({String? storeId, String? creatorId, required int amount, String? message, String context = 'store', PayWith payWith = PayWith.razorpay}) async =>
+  Future<CheckoutStart> sendFanBox({String? storeId, String? creatorId, required int amount, String? message, String context = 'store', String? liveId, PayWith payWith = PayWith.razorpay}) async =>
       (await _api.post(
         '/store/fanbox',
         data: {
@@ -602,6 +602,7 @@ class StoreRepository {
           'amount': amount,
           if (message != null && message.isNotEmpty) 'message': message,
           'context': context,
+          if (liveId != null && liveId.isNotEmpty) 'liveId': liveId,
           'payWith': payWith.value,
         },
         parser: (d) => CheckoutStart.fromJson(J.asMap(d)),

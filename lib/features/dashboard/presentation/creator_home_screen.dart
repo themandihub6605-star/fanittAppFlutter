@@ -75,8 +75,7 @@ class _CreatorHomeView extends StatelessWidget {
       body: AsyncView<CreatorHomeData>(
         state: cubit.state,
         onRetry: cubit.load,
-        builder: (data) {
-          final d = data.dashboard;
+        builder: (_) {
           return AppRefresh(
             onRefresh: () async {
               context.read<AuthBloc>().add(const AuthRefreshRequested());
@@ -176,34 +175,6 @@ class _CreatorHomeView extends StatelessWidget {
                     showBrands: false,
                     hide: const {'live', 'livenow', 'meets', 'communities', 'shop', 'products', 'campaigns'},
                   ),
-
-                  if (d.recentTransactions.isNotEmpty) ...[
-                    homeGap,
-                    HomeSectionHeader(title: 'Recent earnings', onSeeAll: () => context.push(AppRoutes.wallet)),
-                    const SizedBox(height: AppSpacing.sm),
-                    Padding(
-                      padding: _gutter,
-                      // Same card frame as every home section.
-                      child: Container(
-                        decoration: BoxDecoration(
-                          color: context.palette.surface,
-                          borderRadius: BorderRadius.circular(kHomeCardRadius),
-                          border: Border.all(color: context.palette.border.withValues(alpha: context.isDark ? 0.55 : 0.7)),
-                          boxShadow: context.isDark ? null : const [BoxShadow(color: Color(0x0D101828), blurRadius: 12, offset: Offset(0, 4))],
-                        ),
-                        clipBehavior: Clip.antiAlias,
-                        child: Column(
-                          children: [
-                            for (final (i, t) in d.recentTransactions.take(4).indexed) ...[
-                              if (i > 0) Divider(height: 1, indent: 64, color: context.palette.border),
-                              TransactionTile(transaction: t),
-                            ],
-                          ],
-                        ),
-                      ),
-                    ),
-                  ],
-
                 ],
               ),
             ),

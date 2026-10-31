@@ -8,6 +8,7 @@ import '../../../core/di/injection.dart';
 import '../../../core/models/common_models.dart';
 import '../../../core/network/api_exception.dart';
 import '../../../core/services/share_service.dart';
+import '../../../core/services/video_preloader.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_icons.dart';
 import '../../../core/utils/formatters.dart';
@@ -81,7 +82,10 @@ class _ReelsScreenState extends State<ReelsScreen> {
         _hasMore = res.hasMore;
         _loading = false;
       });
-      if (_page == 1 && _reels.isNotEmpty) _countView(0);
+      if (_page == 1 && _reels.isNotEmpty) {
+        _countView(0);
+        _preloadAfter(0);
+      }
     } on ApiException catch (e) {
       if (mounted) {
         setState(() {
@@ -100,7 +104,18 @@ class _ReelsScreenState extends State<ReelsScreen> {
   void _onPage(int i) {
     setState(() => _current = i);
     _countView(i);
+    _preloadAfter(i);
     if (i >= _reels.length - 3) _loadMore();
+  }
+
+  /// The next reel is already built (implicit scrolling); this loads the one
+  /// after it too, so fast swiping doesn't hit a spinner.
+  void _preloadAfter(int i) {
+    final j = i + 2;
+    if (j < _reels.length) {
+      final url = _reels[j].cover?.url;
+      if (url != null && url.isNotEmpty) VideoPreloader.i.preload(url);
+    }
   }
 
   void _replace(Post updated) {
@@ -149,6 +164,8 @@ class _ReelsScreenState extends State<ReelsScreen> {
             : PageView.builder(
           controller: _pages,
           scrollDirection: Axis.vertical,
+          // Builds (and loads) the next reel before you swipe to it.
+          allowImplicitScrolling: true,
           itemCount: _reels.length,
           onPageChanged: _onPage,
           itemBuilder: (context, i) => _ReelPage(
@@ -195,11 +212,19 @@ class _ReelPageState extends State<_ReelPage> {
   Future<void> _init() async {
     final url = reel.cover?.url;
     if (url == null) return;
-    final c = VideoPlayerController.networkUrl(Uri.parse(url));
+    // Preloaded by the previous reel → no spinner.
+    final pre = VideoPreloader.i.take(url);
+    final c = pre?.controller ?? VideoPreloader.create(url);
     _video = c;
     try {
-      await c.initialize();
+      if (pre != null) {
+        await pre.ready;
+        if (!c.value.isInitialized) throw StateError('Preload failed');
+      } else {
+        await c.initialize();
+      }
       await c.setLooping(true);
+      await c.setVolume(1);
       if (!mounted) return;
       setState(() {});
       if (widget.active) c.play();
@@ -331,7 +356,8 @@ class _ReelPageState extends State<_ReelPage> {
               if (poster.isNotEmpty) AppNetworkImage(url: poster, fit: BoxFit.cover),
               if (c != null && c.value.isInitialized)
                 FittedBox(fit: BoxFit.cover, clipBehavior: Clip.hardEdge, child: SizedBox(width: c.value.size.width, height: c.value.size.height, child: VideoPlayer(c))),
-              if (c == null || (!c.value.isInitialized && !_failed)) const Center(child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2.4)),
+              // Poster shows while loading; a spinner only if there's no poster.
+              if (poster.isEmpty && (c == null || (!c.value.isInitialized && !_failed))) const Center(child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2.4)),
               if (_failed)
                 const Center(child: Text('Couldn’t play this reel.\nIt may still be processing.', textAlign: TextAlign.center, style: TextStyle(color: Colors.white70))),
               if (_pausedByUser)

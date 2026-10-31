@@ -10,6 +10,7 @@ abstract final class ApiEndpoints {
   static const String logout = '/auth/logout';
   static const String me = '/auth/me';
   static const String forgotPassword = '/auth/forgot-password';
+  static const String verifyResetOtp = '/auth/forgot-password/verify';
   static const String resetPassword = '/auth/reset-password';
   static const String upgradeRole = '/auth/upgrade-role';
   static const String completeOnboarding = '/auth/complete-onboarding';

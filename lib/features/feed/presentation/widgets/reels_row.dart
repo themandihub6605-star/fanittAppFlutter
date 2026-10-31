@@ -8,6 +8,7 @@ import '../../../../core/theme/app_palette.dart';
 import '../../../../core/theme/app_spacing.dart';
 import '../../../../core/utils/formatters.dart';
 import '../../../../core/widgets/app_network_image.dart';
+import '../../../../core/services/video_preloader.dart';
 import '../../../../core/widgets/stream_video_player.dart';
 import '../../../../core/widgets/user_avatar.dart';
 import '../../../content/data/content_repository.dart';
@@ -134,6 +135,9 @@ class _ReelCard extends StatelessWidget {
     return GestureDetector(
       onTap: () {
         HapticFeedback.selectionClick();
+        // Start loading the video while the reels screen opens.
+        final url = reel.cover?.url;
+        if (url != null && url.isNotEmpty) VideoPreloader.i.preload(url);
         ReelsScreen.open(context, startId: reel.id);
       },
       child: Container(

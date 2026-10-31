@@ -15,7 +15,6 @@ import '../../../../core/theme/app_palette.dart';
 import '../../../../core/theme/app_spacing.dart';
 import '../../../../core/widgets/app_button.dart';
 import '../../../legal/presentation/privacy_policy_screen.dart';
-import '../widgets/fanitt_wordmark_path.dart';
 
 const _liveRed = Color(0xFFFF3B5C);
 
@@ -136,15 +135,16 @@ class _WelcomeScreenState extends State<WelcomeScreen> with SingleTickerProvider
               ),
               Column(
                 children: [
-                  // ── Top: the same white "fanitt" as the splash ──
-                  SafeArea(
-                    bottom: false,
-                    child: Padding(
-                      padding: const EdgeInsets.only(top: 14),
-                      child: const _Wordmark(height: 30).animate().fadeIn(duration: 500.ms).slideY(begin: -0.3, curve: Curves.easeOutCubic),
-                    ),
-                  ),
-
+                  // // ── Top: the white Fanitt logo ──
+                  // SafeArea(
+                  //   bottom: false,
+                  //   child: Padding(
+                  //     padding: const EdgeInsets.only(top: 12),
+                  //     child: const _Logo(size: 46).animate().fadeIn(duration: 500.ms).slideY(begin: -0.3, curve: Curves.easeOutCubic),
+                  //   ),
+                  // ),
+                  // Status bar ki jagah (logo hata diya)
+                  const SafeArea(bottom: false, child: SizedBox(height: 12)),
                   // ── The show, on a soft glowing stage ──
                   Expanded(
                     child: GestureDetector(
@@ -298,42 +298,26 @@ class _WelcomeScreenState extends State<WelcomeScreen> with SingleTickerProvider
   }
 }
 
-/// White "fanitt" from the splash's vector outlines.
-class _Wordmark extends StatelessWidget {
-  const _Wordmark({required this.height});
+/// The white Fanitt logo (assets/images/splash_screenlogo.png).
+class _Logo extends StatelessWidget {
+  const _Logo({required this.size});
 
-  final double height;
+  final double size;
 
   @override
   Widget build(BuildContext context) {
-    final width = height * kFanittWordmarkSize.width / kFanittWordmarkSize.height;
-    return SizedBox(width: width, height: height, child: const CustomPaint(painter: _WordmarkPainter()));
+    return Semantics(
+      label: 'Fanitt',
+      image: true,
+      child: Image.asset(
+        'assets/images/splash_screenlogo.png',
+        width: size,
+        height: size,
+        fit: BoxFit.contain,
+        filterQuality: FilterQuality.high,
+      ),
+    );
   }
-}
-
-class _WordmarkPainter extends CustomPainter {
-  const _WordmarkPainter();
-
-  static final Path _path = () {
-    final p = Path()..fillType = PathFillType.evenOdd;
-    for (final c in fanittWordmarkContours()) {
-      p.addPath(c, Offset.zero);
-    }
-    return p;
-  }();
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final k = size.width / kFanittWordmarkSize.width;
-    canvas.save();
-    canvas.scale(k);
-    canvas.drawPath(_path, Paint()..color = const Color(0x33101828)..maskFilter = const MaskFilter.blur(BlurStyle.normal, 18));
-    canvas.drawPath(_path, Paint()..color = Colors.white);
-    canvas.restore();
-  }
-
-  @override
-  bool shouldRepaint(_WordmarkPainter oldDelegate) => false;
 }
 
 /// Thin dashed ring for the stage (it turns slowly).

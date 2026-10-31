@@ -3,6 +3,7 @@ import 'package:equatable/equatable.dart';
 import '../../../core/models/common_models.dart';
 import '../../../core/utils/formatters.dart';
 import '../../../core/utils/json.dart';
+import '../../billing/data/billing_repository.dart' show Agreement;
 
 enum CampaignType {
   paid('paid', 'Paid'),
@@ -157,6 +158,7 @@ class Campaign extends Equatable {
     this.minFollowers,
     this.campaignImageUrl,
     this.assignedCreatorId,
+    this.brandAgreement,
     this.assignedCreatorName,
     this.createdAt,
     this.publicVisibleAt,
@@ -204,6 +206,7 @@ class Campaign extends Equatable {
       milestoneCount: J.integer(json, 'milestoneCount', 2),
       milestoneTitles: J.strings(json, 'milestoneTitles'),
       assignedCreatorId: J.refId(json, 'assignedCreator'),
+      brandAgreement: Agreement.fromJson(J.map(json, 'brandAgreement')),
       assignedCreatorName: assignedUser == null ? null : J.strOrNull(assignedUser, 'name'),
       isEscrowFunded: J.boolean(json, 'isEscrowFunded'),
       createdAt: J.date(json, 'createdAt'),
@@ -251,6 +254,9 @@ class Campaign extends Equatable {
   final int milestoneCount;
   final List<String> milestoneTitles;
   final String? assignedCreatorId;
+
+  /// What the brand agreed to when publishing (shown to creators).
+  final Agreement? brandAgreement;
   final String? assignedCreatorName;
   final bool isEscrowFunded;
   final DateTime? createdAt;
@@ -323,6 +329,8 @@ class Proposal extends Equatable {
     this.creator,
     this.rejectionReason,
     this.createdAt,
+    this.creatorAgreement,
+    this.brandAgreement,
   });
 
   factory Proposal.fromJson(Map<String, dynamic> json) {
@@ -341,6 +349,8 @@ class Proposal extends Equatable {
       status: ProposalStatus.from(J.strOrNull(json, 'status')),
       rejectionReason: J.strOrNull(json, 'rejectionReason'),
       createdAt: J.date(json, 'createdAt'),
+      creatorAgreement: Agreement.fromJson(J.map(json, 'creatorAgreement')),
+      brandAgreement: Agreement.fromJson(J.map(json, 'brandAgreement')),
     );
   }
 
@@ -356,6 +366,10 @@ class Proposal extends Equatable {
   final ProposalStatus status;
   final String? rejectionReason;
   final DateTime? createdAt;
+
+  /// Ticked by the creator when sending, and by the brand when hiring.
+  final Agreement? creatorAgreement;
+  final Agreement? brandAgreement;
 
   @override
   List<Object?> get props => [id, status];

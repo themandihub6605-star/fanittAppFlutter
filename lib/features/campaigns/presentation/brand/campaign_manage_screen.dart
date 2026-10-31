@@ -27,6 +27,7 @@ import '../../../chat/data/chat_repository.dart';
 import '../../../chat/presentation/chat_screen.dart';
 import '../../data/campaign_models.dart';
 import '../../data/campaign_repository.dart';
+import '../../../billing/presentation/billing_sheets.dart';
 import '../../../reviews/presentation/review_sheet.dart';
 import '../../../../core/services/share_service.dart';
 import '../widgets/attachment_picker.dart';
@@ -276,10 +277,23 @@ class _PaymentsTab extends StatelessWidget {
     final repo = sl<CampaignRepository>();
     final auth = context.read<AuthBloc>().state;
     final user = auth is AuthAuthenticated ? auth.user : null;
-    final ok = await context.read<ActionCubit>().run(
+    final actions = context.read<ActionCubit>();
+    // 1. Get the order (milestone amount + GST, if on).
+    final order = await actions.run('fund-${milestone.id}', () => repo.fundMilestone(milestone.id));
+    if (order == null || !context.mounted) return;
+    // 2. Show amount + GST = total before paying.
+    final go = await confirmGstPayment(
+      context,
+      title: 'Fund ${milestone.title}',
+      base: order.base,
+      gstAmount: order.gstAmount,
+      gstPercent: order.gstPercent,
+    );
+    if (!go || !context.mounted) return;
+    // 3. Pay and verify.
+    final ok = await actions.run(
       'fund-${milestone.id}',
           () async {
-        final order = await repo.fundMilestone(milestone.id);
         final payment = await sl<PaymentService>().checkout(
           orderId: order.id,
           amount: order.amount,
@@ -294,7 +308,7 @@ class _PaymentsTab extends StatelessWidget {
         );
         return true;
       },
-      success: 'Milestone funded. The creator can start work.',
+      success: 'Milestone funded. The creator can start work. Your invoice is in Wallet → Invoices.',
     );
     if (ok != null && context.mounted) context.read<LoadCubit<ManageView>>().refresh();
   }
@@ -469,10 +483,18 @@ class _ProposalCard extends StatelessWidget {
       confirmLabel: 'Hire',
     );
     if (!confirmed || !context.mounted) return;
+    // Brand agreement when hiring (shows what the creator agreed to).
+    final agreed = await confirmAgreement(
+      context,
+      party: AgreementParty.brand,
+      actionLabel: 'Agree & hire',
+      otherSide: proposal.creatorAgreement,
+    );
+    if (!agreed || !context.mounted) return;
     final ok = await context.read<ActionCubit>().run(
       'decide-${proposal.id}',
           () async {
-        await sl<CampaignRepository>().decide(campaign.id, proposal.id, accept: true);
+        await sl<CampaignRepository>().decide(campaign.id, proposal.id, accept: true, agreementAccepted: true);
         return true;
       },
       success: 'Creator hired',
@@ -544,6 +566,12 @@ class _ProposalCard extends StatelessWidget {
             ],
           ),
           for (final link in proposal.portfolioLinks) LinkText(url: link),
+          if (proposal.creatorAgreement != null) ...[
+            const SizedBox(height: AppSpacing.xs),
+            AgreementNote(agreement: proposal.creatorAgreement!, label: 'Creator accepted the agreement'),
+          ],
+          if (proposal.brandAgreement != null)
+            AgreementNote(agreement: proposal.brandAgreement!, label: 'You accepted the agreement'),
           const SizedBox(height: AppSpacing.md),
           Wrap(
             spacing: AppSpacing.xs,

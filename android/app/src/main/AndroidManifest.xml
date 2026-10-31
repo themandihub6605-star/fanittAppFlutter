@@ -47,6 +47,32 @@
                 <action android:name="android.intent.action.MAIN"/>
                 <category android:name="android.intent.category.LAUNCHER"/>
             </intent-filter>
+
+            <!-- Shared links: https://fanitt.com/open/<type>/<id> open straight in
+                 the app when it's installed (Android App Links). Needs
+                 https://fanitt.com/.well-known/assetlinks.json with this app's
+                 SHA-256 — without it Android opens the browser instead. -->
+            <intent-filter android:autoVerify="true">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="https" android:host="fanitt.com" android:pathPrefix="/open/" />
+            </intent-filter>
+            <intent-filter android:autoVerify="true">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="https" android:host="www.fanitt.com" android:pathPrefix="/open/" />
+            </intent-filter>
+            <!-- fanitt://open/... (website "Open in app" buttons) -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="fanitt" android:host="open" />
+            </intent-filter>
+            <!-- Let Flutter's router (GoRouter) receive these links. -->
+            <meta-data android:name="flutter_deeplinking_enabled" android:value="true" />
         </activity>
 
         <!-- Push notifications: default channel (matches the app) and accent color -->

@@ -156,8 +156,8 @@ class CampaignEditorCubit extends SafeCubit<CampaignEditorState> {
     });
   }
 
-  Future<bool> publish() async {
-    final ok = await _save(() => _repo.publish(_id!));
+  Future<bool> publish({bool agreementAccepted = false}) async {
+    final ok = await _save(() => _repo.publish(_id!, agreementAccepted: agreementAccepted));
     if (ok) safeEmit(state.copyWith(published: true));
     return ok;
   }

@@ -1,3 +1,4 @@
+// File: lib/features/feed/data/story_repository.dart
 import 'package:dio/dio.dart';
 
 import '../../../core/di/injection.dart';
@@ -56,6 +57,8 @@ class Story {
     required this.createdAt,
     required this.viewCount,
     required this.seen,
+    this.myReaction,
+    this.reactionCount = 0,
   });
 
   factory Story.fromJson(Map<String, dynamic> json) {
@@ -70,6 +73,8 @@ class Story {
       createdAt: J.date(json, 'createdAt') ?? DateTime.now(),
       viewCount: J.integer(json, 'viewCount'),
       seen: J.boolean(json, 'seen'),
+      myReaction: J.str(json, 'myReaction').isEmpty ? null : J.str(json, 'myReaction'),
+      reactionCount: J.integer(json, 'reactionCount'),
     );
   }
 
@@ -83,7 +88,17 @@ class Story {
   final int viewCount;
   final bool seen;
 
-  Story markSeen() => Story(
+  /// The emoji I reacted with (null = none).
+  final String? myReaction;
+
+  /// Reactions received — only filled in on my own stories.
+  final int reactionCount;
+
+  Story markSeen() => _copy(seen: true, myReaction: myReaction);
+
+  Story withReaction(String? emoji) => _copy(seen: true, myReaction: emoji);
+
+  Story _copy({required bool seen, required String? myReaction}) => Story(
     id: id,
     url: url,
     isVideo: isVideo,
@@ -92,9 +107,14 @@ class Story {
     caption: caption,
     createdAt: createdAt,
     viewCount: viewCount,
-    seen: true,
+    seen: seen,
+    myReaction: myReaction,
+    reactionCount: reactionCount,
   );
 }
+
+/// Emojis a viewer can send on a story (the server accepts only these).
+const storyReactions = ['❤️', '🔥', '😂', '😍', '😮', '👏'];
 
 /// One author's ring: all their active stories, oldest first.
 class StoryGroup {
@@ -122,6 +142,12 @@ class StoryGroup {
     author: author,
     isMine: isMine,
     stories: [for (final s in stories) s.id == storyId ? s.markSeen() : s],
+  );
+
+  StoryGroup withReaction(String storyId, String? emoji) => StoryGroup(
+    author: author,
+    isMine: isMine,
+    stories: [for (final s in stories) s.id == storyId ? s.withReaction(emoji) : s],
   );
 }
 
@@ -153,7 +179,13 @@ class StoryRepository {
     } catch (_) {}
   }
 
-  /// Who saw my story, latest first.
+  /// React to a story. Same emoji again removes it. Returns my reaction now.
+  Future<String?> react(String id, String emoji) async {
+    final res = await _api.post('/stories/$id/react', data: {'emoji': emoji}, parser: (d) => J.str(J.asMap(d), 'reaction'));
+    return res.data.isEmpty ? null : res.data;
+  }
+
+  /// Who saw my story — people who reacted first, then the rest.
   Future<List<StoryViewer>> viewers(String id) async => (await _api.get('/stories/$id/viewers', parser: (d) => J.listOf(d, StoryViewer.fromJson))).data;
 
   Future<void> delete(String id) async => _api.delete('/stories/$id', parser: (_) => null);
@@ -162,7 +194,7 @@ class StoryRepository {
 /// Someone who saw my story. [slug] is set when they are a creator or brand
 /// (fans have no public profile).
 class StoryViewer {
-  const StoryViewer({required this.user, this.isBrand = false, this.slug = '', this.profileId = '', this.isFollowing = false});
+  const StoryViewer({required this.user, this.isBrand = false, this.slug = '', this.profileId = '', this.isFollowing = false, this.reaction});
 
   factory StoryViewer.fromJson(Map<String, dynamic> json) {
     final p = J.map(json, 'profile');
@@ -172,6 +204,7 @@ class StoryViewer {
       slug: p == null ? '' : J.str(p, 'slug'),
       profileId: p == null ? '' : J.str(p, 'profileId'),
       isFollowing: p != null && J.boolean(p, 'isFollowing'),
+      reaction: J.str(json, 'reaction').isEmpty ? null : J.str(json, 'reaction'),
     );
   }
 
@@ -180,6 +213,9 @@ class StoryViewer {
   final String slug;
   final String profileId;
   final bool isFollowing;
+
+  /// The emoji they sent on this story, if any.
+  final String? reaction;
 
   bool get hasProfile => slug.isNotEmpty;
 }

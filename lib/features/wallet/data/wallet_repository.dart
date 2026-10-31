@@ -68,6 +68,7 @@ class Withdrawal extends Equatable {
     required this.platformFee,
     required this.netPayoutAmount,
     required this.payoutMethod,
+    this.gstAmount = 0,
     required this.status,
     required this.createdAt,
     required this.adminNote,
@@ -77,6 +78,7 @@ class Withdrawal extends Equatable {
         id: J.id(json),
         amount: J.integer(json, 'amount'),
         platformFee: J.integer(json, 'platformFee'),
+        gstAmount: J.integer(json, 'gstAmount'),
         netPayoutAmount: J.integer(json, 'netPayoutAmount'),
         payoutMethod: J.str(json, 'payoutMethod'),
         status: J.str(json, 'status'),
@@ -87,6 +89,7 @@ class Withdrawal extends Equatable {
   final String id;
   final int amount;
   final int platformFee;
+  final int gstAmount; // GST on the platform fee
   final int netPayoutAmount;
   final String payoutMethod;
   final String status;
@@ -98,25 +101,42 @@ class Withdrawal extends Equatable {
 }
 
 class WithdrawalPreview {
-  const WithdrawalPreview({required this.amount, required this.feePercent, required this.fee, required this.net});
+  const WithdrawalPreview({
+    required this.amount,
+    required this.feePercent,
+    required this.fee,
+    required this.net,
+    this.gstPercent = 0,
+    this.gst = 0,
+    this.minWithdrawal = 0,
+  });
 
   factory WithdrawalPreview.fromJson(Map<String, dynamic> json) => WithdrawalPreview(
         amount: J.integer(json, 'amount'),
         feePercent: J.dbl(json, 'platformFeePercent'),
         fee: J.integer(json, 'platformFee'),
+        gstPercent: J.dbl(json, 'gstPercent'),
+        gst: J.integer(json, 'gstAmount'),
         net: J.integer(json, 'netPayoutAmount'),
+        minWithdrawal: J.integer(json, 'minWithdrawal'),
       );
 
   final int amount;
   final double feePercent;
   final int fee;
+  final double gstPercent;
+  final int gst; // GST on the fee
   final int net;
+  final int minWithdrawal;
 }
 
 class WalletSummary {
-  const WalletSummary({required this.balance, required this.recent, required this.withdrawals});
+  const WalletSummary({required this.balance, required this.recent, required this.withdrawals, this.minWithdrawal = 0});
 
   final int balance;
+
+  /// Creators can't withdraw less than this (paise); 0 for everyone else.
+  final int minWithdrawal;
   final List<WalletTransaction> recent;
   final List<Withdrawal> withdrawals;
 
@@ -138,6 +158,7 @@ class WalletRepository {
     final wallet = results[0].data as Map<String, dynamic>;
     return WalletSummary(
       balance: J.integer(wallet, 'balance'),
+      minWithdrawal: J.integer(wallet, 'minWithdrawal'),
       recent: J.list(wallet, 'recentTransactions', (t) => WalletTransaction.fromJson(t, myUserId: myUserId)),
       withdrawals: results[1].data as List<Withdrawal>,
     );

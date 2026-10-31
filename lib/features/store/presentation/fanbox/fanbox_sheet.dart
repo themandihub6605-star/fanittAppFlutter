@@ -22,6 +22,7 @@ Future<void> showFanBoxSheet(
   required String creatorName,
   FanBoxConfig? config,
   String sentFrom = 'store',
+  String? liveId,
 }) async {
   final cfg = config ?? await _loadConfig(context);
   if (cfg == null || !context.mounted) return;
@@ -38,11 +39,17 @@ Future<void> showFanBoxSheet(
       amount: pick.amount,
       message: pick.message,
       context: sentFrom,
+      liveId: liveId,
       payWith: payWith,
     ),
   );
   if (order == null || !context.mounted) return;
   HapticFeedback.heavyImpact();
+  // In a live the whole room sees the FanBox animation — no extra sheet.
+  if (liveId != null && liveId.isNotEmpty) {
+    AppSnackbar.success(context, 'FanBox of ${Fmt.money(pick.amount)} sent to $creatorName 🎁');
+    return;
+  }
   await showAppSheet<void>(
     context,
     builder: (ctx) => SheetBody(
@@ -154,7 +161,7 @@ class _FanBoxSheetState extends State<_FanBoxSheet> {
           const SizedBox(height: AppSpacing.md),
           TextField(controller: _message, maxLength: 200, maxLines: 2, decoration: const InputDecoration(hintText: 'Add a message (optional)')),
           const SizedBox(height: AppSpacing.xs),
-          Text('Fanitt keeps ${widget.config.feePercent.toStringAsFixed(widget.config.feePercent % 1 == 0 ? 0 : 1)}% · the rest goes to ${widget.name}', style: context.text.bodySmall?.copyWith(color: palette.textTertiary)),
+          Text('Goes straight to ${widget.name}’s Fanitt wallet', style: context.text.bodySmall?.copyWith(color: palette.textTertiary)),
           const SizedBox(height: AppSpacing.md),
           AppButton(label: _value == null ? 'Send FanBox' : 'Send ${Fmt.money(_value!)}', icon: AppIcons.gift, onPressed: _send),
         ],

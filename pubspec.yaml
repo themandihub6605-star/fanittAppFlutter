@@ -2,7 +2,7 @@
 name: fanitt
 description: Fanitt — the creator, brand and agency app.
 publish_to: 'none'
-version: 1.0.0+24
+version: 1.0.0+25
 
 environment:
   sdk: ^3.7.0
@@ -56,11 +56,15 @@ dependencies:
   firebase_messaging: ^15.2.5
   flutter_local_notifications: ^18.0.1
   visibility_detector: ^0.4.0+2
+  google_sign_in: ^6.2.2
 
 dev_dependencies:
   flutter_test:
     sdk: flutter
   flutter_lints: ^5.0.0
+  # App icon generator — run: dart run flutter_launcher_icons
+  flutter_launcher_icons: ^0.14.3
+  flutter_native_splash: ^2.4.7
 
 flutter:
   uses-material-design: true
@@ -70,3 +74,21 @@ flutter:
     - assets/images/splash_screenlogo.png
     - assets/images/apple.png
     - assets/images/fanitt_wordmark.png
+    - assets/images/fanitt_logo_white.png
+
+# App icon: splash gradient (#F4511E → #EC2A78) with the white Fanitt mark.
+flutter_launcher_icons:
+  # Android — replaces the default ic_launcher icons
+  android: true
+  min_sdk_android: 21
+  image_path_android: "assets/icon/app_icon.png"
+  # Adaptive icon (Android 8+): gradient layer + white mark layer
+  adaptive_icon_background: "assets/icon/app_icon_background.png"
+  adaptive_icon_foreground: "assets/icon/app_icon_foreground.png"
+  # Android 13+ themed icons use the white mark only
+  adaptive_icon_monochrome: "assets/icon/app_icon_foreground.png"
+
+  # iOS — full square icon, no transparency (App Store rule)
+  ios: true
+  image_path_ios: "assets/icon/app_icon.png"
+  remove_alpha_ios: true

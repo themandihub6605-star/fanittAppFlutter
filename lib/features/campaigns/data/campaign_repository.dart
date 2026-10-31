@@ -10,15 +10,30 @@ import '../../../core/utils/json.dart';
 import 'campaign_models.dart';
 
 class RazorpayOrder {
-  const RazorpayOrder({required this.id, required this.amount});
+  const RazorpayOrder({required this.id, required this.amount, this.base = 0, this.gstAmount = 0, this.gstPercent = 0});
 
   factory RazorpayOrder.fromJson(Map<String, dynamic> json) {
     final order = J.map(json, 'order') ?? json;
-    return RazorpayOrder(id: J.str(order, 'id'), amount: J.integer(order, 'amount'));
+    final breakdown = J.map(json, 'breakdown') ?? const <String, dynamic>{};
+    final amount = J.integer(order, 'amount');
+    return RazorpayOrder(
+      id: J.str(order, 'id'),
+      amount: amount,
+      base: J.integer(breakdown, 'base', amount),
+      gstAmount: J.integer(breakdown, 'gstAmount'),
+      gstPercent: J.dbl(breakdown, 'gstPercent'),
+    );
   }
 
   final String id;
+
+  /// What the brand pays (amount + GST).
   final int amount;
+
+  /// The milestone / campaign amount before GST.
+  final int base;
+  final int gstAmount;
+  final double gstPercent;
 }
 
 class CampaignRepository {
@@ -75,11 +90,13 @@ class CampaignRepository {
         int? quotedAmount,
         List<String> portfolioLinks = const [],
         String deliveryTimeline = '',
+        bool agreementAccepted = false,
       }) async {
     final response = await _api.post(
       '/campaigns/$campaignId/apply',
       data: {
         'pitch': pitch,
+        if (agreementAccepted) 'agreementAccepted': true,
         if (quotedAmount != null) 'quotedAmount': quotedAmount,
         if (portfolioLinks.isNotEmpty) 'portfolioLinks': portfolioLinks,
         if (deliveryTimeline.isNotEmpty) 'deliveryTimeline': deliveryTimeline,
@@ -157,8 +174,8 @@ class CampaignRepository {
   ))
       .data;
 
-  Future<Campaign> publish(String id) async =>
-      (await _api.post('/campaigns/$id/publish', parser: _campaign)).data;
+  Future<Campaign> publish(String id, {bool agreementAccepted = false}) async =>
+      (await _api.post('/campaigns/$id/publish', data: {if (agreementAccepted) 'agreementAccepted': true}, parser: _campaign)).data;
 
   // --- Brand: proposals ------------------------------------------------------
 
@@ -168,10 +185,14 @@ class CampaignRepository {
   ))
       .data;
 
-  Future<void> decide(String campaignId, String applicationId, {required bool accept, String? reason}) async {
+  Future<void> decide(String campaignId, String applicationId, {required bool accept, String? reason, bool agreementAccepted = false}) async {
     await _api.patch(
       '/campaigns/$campaignId/applications/$applicationId',
-      data: {'decision': accept ? 'accepted' : 'rejected', if (reason != null) 'rejectionReason': reason},
+      data: {
+        'decision': accept ? 'accepted' : 'rejected',
+        if (reason != null) 'rejectionReason': reason,
+        if (agreementAccepted) 'agreementAccepted': true,
+      },
       parser: (_) => null,
     );
   }

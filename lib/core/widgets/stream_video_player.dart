@@ -1,8 +1,11 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:video_player/video_player.dart';
 import 'package:visibility_detector/visibility_detector.dart';
 
+import '../services/video_preloader.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_icons.dart';
 import '../theme/app_palette.dart';
@@ -47,6 +50,9 @@ class VideoPlaybackCoordinator {
 
 /// Plays a post / campaign video (Cloudflare Stream HLS or a plain MP4).
 ///
+/// - Starts loading as soon as a bit of it scrolls into view (so it's ready
+///   by the time it's centred), and takes a preloaded controller when there
+///   is one ([VideoPreloader]) — videos start without a long spinner.
 /// - Autoplays when at least 60% of it is on screen, pauses when scrolled
 ///   away, when its tab is hidden, or when another screen covers it.
 /// - Only one video plays at a time (see [VideoPlaybackCoordinator]).
@@ -109,6 +115,9 @@ class StreamVideoPlayer extends StatefulWidget {
 class _StreamVideoPlayerState extends State<StreamVideoPlayer> {
   static const double _playThreshold = 0.6;
 
+  /// Start loading (not playing) once this much is visible.
+  static const double _warmThreshold = 0.12;
+
   final Key _visibilityKey = UniqueKey();
   final VideoPlaybackCoordinator _coordinator = VideoPlaybackCoordinator.instance;
 
@@ -121,12 +130,17 @@ class _StreamVideoPlayerState extends State<StreamVideoPlayer> {
   bool _routeVisible = true;
   double _visibleFraction = 0;
 
+  /// Only show a spinner when loading takes noticeably long.
+  bool _slow = false;
+  Timer? _slowTimer;
+
   bool get _ready => _controller?.value.isInitialized ?? false;
   bool get _playing => _controller?.value.isPlaying ?? false;
   bool get _muted => _coordinator.muted.value;
   bool get _autoplayAllowed => widget.autoPlay && (!widget.followsAutoplaySetting || _coordinator.autoplay.value);
   bool get _shouldPlay =>
       !_userPaused && _routeVisible && _visibleFraction >= _playThreshold && (_autoplayAllowed || _manualPlay);
+  bool get _shouldWarm => _routeVisible && _visibleFraction >= _warmThreshold && (_autoplayAllowed || _manualPlay);
 
   @override
   void initState() {
@@ -165,6 +179,7 @@ class _StreamVideoPlayerState extends State<StreamVideoPlayer> {
   void dispose() {
     _coordinator.muted.removeListener(_onMuteChanged);
     _coordinator.autoplay.removeListener(_onAutoplayChanged);
+    _slowTimer?.cancel();
     _disposeController();
     super.dispose();
   }
@@ -191,6 +206,13 @@ class _StreamVideoPlayerState extends State<StreamVideoPlayer> {
       return;
     }
     if (value.isPlaying) widget.onPosition?.call(value.position);
+    // Buffering mid-play: spinner only if it lasts a moment.
+    if (value.isBuffering && value.isPlaying) {
+      _armSlow();
+    } else if (_slow && !_loading) {
+      _slowTimer?.cancel();
+      _slow = false;
+    }
     setState(() {});
   }
 
@@ -208,9 +230,18 @@ class _StreamVideoPlayerState extends State<StreamVideoPlayer> {
       } else if (!_playing) {
         _play();
       }
-    } else if (_playing) {
-      _controller?.pause();
+    } else {
+      if (_playing) _controller?.pause();
+      // Get it ready while it's still scrolling into view.
+      if (!_ready && !_failed && _shouldWarm) _start();
     }
+  }
+
+  void _armSlow() {
+    if (_slow || (_slowTimer?.isActive ?? false)) return;
+    _slowTimer = Timer(const Duration(milliseconds: 650), () {
+      if (mounted) setState(() => _slow = true);
+    });
   }
 
   void _onVisibilityChanged(VisibilityInfo info) {
@@ -233,21 +264,26 @@ class _StreamVideoPlayerState extends State<StreamVideoPlayer> {
   }
 
   Future<void> _start() async {
-    if (_loading) return;
+    if (_loading || _ready) return;
     setState(() {
       _loading = true;
       _failed = false;
+      _slow = false;
     });
+    _armSlow();
 
-    final controller = VideoPlayerController.networkUrl(
-      Uri.parse(widget.url),
-      formatHint: widget.url.contains('.m3u8') ? VideoFormat.hls : null,
-      videoPlayerOptions: VideoPlayerOptions(mixWithOthers: false),
-    );
+    // A preloaded controller (already loading / ready) when there is one.
+    final pre = VideoPreloader.i.take(widget.url);
+    final controller = pre?.controller ?? VideoPreloader.create(widget.url);
     _controller = controller;
 
     try {
-      await controller.initialize();
+      if (pre != null) {
+        await pre.ready;
+        if (!controller.value.isInitialized) throw StateError('Preload failed');
+      } else {
+        await controller.initialize();
+      }
       if (!mounted || _controller != controller) {
         await controller.dispose();
         return;
@@ -256,14 +292,20 @@ class _StreamVideoPlayerState extends State<StreamVideoPlayer> {
       await controller.setVolume(_muted ? 0 : 1);
       if (widget.startAt != null && widget.startAt! > Duration.zero) await controller.seekTo(widget.startAt!);
       controller.addListener(_onTick);
-      setState(() => _loading = false);
+      _slowTimer?.cancel();
+      setState(() {
+        _loading = false;
+        _slow = false;
+      });
       if (_shouldPlay) _play();
     } catch (_) {
       if (_controller == controller) _controller = null;
       await controller.dispose();
+      _slowTimer?.cancel();
       if (mounted) {
         setState(() {
           _loading = false;
+          _slow = false;
           _failed = true;
         });
       }
@@ -406,13 +448,16 @@ class _StreamVideoPlayerState extends State<StreamVideoPlayer> {
         ],
       );
     }
-    if (_loading || (_ready && _controller!.value.isBuffering && _playing)) {
+    // The poster stays up while loading; a spinner only when it's slow.
+    if (_slow && (_loading || (_ready && _controller!.value.isBuffering && _playing))) {
       return const SizedBox(
         width: 36,
         height: 36,
         child: CircularProgressIndicator(strokeWidth: 2.6, valueColor: AlwaysStoppedAnimation(Colors.white)),
       );
     }
+    // Loading for autoplay: just the poster, no play button flashing.
+    if (_loading) return const SizedBox.shrink();
     final show = !_ready || !_playing || _showControls;
     return AnimatedOpacity(
       opacity: show ? 1 : 0,

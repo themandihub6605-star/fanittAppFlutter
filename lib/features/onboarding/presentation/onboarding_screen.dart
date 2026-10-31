@@ -11,7 +11,7 @@ import '../../../core/theme/app_icons.dart';
 import '../../../core/theme/app_palette.dart';
 import '../../../core/theme/app_spacing.dart';
 import '../../../core/widgets/app_button.dart';
-import '../../../core/widgets/fanitt_logo.dart';
+
 
 class _Page {
   const _Page({
@@ -141,7 +141,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                     padding: const EdgeInsets.fromLTRB(AppSpacing.xl, AppSpacing.sm, AppSpacing.sm, 0),
                     child: Row(
                       children: [
-                        const FanittLogo(size: 34),
+                        //const FanittLogo(size: 34),
                         const Spacer(),
                         AnimatedOpacity(
                           opacity: _isLast ? 0 : 1,

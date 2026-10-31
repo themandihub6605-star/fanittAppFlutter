@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
-
+import '../../../core/widgets/user_avatar.dart';
 import '../../../core/di/injection.dart';
 import '../../../core/enums/user_role.dart';
 import '../../../core/router/app_routes.dart';
@@ -12,7 +12,6 @@ import '../../../core/theme/app_palette.dart';
 import '../../../core/theme/app_spacing.dart';
 import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_card.dart';
-import '../../../core/widgets/user_avatar.dart';
 import '../../auth/domain/entities/app_user.dart';
 import '../../auth/presentation/bloc/auth_bloc.dart';
 import '../../notifications/data/notification_repository.dart';
@@ -39,27 +38,10 @@ class HomeAppBar extends StatelessWidget implements PreferredSizeWidget {
     return AppBar(
       toolbarHeight: 72,
       titleSpacing: AppSpacing.gutter,
-      title: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisSize: MainAxisSize.min,
+      // Fanitt logo · greeting
+      title: Row(
         children: [
-          Text('${_greeting()},', style: context.text.bodySmall?.copyWith(fontSize: 12)),
-          const SizedBox(height: 2),
-          Text(
-            '${user?.firstName ?? ''} 👋',
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: context.text.headlineSmall?.copyWith(fontSize: 22, fontWeight: FontWeight.w700, letterSpacing: -0.3),
-          ),
-        ],
-      ),
-      actions: [
-        const _NotificationBell(),
-        const SizedBox(width: AppSpacing.xxs),
-        Padding(
-          padding: const EdgeInsets.only(right: AppSpacing.gutter),
-          child: InkWell(
-            customBorder: const CircleBorder(),
+          GestureDetector(
             onTap: () => context.push(AppRoutes.editProfile),
             child: Container(
               padding: const EdgeInsets.all(2),
@@ -71,8 +53,62 @@ class HomeAppBar extends StatelessWidget implements PreferredSizeWidget {
               ),
             ),
           ),
-        ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text('${_greeting()},', style: context.text.bodySmall?.copyWith(fontSize: 12)),
+                const SizedBox(height: 2),
+                Text(
+                  '${user?.firstName ?? ''} 👋',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: context.text.headlineSmall?.copyWith(fontSize: 22, fontWeight: FontWeight.w700, letterSpacing: -0.3),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+      actions: const [
+        _NotificationBell(),
+        SizedBox(width: AppSpacing.gutter - 4),
       ],
+    );
+  }
+}
+
+/// The Fanitt app logo as a small tile — the app icon look (brand gradient,
+/// white mark). Shown on every role's home in place of the profile photo.
+class HomeLogoBadge extends StatelessWidget {
+  const HomeLogoBadge({super.key, this.size = 44, this.outlined = false});
+
+  final double size;
+
+  /// White edge, for when it sits on a photo (the home banner).
+  final bool outlined;
+
+  static const _gradient = LinearGradient(begin: Alignment.topLeft, end: Alignment.bottomRight, colors: [Color(0xFFF4511E), Color(0xFFEC2A78)]);
+
+  @override
+  Widget build(BuildContext context) {
+    return Semantics(
+      label: 'Fanitt',
+      image: true,
+      child: Container(
+        width: size,
+        height: size,
+        padding: EdgeInsets.all(size * 0.14),
+        decoration: BoxDecoration(
+          gradient: _gradient,
+          borderRadius: BorderRadius.circular(size * 0.3),
+          border: outlined ? Border.all(color: Colors.white, width: 2) : null,
+          boxShadow: const [BoxShadow(color: Color(0x2E101828), blurRadius: 12, offset: Offset(0, 4))],
+        ),
+        child: Image.asset('assets/images/splash_screenlogo.png', fit: BoxFit.contain, filterQuality: FilterQuality.high),
+      ),
     );
   }
 }

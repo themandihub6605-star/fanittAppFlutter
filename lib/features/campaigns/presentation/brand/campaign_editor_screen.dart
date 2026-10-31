@@ -25,6 +25,7 @@ import '../../../common/data/categories_repository.dart';
 import '../../../profile/presentation/widgets/profile_fields.dart';
 import '../../data/campaign_models.dart';
 import '../../data/campaign_repository.dart';
+import '../../../billing/presentation/billing_sheets.dart';
 import '../widgets/campaign_widgets.dart';
 import 'campaign_editor_cubit.dart';
 
@@ -912,13 +913,16 @@ class _ReviewStep extends StatelessWidget {
     final campaign = context.select<CampaignEditorCubit, Campaign>((c) => c.state.campaign!);
     return _StepFrame(
       buttonLabel: 'Publish campaign',
-      onContinue: () {
+      onContinue: () async {
         if (campaign.campaignImageUrl == null) {
           AppSnackbar.error(context, 'Add a cover image before publishing');
           cubit.goTo(EditorStep.media);
           return;
         }
-        cubit.publish();
+        // Brand agreement before the campaign goes out.
+        final agreed = await confirmAgreement(context, party: AgreementParty.brand, actionLabel: 'Agree & publish');
+        if (!agreed || !context.mounted) return;
+        cubit.publish(agreementAccepted: true);
       },
       children: [
         CampaignHeader(campaign: campaign),

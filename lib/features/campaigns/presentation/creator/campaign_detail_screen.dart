@@ -29,6 +29,7 @@ import '../../../chat/data/chat_repository.dart';
 import '../../../chat/presentation/chat_screen.dart';
 import '../../data/campaign_models.dart';
 import '../../data/campaign_repository.dart';
+import '../../../billing/presentation/billing_sheets.dart';
 import '../../../reviews/presentation/review_sheet.dart';
 import '../../../../core/services/share_service.dart';
 import '../widgets/attachment_picker.dart';
@@ -389,6 +390,14 @@ class _ApplySheetState extends State<_ApplySheet> {
   Future<void> _submit() async {
     if (!(_formKey.currentState?.validate() ?? false)) return;
     final links = _links.map((c) => c.text.trim()).where((l) => l.isNotEmpty).toList();
+    // Creator agreement before bidding (shows the brand's agreement too).
+    final agreed = await confirmAgreement(
+      context,
+      party: AgreementParty.creator,
+      actionLabel: 'Agree & send proposal',
+      otherSide: widget.campaign.brandAgreement,
+    );
+    if (!agreed || !mounted) return;
     final result = await context.read<ActionCubit>().run(
       'apply',
           () => sl<CampaignRepository>().apply(
@@ -397,6 +406,7 @@ class _ApplySheetState extends State<_ApplySheet> {
         quotedAmount: Fmt.rupeesToPaise(_quote.text),
         portfolioLinks: links,
         deliveryTimeline: _timeline.text.trim(),
+        agreementAccepted: true,
       ),
     );
     if (result != null && mounted) Navigator.of(context).pop(true);

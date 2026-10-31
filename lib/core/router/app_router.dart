@@ -301,6 +301,10 @@ class AppRouter {
     _ => auth.runtimeType.toString(),
   };
 
+  /// Just the path (+ query) of a link — an App Link can arrive as the full
+  /// https://fanitt.com/open/... address.
+  static String _linkPath(Uri uri) => Uri(path: uri.path, query: uri.hasQuery ? uri.query : null).toString();
+
   String? _redirect(BuildContext context, GoRouterState state) {
     final auth = _authBloc.state;
     final location = state.matchedLocation;
@@ -312,11 +316,15 @@ class AppRouter {
 
     switch (auth) {
       case AuthUnknown() || AuthUnreachable():
+      // App opened from a shared link while still starting up: remember the
+      // link (otherwise it's lost on the way to the splash) and open it once
+      // sign-in is known.
+        if (location.startsWith('/open/')) PendingDeepLink.value = _linkPath(state.uri);
         return location == AppRoutes.splash ? null : AppRoutes.splash;
 
       case AuthUnauthenticated():
       // A shared link before sign-in: remember it and open it after.
-        if (location.startsWith('/open/')) PendingDeepLink.value = state.uri.toString();
+        if (location.startsWith('/open/')) PendingDeepLink.value = _linkPath(state.uri);
         // First launch: show the intro screens once before sign-in.
         if (!OnboardingStore.seen) {
           return location == AppRoutes.onboarding ? null : AppRoutes.onboarding;

@@ -17,7 +17,7 @@ import '../../../content/data/content_repository.dart';
 ///
 /// Tapping any tile opens the full-screen viewer at that item.
 class PostMediaGrid extends StatefulWidget {
-  const PostMediaGrid({super.key, required this.media, required this.onOpen, this.overlay, this.radius = 16});
+  const PostMediaGrid({super.key, required this.media, required this.onOpen, this.overlay, this.radius = 16, this.background = const Color(0xFF0E0E14), this.gap = 3});
 
   final List<PostMedia> media;
   final Future<Duration?> Function(int index, {Duration? position}) onOpen;
@@ -27,6 +27,12 @@ class PostMediaGrid extends StatefulWidget {
 
   /// Corner rounding (0 = edge to edge, as in the feed).
   final double radius;
+
+  /// Shows behind photos that don't fill their tile, and in the gaps.
+  final Color background;
+
+  /// Space between tiles.
+  final double gap;
 
   /// Tallest a post may be: width ÷ height = 4:5.
   static const double minRatio = 4 / 5;
@@ -76,7 +82,7 @@ class _PostMediaGridState extends State<PostMediaGrid> {
           duration: const Duration(milliseconds: 240),
           curve: Curves.easeOutCubic,
           height: height,
-          decoration: BoxDecoration(color: const Color(0xFF0E0E14), borderRadius: BorderRadius.circular(widget.radius)),
+          decoration: BoxDecoration(color: widget.background, borderRadius: BorderRadius.circular(widget.radius)),
           clipBehavior: widget.radius > 0 ? Clip.antiAlias : Clip.hardEdge,
           child: Stack(
             fit: StackFit.expand,
@@ -91,44 +97,44 @@ class _PostMediaGridState extends State<PostMediaGrid> {
   }
 
   Widget _layout(List<PostMedia> items) {
-    const gap = 3.0;
+    final gap = widget.gap;
     Widget tile(int i, {int extra = 0}) => _Tile(media: items[i], extra: extra, single: items.length == 1, onOpen: (pos) => widget.onOpen(i, position: pos));
 
     switch (items.length) {
       case 1:
         return tile(0);
       case 2:
-        return Row(children: [Expanded(child: tile(0)), const SizedBox(width: gap), Expanded(child: tile(1))]);
+        return Row(children: [Expanded(child: tile(0)), SizedBox(width: gap), Expanded(child: tile(1))]);
       case 3:
         return Row(
           children: [
             Expanded(flex: 2, child: tile(0)),
-            const SizedBox(width: gap),
-            Expanded(child: Column(children: [Expanded(child: tile(1)), const SizedBox(height: gap), Expanded(child: tile(2))])),
+            SizedBox(width: gap),
+            Expanded(child: Column(children: [Expanded(child: tile(1)), SizedBox(height: gap), Expanded(child: tile(2))])),
           ],
         );
       case 4:
         return Column(
           children: [
-            Expanded(child: Row(children: [Expanded(child: tile(0)), const SizedBox(width: gap), Expanded(child: tile(1))])),
-            const SizedBox(height: gap),
-            Expanded(child: Row(children: [Expanded(child: tile(2)), const SizedBox(width: gap), Expanded(child: tile(3))])),
+            Expanded(child: Row(children: [Expanded(child: tile(0)), SizedBox(width: gap), Expanded(child: tile(1))])),
+            SizedBox(height: gap),
+            Expanded(child: Row(children: [Expanded(child: tile(2)), SizedBox(width: gap), Expanded(child: tile(3))])),
           ],
         );
       default:
         final extra = items.length - 5;
         return Column(
           children: [
-            Expanded(flex: 3, child: Row(children: [Expanded(child: tile(0)), const SizedBox(width: gap), Expanded(child: tile(1))])),
-            const SizedBox(height: gap),
+            Expanded(flex: 3, child: Row(children: [Expanded(child: tile(0)), SizedBox(width: gap), Expanded(child: tile(1))])),
+            SizedBox(height: gap),
             Expanded(
               flex: 2,
               child: Row(
                 children: [
                   Expanded(child: tile(2)),
-                  const SizedBox(width: gap),
+                  SizedBox(width: gap),
                   Expanded(child: tile(3)),
-                  const SizedBox(width: gap),
+                  SizedBox(width: gap),
                   Expanded(child: tile(4, extra: extra)),
                 ],
               ),

@@ -16,7 +16,9 @@ import '../../../../core/theme/app_icons.dart';
 import '../../../../core/theme/app_palette.dart';
 import '../../../../core/theme/app_spacing.dart';
 import '../../../../core/utils/formatters.dart';
+import '../../../../core/widgets/app_button.dart';
 import '../../../../core/widgets/app_network_image.dart';
+import '../../../../core/widgets/app_sheet.dart';
 import '../../../../core/widgets/app_snackbar.dart';
 import '../../../../core/widgets/async_view.dart';
 import '../../../../core/widgets/status_chip.dart';
@@ -42,120 +44,499 @@ class CreatorCampaignsScreen extends StatelessWidget {
         BlocProvider(create: (_) => LoadCubit<List<Campaign>>(repo.saved)),
         BlocProvider(create: (_) => LoadCubit<List<Category>>(sl<CategoriesRepository>().getAll)),
       ],
-      child: const DefaultTabController(
-        length: 3,
-        child: Scaffold(
-          body: _CampaignsBody(),
-        ),
+      child: Scaffold(
+        // Light grey page so the white campaign cards stand out.
+        backgroundColor: context.isDark ? null : context.palette.surfaceMuted,
+        body: const _CampaignsBody(),
       ),
     );
   }
 }
 
-class _CampaignsBody extends StatelessWidget {
+/// Which list is showing. Switched from the filter sheet (no tabs on top).
+enum _View { explore, applied, saved }
+
+enum _PayFilter { all, paid, barter }
+
+String _payLabel(_PayFilter p) => switch (p) { _PayFilter.all => 'All', _PayFilter.paid => 'Paid', _PayFilter.barter => 'Barter' };
+
+String _statusLabel(ProposalStatus? s) => switch (s) {
+  null => 'All',
+  ProposalStatus.pending => 'Pending',
+  ProposalStatus.accepted => 'Accepted',
+  ProposalStatus.rejected => 'Declined',
+};
+
+/// What the filter sheet hands back.
+typedef _Filters = ({_View view, _PayFilter pay, String? categoryId, ProposalStatus? status});
+
+class _CampaignsBody extends StatefulWidget {
   const _CampaignsBody();
+
+  @override
+  State<_CampaignsBody> createState() => _CampaignsBodyState();
+}
+
+class _CampaignsBodyState extends State<_CampaignsBody> {
+  _View _view = _View.explore;
+  _PayFilter _pay = _PayFilter.all;
+  String? _categoryId;
+  ProposalStatus? _status;
+
+  bool _searchOpen = false;
+  final _search = TextEditingController();
+  final _searchFocus = FocusNode();
+  String _query = '';
+
+  @override
+  void dispose() {
+    _search.dispose();
+    _searchFocus.dispose();
+    super.dispose();
+  }
+
+  int get _activeFilters => switch (_view) {
+    _View.explore => (_pay != _PayFilter.all ? 1 : 0) + (_categoryId != null ? 1 : 0),
+    _View.applied => _status != null ? 1 : 0,
+    _View.saved => 0,
+  };
+
+  void _setCategory(String? id) {
+    if (id == _categoryId) return;
+    setState(() => _categoryId = id);
+    final repo = sl<CampaignRepository>();
+    context.read<PagedCubit<Campaign>>().updateQuery((page) => repo.list(page: page, categoryId: id));
+  }
+
+  void _setView(_View view) {
+    HapticFeedback.selectionClick();
+    setState(() {
+      _view = view;
+      if (view != _View.explore) _closeSearch();
+    });
+  }
+
+  void _closeSearch() {
+    _searchOpen = false;
+    _search.clear();
+    _query = '';
+    _searchFocus.unfocus();
+  }
+
+  void _toggleSearch() {
+    HapticFeedback.selectionClick();
+    setState(() {
+      if (_searchOpen) {
+        _closeSearch();
+      } else {
+        _searchOpen = true;
+        WidgetsBinding.instance.addPostFrameCallback((_) => _searchFocus.requestFocus());
+      }
+    });
+  }
+
+  Future<void> _openFilters() async {
+    HapticFeedback.selectionClick();
+    final categories = context.read<LoadCubit<List<Category>>>().state.data ?? const <Category>[];
+    final counts = context.read<LoadCubit<ProposalsData>>().state.data?.$2;
+    final savedCount = context.read<LoadCubit<List<Campaign>>>().state.data?.length;
+    final result = await showAppSheet<_Filters>(
+      context,
+      builder: (_) => _FilterSheet(
+        initial: (view: _view, pay: _pay, categoryId: _categoryId, status: _status),
+        categories: categories,
+        counts: counts,
+        savedCount: savedCount,
+      ),
+    );
+    if (result == null || !mounted) return;
+    setState(() {
+      if (result.view != _View.explore) _closeSearch();
+      _view = result.view;
+      _pay = result.pay;
+      _status = result.status;
+    });
+    _setCategory(result.categoryId);
+  }
 
   @override
   Widget build(BuildContext context) {
     final palette = context.palette;
+    final categories = context.watch<LoadCubit<List<Category>>>().state.data ?? const <Category>[];
+    final categoryLabel = _categoryId == null ? null : categories.where((c) => c.id == _categoryId).map((c) => c.label).firstOrNull;
+
+    final (title, subtitle) = switch (_view) {
+      _View.explore => ('Campaigns', 'Work with brands and get paid for your content'),
+      _View.applied => ('Applied', 'Proposals you’ve sent to brands'),
+      _View.saved => ('Saved', 'Campaigns you kept for later'),
+    };
+
+    // Small removable chips for whatever is switched on — only when something is.
+    final active = <Widget>[
+      if (_view != _View.explore)
+        _ActiveChip(label: _view == _View.applied ? 'Applied' : 'Saved', onRemove: () => _setView(_View.explore)),
+      if (_view == _View.explore && _pay != _PayFilter.all)
+        _ActiveChip(label: _payLabel(_pay), onRemove: () => setState(() => _pay = _PayFilter.all)),
+      if (_view == _View.explore && categoryLabel != null) _ActiveChip(label: categoryLabel, onRemove: () => _setCategory(null)),
+      if (_view == _View.applied && _status != null) _ActiveChip(label: _statusLabel(_status), onRemove: () => setState(() => _status = null)),
+    ];
+
     return SafeArea(
       bottom: false,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          // Header: title + two quiet icons (search, filter).
           Padding(
-            padding: const EdgeInsets.fromLTRB(AppSpacing.gutter, 14, AppSpacing.gutter, 12),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+            padding: EdgeInsets.fromLTRB(_view == _View.explore ? AppSpacing.gutter : 6, 10, 10, 8),
+            child: Row(
               children: [
-                Text('Campaigns', style: context.text.headlineSmall?.copyWith(fontWeight: FontWeight.w800, letterSpacing: -0.6)),
-                const SizedBox(height: 2),
-                Text('Work with brands and get paid for your content', style: context.text.bodySmall?.copyWith(color: palette.textSecondary)),
+                if (_view != _View.explore)
+                  IconButton(
+                    tooltip: 'Back to campaigns',
+                    icon: Icon(AppIcons.back, size: 22, color: palette.textPrimary),
+                    onPressed: () => _setView(_View.explore),
+                  ),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(title, style: context.text.headlineSmall?.copyWith(fontWeight: FontWeight.w800, letterSpacing: -0.6)),
+                      const SizedBox(height: 2),
+                      Text(subtitle, maxLines: 1, overflow: TextOverflow.ellipsis, style: context.text.bodySmall?.copyWith(color: palette.textSecondary)),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 8),
+                if (_view == _View.explore) ...[
+                  _HeaderIcon(icon: _searchOpen ? AppIcons.close : AppIcons.search, tooltip: _searchOpen ? 'Close search' : 'Search', onTap: _toggleSearch),
+                  const SizedBox(width: 8),
+                ],
+                _HeaderIcon(icon: AppIcons.sliders, tooltip: 'Filter & lists', badge: _activeFilters, onTap: _openFilters),
               ],
             ),
           ),
-          const _SegmentTabs(),
-          const Expanded(child: TabBarView(children: [_ExploreTab(), _ProposalsTab(), _SavedTab()])),
+
+          // Search — only when the search icon is tapped.
+          AnimatedSize(
+            duration: const Duration(milliseconds: 220),
+            curve: Curves.easeOutCubic,
+            alignment: Alignment.topCenter,
+            child: !_searchOpen
+                ? const SizedBox(width: double.infinity)
+                : Padding(
+              padding: const EdgeInsets.fromLTRB(AppSpacing.gutter, 2, AppSpacing.gutter, 10),
+              child: TextField(
+                controller: _search,
+                focusNode: _searchFocus,
+                onChanged: (v) => setState(() => _query = v.trim()),
+                textInputAction: TextInputAction.search,
+                decoration: InputDecoration(
+                  hintText: 'Search campaigns, brands, cities…',
+                  prefixIcon: Icon(AppIcons.search, size: 20, color: palette.textSecondary),
+                  suffixIcon: _query.isEmpty
+                      ? null
+                      : IconButton(
+                    icon: const Icon(AppIcons.close, size: 18),
+                    onPressed: () {
+                      _search.clear();
+                      setState(() => _query = '');
+                    },
+                  ),
+                  hintStyle: TextStyle(color: palette.textTertiary, fontSize: 14),
+                  filled: true,
+                  fillColor: palette.surface,
+                  isDense: true,
+                  contentPadding: const EdgeInsets.symmetric(vertical: 13),
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: BorderSide(color: palette.border)),
+                  enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: BorderSide(color: palette.border)),
+                  focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: BorderSide(color: palette.borderStrong, width: 1.4)),
+                ),
+              ),
+            ),
+          ),
+
+          if (active.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(AppSpacing.gutter, 0, AppSpacing.gutter, 10),
+              child: Wrap(spacing: 8, runSpacing: 8, children: active),
+            ),
+
+          Expanded(
+            child: IndexedStack(
+              index: _view.index,
+              children: [
+                _ExploreTab(query: _query, pay: _pay, categoryId: _categoryId),
+                _ProposalsTab(filter: _status),
+                const _SavedTab(),
+              ],
+            ),
+          ),
         ],
       ),
     );
   }
 }
 
-/// Pill tabs with live counts. Each tab's content scales down instead of
-/// overflowing (narrow phones / large system font).
-class _SegmentTabs extends StatelessWidget {
-  const _SegmentTabs();
+/// Round, quiet header icon with an optional count badge.
+class _HeaderIcon extends StatelessWidget {
+  const _HeaderIcon({required this.icon, required this.tooltip, required this.onTap, this.badge = 0});
+
+  final IconData icon;
+  final String tooltip;
+  final VoidCallback onTap;
+  final int badge;
 
   @override
   Widget build(BuildContext context) {
     final palette = context.palette;
-    final proposals = context.watch<LoadCubit<ProposalsData>>().state.data;
-    final saved = context.watch<LoadCubit<List<Campaign>>>().state.data;
+    return Tooltip(
+      message: tooltip,
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          Material(
+            color: palette.surface,
+            shape: CircleBorder(side: BorderSide(color: palette.border)),
+            clipBehavior: Clip.antiAlias,
+            child: InkWell(
+              onTap: onTap,
+              child: SizedBox(width: 42, height: 42, child: Icon(icon, size: 20, color: palette.textPrimary)),
+            ),
+          ),
+          if (badge > 0)
+            Positioned(
+              right: -2,
+              top: -2,
+              child: IgnorePointer(
+                child: Container(
+                  constraints: const BoxConstraints(minWidth: 18),
+                  height: 18,
+                  padding: const EdgeInsets.symmetric(horizontal: 5),
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(
+                    color: AppColors.primary,
+                    borderRadius: BorderRadius.circular(9),
+                    border: Border.all(color: palette.surface, width: 2),
+                  ),
+                  child: Text('$badge', style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.w800, height: 1)),
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
 
-    Widget tab(String label, int? count) => Tab(
-      height: 40,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 4),
-        child: FittedBox(
-          fit: BoxFit.scaleDown,
+/// "Paid ×" style chip under the header for a filter that's switched on.
+class _ActiveChip extends StatelessWidget {
+  const _ActiveChip({required this.label, required this.onRemove});
+
+  final String label;
+  final VoidCallback onRemove;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.palette;
+    return Material(
+      color: palette.surface,
+      shape: StadiumBorder(side: BorderSide(color: palette.border)),
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: () {
+          HapticFeedback.selectionClick();
+          onRemove();
+        },
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(12, 6, 8, 6),
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Text(label, maxLines: 1),
-              if (count != null && count > 0) ...[
-                const SizedBox(width: 6),
-                // Badge takes the tab's own text colour (orange when selected).
-                Builder(
-                  builder: (context) {
-                    final color = DefaultTextStyle.of(context).style.color ?? palette.textSecondary;
-                    return Container(
-                      constraints: const BoxConstraints(minWidth: 20),
-                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                      decoration: BoxDecoration(color: color.withValues(alpha: 0.18), borderRadius: BorderRadius.circular(10)),
-                      child: Text(
-                        count > 99 ? '99+' : '$count',
-                        textAlign: TextAlign.center,
-                        style: TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: color, height: 1.2),
-                      ),
-                    );
-                  },
-                ),
-              ],
+              Text(label, style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700, color: palette.textPrimary)),
+              const SizedBox(width: 4),
+              Icon(AppIcons.close, size: 14, color: palette.textSecondary),
             ],
           ),
         ),
       ),
     );
+  }
+}
 
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(AppSpacing.gutter, 4, AppSpacing.gutter, 12),
-      child: Container(
-        height: 46,
-        padding: const EdgeInsets.all(3),
-        decoration: BoxDecoration(
-          color: palette.surfaceMuted,
-          borderRadius: BorderRadius.circular(14),
-        ),
-        child: TabBar(
-          indicatorSize: TabBarIndicatorSize.tab,
-          dividerColor: Colors.transparent,
-          labelPadding: EdgeInsets.zero,
-          splashBorderRadius: BorderRadius.circular(11),
-          indicator: BoxDecoration(
-            color: context.isDark ? palette.surface : Colors.white,
-            borderRadius: BorderRadius.circular(11),
-            boxShadow: const [BoxShadow(color: Color(0x1A101828), blurRadius: 8, offset: Offset(0, 2))],
-          ),
-          labelColor: AppColors.primary,
-          unselectedLabelColor: palette.textSecondary,
-          labelStyle: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.w800),
-          unselectedLabelStyle: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600),
-          tabs: [
-            tab('Explore', null),
-            tab('Applied', proposals?.$2.all),
-            tab('Saved', saved?.length),
+/// Everything that used to sit on top of the list: which list to show,
+/// paid / barter, category, proposal status.
+class _FilterSheet extends StatefulWidget {
+  const _FilterSheet({required this.initial, required this.categories, required this.counts, required this.savedCount});
+
+  final _Filters initial;
+  final List<Category> categories;
+  final ProposalCounts? counts;
+  final int? savedCount;
+
+  @override
+  State<_FilterSheet> createState() => _FilterSheetState();
+}
+
+class _FilterSheetState extends State<_FilterSheet> {
+  late _View _view = widget.initial.view;
+  late _PayFilter _pay = widget.initial.pay;
+  late String? _categoryId = widget.initial.categoryId;
+  late ProposalStatus? _status = widget.initial.status;
+
+  int? _statusCount(ProposalStatus? s) {
+    final c = widget.counts;
+    if (c == null) return null;
+    return switch (s) {
+      null => c.all,
+      ProposalStatus.pending => c.pending,
+      ProposalStatus.accepted => c.accepted,
+      ProposalStatus.rejected => c.rejected,
+    };
+  }
+
+  void _reset() {
+    HapticFeedback.selectionClick();
+    setState(() {
+      _pay = _PayFilter.all;
+      _categoryId = null;
+      _status = null;
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.palette;
+    Widget heading(String text) => Padding(
+      padding: const EdgeInsets.only(top: AppSpacing.lg, bottom: 10),
+      child: Text(text, style: context.text.titleSmall?.copyWith(fontWeight: FontWeight.w800, color: palette.textPrimary)),
+    );
+
+    return SheetBody(
+      title: 'Filter campaigns',
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          heading('Show'),
+          _ViewOption(icon: AppIcons.campaigns, label: 'Explore', hint: 'Open campaigns to apply for', selected: _view == _View.explore, onTap: () => setState(() => _view = _View.explore)),
+          const SizedBox(height: 8),
+          _ViewOption(icon: AppIcons.paperPlane, label: 'Applied', hint: 'Proposals you’ve sent', count: widget.counts?.all, selected: _view == _View.applied, onTap: () => setState(() => _view = _View.applied)),
+          const SizedBox(height: 8),
+          _ViewOption(icon: AppIcons.bookmark, label: 'Saved', hint: 'Kept for later', count: widget.savedCount, selected: _view == _View.saved, onTap: () => setState(() => _view = _View.saved)),
+
+          if (_view == _View.explore) ...[
+            heading('Pay type'),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                for (final p in _PayFilter.values)
+                  _FilterChip(
+                    label: _payLabel(p),
+                    icon: switch (p) { _PayFilter.all => AppIcons.sparkle, _PayFilter.paid => AppIcons.rupee, _PayFilter.barter => AppIcons.gift },
+                    selected: _pay == p,
+                    onTap: () => setState(() => _pay = p),
+                  ),
+              ],
+            ),
+            if (widget.categories.isNotEmpty) ...[
+              heading('Category'),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  _FilterChip(label: 'Any', selected: _categoryId == null, onTap: () => setState(() => _categoryId = null)),
+                  for (final c in widget.categories)
+                    _FilterChip(label: c.label, selected: _categoryId == c.id, onTap: () => setState(() => _categoryId = _categoryId == c.id ? null : c.id)),
+                ],
+              ),
+            ],
           ],
+
+          if (_view == _View.applied) ...[
+            heading('Status'),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                for (final s in const [null, ProposalStatus.pending, ProposalStatus.accepted, ProposalStatus.rejected])
+                  _FilterChip(
+                    label: _statusCount(s) == null ? _statusLabel(s) : '${_statusLabel(s)} ${_statusCount(s)}',
+                    selected: _status == s,
+                    onTap: () => setState(() => _status = s),
+                  ),
+              ],
+            ),
+          ],
+
+          const SizedBox(height: AppSpacing.xl),
+          Row(
+            children: [
+              Expanded(child: AppButton.secondary(label: 'Reset', onPressed: _reset)),
+              const SizedBox(width: 12),
+              Expanded(
+                flex: 2,
+                child: AppButton(
+                  label: 'Show results',
+                  onPressed: () => Navigator.of(context).pop<_Filters>((view: _view, pay: _pay, categoryId: _categoryId, status: _status)),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ViewOption extends StatelessWidget {
+  const _ViewOption({required this.icon, required this.label, required this.hint, required this.selected, required this.onTap, this.count});
+
+  final IconData icon;
+  final String label;
+  final String hint;
+  final bool selected;
+  final VoidCallback onTap;
+  final int? count;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.palette;
+    return Material(
+      color: selected ? palette.surfaceMuted : palette.surface,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(14),
+        side: BorderSide(color: selected ? palette.textPrimary.withValues(alpha: 0.5) : palette.border, width: selected ? 1.4 : 1),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: () {
+          HapticFeedback.selectionClick();
+          onTap();
+        },
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+          child: Row(
+            children: [
+              Icon(icon, size: 20, color: palette.textPrimary),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(label, style: TextStyle(fontSize: 14, fontWeight: FontWeight.w800, color: palette.textPrimary)),
+                    Text(hint, style: TextStyle(fontSize: 12, color: palette.textSecondary)),
+                  ],
+                ),
+              ),
+              if (count != null && count! > 0)
+                Padding(
+                  padding: const EdgeInsets.only(right: 8),
+                  child: Text(count! > 99 ? '99+' : '$count', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w800, color: palette.textSecondary)),
+                ),
+              Icon(selected ? AppIcons.checkCircle : null, size: 20, color: palette.textPrimary),
+            ],
+          ),
         ),
       ),
     );
@@ -185,7 +566,7 @@ Future<void> _toggleSave(BuildContext context, Campaign campaign) async {
       // Server state differs from what we showed — resync.
       await savedCubit.refresh();
     } else if (context.mounted) {
-      AppSnackbar.info(context, saved ? 'Saved — find it in the Saved tab' : 'Removed from saved');
+      AppSnackbar.info(context, saved ? 'Saved — open Filter › Saved to see it' : 'Removed from saved');
     }
   } on ApiException catch (error) {
     savedCubit.replace(current);
@@ -199,57 +580,33 @@ Future<void> _toggleSave(BuildContext context, Campaign campaign) async {
 // Explore
 // ---------------------------------------------------------------------------
 
-enum _PayFilter { all, paid, barter }
+/// Search, pay type and category now come from the header (search icon +
+/// filter sheet), so the list starts right at the top.
+class _ExploreTab extends StatelessWidget {
+  const _ExploreTab({required this.query, required this.pay, required this.categoryId});
 
-class _ExploreTab extends StatefulWidget {
-  const _ExploreTab();
-
-  @override
-  State<_ExploreTab> createState() => _ExploreTabState();
-}
-
-class _ExploreTabState extends State<_ExploreTab> with AutomaticKeepAliveClientMixin {
-  String? _categoryId;
-  _PayFilter _pay = _PayFilter.all;
-  final _search = TextEditingController();
-  String _query = '';
-
-  @override
-  bool get wantKeepAlive => true;
-
-  @override
-  void dispose() {
-    _search.dispose();
-    super.dispose();
-  }
-
-  void _selectCategory(String? id) {
-    HapticFeedback.selectionClick();
-    setState(() => _categoryId = id);
-    final repo = sl<CampaignRepository>();
-    context.read<PagedCubit<Campaign>>().updateQuery((page) => repo.list(page: page, categoryId: id));
-  }
+  final String query;
+  final _PayFilter pay;
+  final String? categoryId;
 
   bool _matches(Campaign c) {
-    if (_pay == _PayFilter.paid && !c.isPaid) return false;
-    if (_pay == _PayFilter.barter && c.isPaid) return false;
-    if (_query.isEmpty) return true;
-    final q = _query.toLowerCase();
+    if (pay == _PayFilter.paid && !c.isPaid) return false;
+    if (pay == _PayFilter.barter && c.isPaid) return false;
+    if (query.isEmpty) return true;
+    final q = query.toLowerCase();
     return c.title.toLowerCase().contains(q) || (c.brand?.name.toLowerCase().contains(q) ?? false) || c.locationLabel.toLowerCase().contains(q);
   }
 
   @override
   Widget build(BuildContext context) {
-    super.build(context);
     final palette = context.palette;
     final paged = context.watch<PagedCubit<Campaign>>();
     final state = paged.state;
-    final categories = context.watch<LoadCubit<List<Category>>>().state.data ?? const <Category>[];
     final savedIds = {for (final c in context.watch<LoadCubit<List<Campaign>>>().state.data ?? const <Campaign>[]) c.id};
 
     final visible = state.items.where(_matches).toList();
     final featured = visible.where((c) => c.isFeatured).toList();
-    final filtering = _query.isNotEmpty || _pay != _PayFilter.all;
+    final filtering = query.isNotEmpty || pay != _PayFilter.all || categoryId != null;
 
     return NotificationListener<ScrollNotification>(
       onNotification: (n) {
@@ -261,66 +618,7 @@ class _ExploreTabState extends State<_ExploreTab> with AutomaticKeepAliveClientM
         child: CustomScrollView(
           physics: const AlwaysScrollableScrollPhysics(),
           slivers: [
-            // Search
-            SliverToBoxAdapter(
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(AppSpacing.gutter, 4, AppSpacing.gutter, 10),
-                child: TextField(
-                  controller: _search,
-                  onChanged: (v) => setState(() => _query = v.trim()),
-                  textInputAction: TextInputAction.search,
-                  decoration: InputDecoration(
-                    hintText: 'Search campaigns, brands, cities…',
-                    prefixIcon: Icon(AppIcons.search, size: 20, color: palette.textSecondary),
-                    suffixIcon: _query.isEmpty
-                        ? null
-                        : IconButton(
-                      icon: const Icon(AppIcons.close, size: 18),
-                      onPressed: () {
-                        _search.clear();
-                        setState(() => _query = '');
-                      },
-                    ),
-                    hintStyle: TextStyle(color: palette.textTertiary, fontSize: 14),
-                    filled: true,
-                    fillColor: palette.surfaceMuted,
-                    isDense: true,
-                    contentPadding: const EdgeInsets.symmetric(vertical: 13),
-                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: BorderSide.none),
-                    enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: BorderSide.none),
-                    focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: const BorderSide(color: AppColors.primary, width: 1.4)),
-                  ),
-                ),
-              ),
-            ),
-            // Paid / barter + categories
-            SliverToBoxAdapter(
-              child: SizedBox(
-                height: 36,
-                child: ListView(
-                  scrollDirection: Axis.horizontal,
-                  padding: const EdgeInsets.symmetric(horizontal: AppSpacing.gutter),
-                  children: [
-                    for (final p in _PayFilter.values)
-                      _FilterChip(
-                        label: switch (p) { _PayFilter.all => 'All', _PayFilter.paid => 'Paid', _PayFilter.barter => 'Barter' },
-                        icon: switch (p) { _PayFilter.all => AppIcons.sparkle, _PayFilter.paid => AppIcons.rupee, _PayFilter.barter => AppIcons.gift },
-                        selected: _pay == p,
-                        onTap: () {
-                          HapticFeedback.selectionClick();
-                          setState(() => _pay = p);
-                        },
-                      ),
-                    if (categories.isNotEmpty)
-                      Container(width: 1, margin: const EdgeInsets.symmetric(horizontal: 6, vertical: 8), color: palette.border),
-                    for (final c in categories)
-                      _FilterChip(label: c.label, selected: _categoryId == c.id, onTap: () => _selectCategory(_categoryId == c.id ? null : c.id)),
-                  ],
-                ),
-              ),
-            ),
-            const SliverToBoxAdapter(child: SizedBox(height: AppSpacing.md)),
-
+            const SliverToBoxAdapter(child: SizedBox(height: 4)),
             if (state.isFirstLoad)
               const SliverToBoxAdapter(child: _ListSkeleton())
             else if (state.items.isEmpty && state.errorMessage != null)
@@ -408,30 +706,31 @@ class _FilterChip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final palette = context.palette;
-    final fg = selected ? AppColors.primary : palette.textPrimary;
-    return Padding(
-      padding: const EdgeInsets.only(right: 8),
-      child: GestureDetector(
-        onTap: onTap,
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 200),
-          padding: const EdgeInsets.symmetric(horizontal: 14),
-          alignment: Alignment.center,
-          decoration: BoxDecoration(
-            color: selected ? AppColors.primary.withValues(alpha: 0.1) : palette.surface,
-            borderRadius: BorderRadius.circular(18),
-            border: Border.all(color: selected ? AppColors.primary.withValues(alpha: 0.6) : palette.border),
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              if (icon != null) ...[
-                Icon(icon, size: 14, color: selected ? AppColors.primary : palette.textSecondary),
-                const SizedBox(width: 5),
-              ],
-              Text(label, style: TextStyle(fontSize: 12.5, fontWeight: selected ? FontWeight.w800 : FontWeight.w600, color: fg)),
+    // Calm: selected = dark outline + soft grey fill (orange stays for the main button).
+    final fg = selected ? palette.textPrimary : palette.textSecondary;
+    return GestureDetector(
+      onTap: () {
+        HapticFeedback.selectionClick();
+        onTap();
+      },
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 200),
+        height: 38,
+        padding: const EdgeInsets.symmetric(horizontal: 14),
+        decoration: BoxDecoration(
+          color: selected ? palette.surfaceMuted : palette.surface,
+          borderRadius: BorderRadius.circular(19),
+          border: Border.all(color: selected ? palette.textPrimary.withValues(alpha: 0.55) : palette.border, width: selected ? 1.4 : 1),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (icon != null) ...[
+              Icon(icon, size: 15, color: fg),
+              const SizedBox(width: 6),
             ],
-          ),
+            Text(label, style: TextStyle(fontSize: 13, fontWeight: selected ? FontWeight.w800 : FontWeight.w600, color: fg)),
+          ],
         ),
       ),
     );
@@ -584,8 +883,9 @@ class _CampaignTile extends StatelessWidget {
         child: Ink(
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(22),
-            border: Border.all(color: palette.border.withValues(alpha: 0.7)),
-            boxShadow: context.isDark ? null : const [BoxShadow(color: Color(0x0A101828), blurRadius: 16, offset: Offset(0, 6))],
+            // Clear outline so every campaign reads as its own card.
+            border: Border.all(color: palette.borderStrong, width: 1.2),
+            boxShadow: context.isDark ? null : const [BoxShadow(color: Color(0x0F101828), blurRadius: 14, offset: Offset(0, 4))],
           ),
           child: Padding(
             padding: const EdgeInsets.all(14),
@@ -810,7 +1110,7 @@ class _FeaturedCard extends StatelessWidget {
     return SizedBox(
       width: 290,
       child: Material(
-        borderRadius: BorderRadius.circular(22),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(22), side: BorderSide(color: context.palette.borderStrong, width: 1.2)),
         clipBehavior: Clip.antiAlias,
         child: InkWell(
           onTap: onTap,
@@ -893,7 +1193,7 @@ class _ListSkeleton extends StatelessWidget {
           for (var i = 0; i < 3; i++)
             Container(
               margin: const EdgeInsets.only(bottom: 14),
-              decoration: BoxDecoration(color: palette.surface, borderRadius: BorderRadius.circular(22), border: Border.all(color: palette.border)),
+              decoration: BoxDecoration(color: palette.surface, borderRadius: BorderRadius.circular(22), border: Border.all(color: palette.borderStrong, width: 1.2)),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
@@ -918,22 +1218,14 @@ class _ListSkeleton extends StatelessWidget {
 // Applied (my proposals)
 // ---------------------------------------------------------------------------
 
-class _ProposalsTab extends StatefulWidget {
-  const _ProposalsTab();
+/// Status filter comes from the header filter sheet.
+class _ProposalsTab extends StatelessWidget {
+  const _ProposalsTab({required this.filter});
 
-  @override
-  State<_ProposalsTab> createState() => _ProposalsTabState();
-}
-
-class _ProposalsTabState extends State<_ProposalsTab> with AutomaticKeepAliveClientMixin {
-  ProposalStatus? _filter;
-
-  @override
-  bool get wantKeepAlive => true;
+  final ProposalStatus? filter;
 
   @override
   Widget build(BuildContext context) {
-    super.build(context);
     final cubit = context.watch<LoadCubit<ProposalsData>>();
 
     return AsyncView<ProposalsData>(
@@ -941,19 +1233,7 @@ class _ProposalsTabState extends State<_ProposalsTab> with AutomaticKeepAliveCli
       onRetry: cubit.load,
       builder: (data) {
         final (proposals, counts) = data;
-        final visible = _filter == null ? proposals : proposals.where((p) => p.status == _filter).toList();
-        int count(ProposalStatus? s) => switch (s) {
-          null => counts.all,
-          ProposalStatus.pending => counts.pending,
-          ProposalStatus.accepted => counts.accepted,
-          ProposalStatus.rejected => counts.rejected,
-        };
-        String label(ProposalStatus? s) => switch (s) {
-          null => 'All',
-          ProposalStatus.pending => 'Pending',
-          ProposalStatus.accepted => 'Accepted',
-          ProposalStatus.rejected => 'Declined',
-        };
+        final visible = filter == null ? proposals : proposals.where((p) => p.status == filter).toList();
 
         return AppRefresh(
           onRefresh: cubit.refresh,
@@ -963,7 +1243,7 @@ class _ProposalsTabState extends State<_ProposalsTab> with AutomaticKeepAliveCli
               // Summary strip
               SliverToBoxAdapter(
                 child: Padding(
-                  padding: const EdgeInsets.fromLTRB(AppSpacing.gutter, 4, AppSpacing.gutter, 12),
+                  padding: const EdgeInsets.fromLTRB(AppSpacing.gutter, 4, AppSpacing.gutter, AppSpacing.md),
                   child: Row(
                     children: [
                       _StatBox(label: 'Sent', value: counts.all, color: AppColors.info),
@@ -975,27 +1255,6 @@ class _ProposalsTabState extends State<_ProposalsTab> with AutomaticKeepAliveCli
                   ),
                 ),
               ),
-              SliverToBoxAdapter(
-                child: SizedBox(
-                  height: 36,
-                  child: ListView(
-                    scrollDirection: Axis.horizontal,
-                    padding: const EdgeInsets.symmetric(horizontal: AppSpacing.gutter),
-                    children: [
-                      for (final s in const [null, ProposalStatus.pending, ProposalStatus.accepted, ProposalStatus.rejected])
-                        _FilterChip(
-                          label: '${label(s)} ${count(s)}',
-                          selected: _filter == s,
-                          onTap: () {
-                            HapticFeedback.selectionClick();
-                            setState(() => _filter = s);
-                          },
-                        ),
-                    ],
-                  ),
-                ),
-              ),
-              const SliverToBoxAdapter(child: SizedBox(height: AppSpacing.md)),
               if (visible.isEmpty)
                 const SliverFillRemaining(
                   hasScrollBody: false,
@@ -1084,8 +1343,8 @@ class _ProposalCard extends StatelessWidget {
         child: Ink(
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(20),
-            border: Border.all(color: palette.border.withValues(alpha: 0.7)),
-            boxShadow: context.isDark ? null : const [BoxShadow(color: Color(0x08101828), blurRadius: 12, offset: Offset(0, 4))],
+            border: Border.all(color: palette.borderStrong, width: 1.2),
+            boxShadow: context.isDark ? null : const [BoxShadow(color: Color(0x0F101828), blurRadius: 12, offset: Offset(0, 4))],
           ),
           child: Padding(
             padding: const EdgeInsets.all(12),
@@ -1147,20 +1406,11 @@ class _ProposalCard extends StatelessWidget {
 // Saved
 // ---------------------------------------------------------------------------
 
-class _SavedTab extends StatefulWidget {
+class _SavedTab extends StatelessWidget {
   const _SavedTab();
 
   @override
-  State<_SavedTab> createState() => _SavedTabState();
-}
-
-class _SavedTabState extends State<_SavedTab> with AutomaticKeepAliveClientMixin {
-  @override
-  bool get wantKeepAlive => true;
-
-  @override
   Widget build(BuildContext context) {
-    super.build(context);
     final cubit = context.watch<LoadCubit<List<Campaign>>>();
     return AsyncView<List<Campaign>>(
       state: cubit.state,

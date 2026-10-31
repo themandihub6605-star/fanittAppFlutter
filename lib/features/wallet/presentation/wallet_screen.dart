@@ -27,6 +27,7 @@ import '../../../core/widgets/form_controls.dart';
 import '../../../core/widgets/paged_list_view.dart';
 import '../../../core/widgets/status_chip.dart';
 import '../../auth/presentation/bloc/auth_bloc.dart';
+import '../../billing/presentation/invoices_screen.dart';
 import '../data/wallet_repository.dart';
 
 class WalletScreen extends StatelessWidget {
@@ -50,8 +51,11 @@ class _WalletView extends StatelessWidget {
 
   final String title;
 
-  Future<void> _withdraw(BuildContext context, int balance) async {
-    final message = await showAppSheet<String>(context, builder: (_) => SheetActionScope(child: _WithdrawSheet(balance: balance)));
+  Future<void> _withdraw(BuildContext context, WalletSummary wallet) async {
+    final message = await showAppSheet<String>(
+      context,
+      builder: (_) => SheetActionScope(child: _WithdrawSheet(balance: wallet.balance, minWithdrawal: wallet.minWithdrawal)),
+    );
     if (message != null && context.mounted) {
       AppSnackbar.success(context, message);
       context.read<LoadCubit<WalletSummary>>().refresh();
@@ -63,7 +67,13 @@ class _WalletView extends StatelessWidget {
   Widget build(BuildContext context) {
     final cubit = context.watch<LoadCubit<WalletSummary>>();
     return Scaffold(
-      appBar: AppBar(title: Text(title)),
+      appBar: AppBar(
+        title: Text(title),
+        actions: [
+          IconButton(tooltip: 'Invoices', icon: const Icon(AppIcons.receipt), onPressed: () => InvoicesScreen.open(context)),
+          const SizedBox(width: AppSpacing.xxs),
+        ],
+      ),
       body: AsyncView<WalletSummary>(
         state: cubit.state,
         onRetry: cubit.load,
@@ -73,7 +83,27 @@ class _WalletView extends StatelessWidget {
             physics: const AlwaysScrollableScrollPhysics(),
             padding: const EdgeInsets.fromLTRB(AppSpacing.gutter, AppSpacing.xs, AppSpacing.gutter, AppSpacing.xxl),
             children: [
-              _BalanceCard(wallet: wallet, onWithdraw: () => _withdraw(context, wallet.balance)),
+              _BalanceCard(wallet: wallet, onWithdraw: () => _withdraw(context, wallet)),
+              const SizedBox(height: AppSpacing.md),
+              AppCard(
+                onTap: () => InvoicesScreen.open(context),
+                child: Row(
+                  children: [
+                    Icon(AppIcons.receipt, size: 20, color: context.palette.textSecondary),
+                    const SizedBox(width: AppSpacing.sm),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text('Invoices', style: context.text.titleSmall),
+                          Text('GST invoices for payments and withdrawal fees', style: context.text.bodySmall),
+                        ],
+                      ),
+                    ),
+                    Icon(AppIcons.chevronRight, size: 18, color: context.palette.textTertiary),
+                  ],
+                ),
+              ),
               const SizedBox(height: AppSpacing.xl),
               SectionHeader(title: 'Recent activity', actionLabel: 'See all', onAction: () => context.push(AppRoutes.transactions)),
               if (wallet.recent.isEmpty)
@@ -153,11 +183,18 @@ class _BalanceCard extends StatelessWidget {
               style: context.text.bodySmall?.copyWith(color: AppColors.sunrise),
             ),
           ],
+          if (wallet.minWithdrawal > 0 && wallet.balance < wallet.minWithdrawal) ...[
+            const SizedBox(height: AppSpacing.xxs),
+            Text(
+              'You can withdraw once you have ${Fmt.money(wallet.minWithdrawal)} or more',
+              style: context.text.bodySmall?.copyWith(color: Colors.white70),
+            ),
+          ],
           const SizedBox(height: AppSpacing.lg),
           AppButton(
             label: 'Withdraw',
             icon: AppIcons.bank,
-            onPressed: wallet.balance >= 100 ? onWithdraw : null,
+            onPressed: wallet.balance >= (wallet.minWithdrawal > 100 ? wallet.minWithdrawal : 100) ? onWithdraw : null,
           ),
         ],
       ),
@@ -244,7 +281,13 @@ class _WithdrawalTile extends StatelessWidget {
               children: [
                 Text('To ${w.payoutMethod == 'upi' ? 'UPI' : 'bank account'}', style: context.text.titleSmall),
                 Text(
-                  w.adminNote.isNotEmpty ? w.adminNote : '${Fmt.date(w.createdAt)} · fee ${Fmt.money(w.platformFee)}',
+                  w.adminNote.isNotEmpty
+                      ? w.adminNote
+                      : [
+                          Fmt.date(w.createdAt),
+                          if (w.platformFee > 0) 'fee ${Fmt.money(w.platformFee)}',
+                          if (w.gstAmount > 0) 'GST ${Fmt.money(w.gstAmount)}',
+                        ].join(' · '),
                   style: context.text.bodySmall,
                 ),
               ],
@@ -265,9 +308,12 @@ class _WithdrawalTile extends StatelessWidget {
 }
 
 class _WithdrawSheet extends StatefulWidget {
-  const _WithdrawSheet({required this.balance});
+  const _WithdrawSheet({required this.balance, this.minWithdrawal = 0});
 
   final int balance;
+
+  /// Creators only (paise); 0 = no minimum beyond ₹1.
+  final int minWithdrawal;
 
   @override
   State<_WithdrawSheet> createState() => _WithdrawSheetState();
@@ -296,7 +342,7 @@ class _WithdrawSheetState extends State<_WithdrawSheet> {
   void _onAmountChanged(String value) {
     _debounce?.cancel();
     final paise = Fmt.rupeesToPaise(value);
-    if (paise == null || paise <= 0 || paise > widget.balance) {
+    if (paise == null || paise <= 0 || paise > widget.balance || paise < widget.minWithdrawal) {
       setState(() => _preview = null);
       return;
     }
@@ -327,7 +373,9 @@ class _WithdrawSheetState extends State<_WithdrawSheet> {
     final busy = context.watch<ActionCubit>().state.isBusy;
     return SheetBody(
       title: 'Withdraw money',
-      subtitle: 'Available ${Fmt.money(widget.balance)}. Payouts reach you within 48 hours.',
+      subtitle: widget.minWithdrawal > 0
+          ? 'Available ${Fmt.money(widget.balance)}. Minimum ${Fmt.money(widget.minWithdrawal)}. Payouts reach you within 48 hours.'
+          : 'Available ${Fmt.money(widget.balance)}. Payouts reach you within 48 hours.',
       child: Form(
         key: _formKey,
         child: Column(
@@ -343,6 +391,7 @@ class _WithdrawSheetState extends State<_WithdrawSheet> {
               validator: (v) {
                 final paise = Fmt.rupeesToPaise(v ?? '');
                 if (paise == null || paise < 100) return 'Enter at least ₹1';
+                if (widget.minWithdrawal > 0 && paise < widget.minWithdrawal) return 'Minimum withdrawal is ${Fmt.money(widget.minWithdrawal)}';
                 if (paise > widget.balance) return 'That’s more than your balance';
                 return null;
               },
@@ -358,7 +407,9 @@ class _WithdrawSheetState extends State<_WithdrawSheet> {
                         borderColor: Colors.transparent,
                         child: Column(
                           children: [
-                            KeyValueRow(label: 'Platform fee (${_preview!.feePercent.toStringAsFixed(_preview!.feePercent % 1 == 0 ? 0 : 1)}%)', value: '−${Fmt.money(_preview!.fee)}'),
+                            if (_preview!.fee > 0)
+                              KeyValueRow(label: 'Platform fee (${_pct(_preview!.feePercent)}%)', value: '−${Fmt.money(_preview!.fee)}'),
+                            if (_preview!.gst > 0) KeyValueRow(label: 'GST on fee (${_pct(_preview!.gstPercent)}%)', value: '−${Fmt.money(_preview!.gst)}'),
                             KeyValueRow(label: 'You receive', value: Fmt.money(_preview!.net), emphasize: true),
                           ],
                         ),
@@ -415,6 +466,8 @@ class _WithdrawSheetState extends State<_WithdrawSheet> {
     );
   }
 }
+
+String _pct(double v) => v.toStringAsFixed(v % 1 == 0 ? 0 : 1);
 
 class TransactionsScreen extends StatelessWidget {
   const TransactionsScreen({super.key});

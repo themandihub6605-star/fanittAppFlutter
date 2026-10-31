@@ -99,6 +99,28 @@ class AuthRemoteDataSource {
     return response.message;
   }
 
+  /// Emails a 6-digit reset code. Returns seconds until a new code can be sent.
+  Future<int> requestResetCode(String email) async {
+    final response = await _api.post(
+      ApiEndpoints.forgotPassword,
+      data: {'email': email},
+      skipAuth: true,
+      parser: (d) => d is Map ? ((d['resendInSeconds'] as num?)?.toInt() ?? 60) : 60,
+    );
+    return response.data;
+  }
+
+  /// Checks the code; returns the one-time token for [resetPassword].
+  Future<String> verifyResetCode({required String email, required String otp}) async {
+    final response = await _api.post(
+      ApiEndpoints.verifyResetOtp,
+      data: {'email': email, 'otp': otp},
+      skipAuth: true,
+      parser: (d) => d is Map ? (d['resetToken'] as String? ?? '') : '',
+    );
+    return response.data;
+  }
+
   Future<String> resetPassword({required String token, required String newPassword}) async {
     final response = await _api.post(
       ApiEndpoints.resetPassword,
