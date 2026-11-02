@@ -124,6 +124,7 @@ class _BootState extends State<_Boot> {
         backgroundColor: const Color(0xFFF4511E),
         body: DecoratedBox(
           decoration: const BoxDecoration(
+
             gradient: LinearGradient(begin: Alignment.topLeft, end: Alignment.bottomRight, colors: [Color(0xFFF4511E), Color(0xFFEC2A78)]),
           ),
           child: Center(
