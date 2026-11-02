@@ -1,9 +1,11 @@
 // File: lib/features/auth/data/services/google_auth_service.dart
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 
 import '../../../../core/network/api_exception.dart';
+import '../../../../firebase_options.dart';
 import '../../domain/repositories/auth_repository.dart';
 
 /// Google sign-in with the phone's own account picker — a popup on the same
@@ -14,7 +16,11 @@ class GoogleAuthService {
   GoogleAuthService(this._auth);
 
   final FirebaseAuth _auth;
-  final GoogleSignIn _google = GoogleSignIn(scopes: const ['email']);
+  // iPhone needs its own OAuth client ID (Android finds it automatically).
+  final GoogleSignIn _google = GoogleSignIn(
+    scopes: const ['email'],
+    clientId: !kIsWeb && defaultTargetPlatform == TargetPlatform.iOS ? DefaultFirebaseOptions.ios.iosClientId : null,
+  );
 
   Future<String> getIdToken() async {
     try {
