@@ -14,19 +14,34 @@ import '../../../../core/di/injection.dart';
 import '../../../../core/network/api_exception.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_icons.dart';
+import '../../../../core/theme/app_palette.dart';
 import '../../../../core/theme/app_spacing.dart';
 import '../../../../core/utils/formatters.dart';
 import '../../../../core/widgets/app_sheet.dart';
 import '../../../../core/widgets/app_snackbar.dart';
+import '../../../../core/widgets/user_avatar.dart';
 import '../../../auth/presentation/bloc/auth_bloc.dart';
 import '../../data/meet_host_api.dart';
 import '../../data/store_repository.dart';
 import '../fanbox/fanbox_sheet.dart';
 import '../meet/attendance_sheet.dart';
+import 'live_collab_sheet.dart';
 
 /// Arguments for the live room (passed as GoRouter `extra`).
 class LiveRoomArgs {
-  const LiveRoomArgs({required this.liveId, required this.title, required this.connection, required this.isHost, this.chatEnabled = true, this.storeId = '', this.hostName = ''});
+  const LiveRoomArgs({
+    required this.liveId,
+    required this.title,
+    required this.connection,
+    required this.isHost,
+    this.chatEnabled = true,
+    this.storeId = '',
+    this.hostName = '',
+    this.isCoHost = false,
+  });
+
+  /// Collab: a creator the host invited — on screen with camera + mic.
+  final bool isCoHost;
 
   final String storeId;
   final String hostName;
@@ -54,6 +69,13 @@ class _ChatLine {
 
   /// "📣 Shoutout to Rahul" — highlighted.
   final bool shout;
+}
+
+/// A viewer asking to join the host on screen.
+class _JoinRequest {
+  const _JoinRequest(this.identity, this.name);
+  final String identity;
+  final String name;
 }
 
 /// Reactions anyone can throw on the live. Others are ignored when received.
@@ -102,6 +124,15 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> {
   int _combo = 0;
   Timer? _comboTimer;
   final List<DateTime> _sentTimes = [];
+
+  // "Request to join": one viewer on screen with the host.
+  final List<_JoinRequest> _requests = []; // host: waiting requests
+  bool _requested = false; // viewer: my request is waiting
+  DateTime _requestAgainAt = DateTime.fromMillisecondsSinceEpoch(0);
+  bool _onStage = false; // viewer: I'm on screen with the host
+  bool _stageBusy = false;
+  String? _guestIdentity; // whoever is on screen now (from the server)
+  String _guestName = '';
 
   // Shoutout banner (host → one viewer).
   String? _shoutName;
@@ -161,7 +192,7 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> {
     try {
       _listener = _room.createListener()
         ..on<ParticipantConnectedEvent>(_onJoined)
-        ..on<ParticipantDisconnectedEvent>((_) => _refresh())
+        ..on<ParticipantDisconnectedEvent>(_onLeft)
         ..on<TrackSubscribedEvent>((_) => _refresh())
         ..on<TrackUnsubscribedEvent>((_) => _refresh())
         ..on<LocalTrackPublishedEvent>((_) => _refresh())
@@ -171,7 +202,7 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> {
         });
 
       await _room.connect(_args.connection.url, _args.connection.token);
-      if (_args.isHost) {
+      if (_args.isHost || _args.isCoHost) {
         await _room.localParticipant?.setCameraEnabled(true);
         await _room.localParticipant?.setMicrophoneEnabled(true);
       }
@@ -199,7 +230,31 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> {
     _addChat(_ChatLine(name, 'joined 👋', system: true));
   }
 
-  bool _fromHost(Participant? p) => p != null && (p.videoTrackPublications.isNotEmpty || p.audioTrackPublications.isNotEmpty);
+  /// Someone left: drop their join request; if it was the guest, clear the stage.
+  void _onLeft(ParticipantDisconnectedEvent event) {
+    final id = event.participant.identity;
+    setState(() {
+      _requests.removeWhere((r) => r.identity == id);
+      if (_guestIdentity == id) {
+        _guestIdentity = null;
+        _guestName = '';
+      }
+    });
+  }
+
+  /// Role from the join token ("host" / "viewer" / "guest"). Set by the
+  /// server, so a viewer can't pretend to be the host.
+  static String _roleOf(Participant? p) {
+    try {
+      final m = jsonDecode(p?.metadata ?? '');
+      if (m is Map) return (m['role'] ?? '').toString();
+    } catch (_) {}
+    return '';
+  }
+
+  bool _fromHost(Participant? p) => p != null && _roleOf(p) == 'host';
+
+  String? get _myIdentity => _room.localParticipant?.identity;
   // ---------- data messages ----------
 
   void _onData(DataReceivedEvent event) {
@@ -215,6 +270,21 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> {
       } else if (msg['t'] == 'shout' && _fromHost(event.participant)) {
         // Only the host (the one sending video / audio) can give shoutouts.
         _onShout((msg['n'] ?? '').toString(), (msg['i'] ?? '').toString());
+      } else if (msg['t'] == 'join_req' && _args.isHost && event.participant != null) {
+        _onJoinRequest(event.participant!, (msg['n'] ?? '').toString());
+      } else if (msg['t'] == 'join_cancel' && _args.isHost && event.participant != null) {
+        final id = event.participant!.identity;
+        setState(() => _requests.removeWhere((r) => r.identity == id));
+      } else if (msg['t'] == 'join_decline' && _fromHost(event.participant)) {
+        if ((msg['i'] ?? '').toString() == _myIdentity) _onDeclined();
+      } else if (msg['t'] == 'guest' && event.participant == null) {
+        // Sent by the Fanitt server after the host accepted someone.
+        _onGuest((msg['i'] ?? '').toString(), (msg['n'] ?? '').toString());
+      } else if (msg['t'] == 'collab_end' && event.participant == null) {
+        // The host removed this co-host (sent by the server).
+        if ((msg['i'] ?? '').toString() == _myIdentity) _onCollabEnded();
+      } else if (msg['t'] == 'guest_end' && event.participant == null) {
+        _onGuestEnd((msg['i'] ?? '').toString(), (msg['r'] ?? '').toString());
       } else if (msg['t'] == 'fanbox' && event.participant == null) {
         // Only trusted when it comes from the Fanitt server (no participant),
         // which sends it after the payment went through.
@@ -383,6 +453,231 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> {
     await _publish({'t': 'shout', 'n': line.name, 'i': line.identity});
   }
 
+  // ---------- "Request to join" ----------
+
+  /// Host: a viewer wants to come on screen.
+  void _onJoinRequest(Participant from, String name) {
+    final id = from.identity;
+    if (id.isEmpty || id == _guestIdentity || _requests.any((r) => r.identity == id)) return;
+    final who = name.trim().isNotEmpty ? name.trim() : (from.name.trim().isNotEmpty ? from.name.trim() : 'A viewer');
+    HapticFeedback.mediumImpact();
+    setState(() => _requests.add(_JoinRequest(id, who)));
+    _addChat(_ChatLine(who, 'wants to join you on screen 🙋 — tap the request button', system: true));
+  }
+
+  /// Viewer: ask the host (or take the request back).
+  Future<void> _requestJoin() async {
+    if (_requested) {
+      setState(() => _requested = false);
+      await _publish({'t': 'join_cancel'});
+      if (mounted) AppSnackbar.info(context, 'Request cancelled');
+      return;
+    }
+    if (DateTime.now().isBefore(_requestAgainAt)) {
+      AppSnackbar.info(context, 'You can ask again in a minute');
+      return;
+    }
+    final ok = await confirmAction(
+      context,
+      title: 'Join ${_args.hostName.isEmpty ? 'the host' : _args.hostName} on screen?',
+      message: 'If the host accepts, your camera and mic turn on and everyone watching can see and hear you. You can leave any time.',
+      confirmLabel: 'Send request',
+    );
+    if (!ok || !mounted) return;
+    setState(() => _requested = true);
+    await _publish({'t': 'join_req', 'n': _myName});
+    if (mounted) AppSnackbar.info(context, 'Request sent — the host will see it');
+  }
+
+  void _onDeclined() {
+    if (!mounted) return;
+    setState(() {
+      _requested = false;
+      _requestAgainAt = DateTime.now().add(const Duration(minutes: 1));
+    });
+    AppSnackbar.info(context, 'The host can’t bring you on right now');
+  }
+
+  /// Everyone: the server says who is on screen with the host now.
+  void _onGuest(String identity, String name) {
+    if (!mounted || identity.isEmpty) return;
+    final who = name.trim().isEmpty ? 'A viewer' : name.trim();
+    setState(() {
+      _guestIdentity = identity;
+      _guestName = who;
+      _requests.removeWhere((r) => r.identity == identity);
+    });
+    if (identity == _myIdentity) {
+      _goOnStage();
+    } else {
+      _addChat(_ChatLine(who, 'joined the host on screen 🎤', shout: true));
+    }
+    for (var i = 0; i < 6; i++) {
+      Timer(Duration(milliseconds: 110 * i), () => _float(i.isEven ? '🎉' : '👏'));
+    }
+  }
+
+  void _onGuestEnd(String identity, String reason) {
+    if (!mounted) return;
+    setState(() {
+      if (_guestIdentity == identity) {
+        _guestIdentity = null;
+        _guestName = '';
+      }
+    });
+    if (identity == _myIdentity) {
+      _offStage();
+      if (reason == 'removed') AppSnackbar.info(context, 'The host ended your turn on screen');
+      if (reason == 'replaced') AppSnackbar.info(context, 'The host brought someone else on screen');
+    }
+  }
+
+  /// I was accepted: turn camera + mic on. The permission from the server can
+  /// land a moment after the message, so a few quick retries.
+  Future<void> _goOnStage() async {
+    if (_onStage) return;
+    setState(() {
+      _onStage = true;
+      _requested = false;
+      _micOn = true;
+      _camOn = true;
+      _frontCamera = true;
+    });
+    HapticFeedback.heavyImpact();
+    AppSnackbar.success(context, 'You’re on screen with the host 🎉');
+    for (var i = 0; i < 8; i++) {
+      try {
+        await _room.localParticipant?.setCameraEnabled(true);
+        await _room.localParticipant?.setMicrophoneEnabled(true);
+        _refresh();
+        return;
+      } catch (_) {
+        await Future<void>.delayed(const Duration(milliseconds: 600));
+        if (!mounted || !_onStage) return;
+      }
+    }
+    if (mounted) AppSnackbar.error(context, 'Couldn’t turn on your camera — check camera and mic permission for Fanitt.');
+  }
+
+  void _offStage() {
+    if (!_onStage) return;
+    setState(() => _onStage = false);
+    () async {
+      try {
+        await _room.localParticipant?.setCameraEnabled(false);
+        await _room.localParticipant?.setMicrophoneEnabled(false);
+      } catch (_) {}
+      _refresh();
+    }();
+  }
+
+  /// Guest: leave the stage, keep watching.
+  Future<void> _leaveStage() async {
+    final ok = await confirmAction(context, title: 'Leave the screen?', message: 'You’ll keep watching the live.', confirmLabel: 'Leave');
+    if (!ok || !mounted) return;
+    setState(() => _stageBusy = true);
+    try {
+      await sl<StoreRepository>().leaveLiveGuest(_args.liveId);
+    } catch (_) {
+      // The server also clears it when the host removes us or the live ends.
+    }
+    if (!mounted) return;
+    setState(() {
+      _stageBusy = false;
+      if (_guestIdentity == _myIdentity) {
+        _guestIdentity = null;
+        _guestName = '';
+      }
+    });
+    _offStage();
+  }
+
+  /// Host: the waiting requests, Accept / Decline.
+  Future<void> _openRequests() async {
+    if (_requests.isEmpty) {
+      AppSnackbar.info(context, 'No requests yet — viewers can ask to join you from their screen');
+      return;
+    }
+    final picked = await showAppSheet<(_JoinRequest, bool)>(
+      context,
+      builder: (sheet) => _RequestsSheet(requests: List.of(_requests), hasGuest: _guestIdentity != null, guestName: _guestName),
+    );
+    if (picked == null || !mounted) return;
+    final (request, accept) = picked;
+    accept ? await _acceptGuest(request) : await _declineGuest(request);
+  }
+
+  Future<void> _acceptGuest(_JoinRequest r) async {
+    if (_guestIdentity != null && _guestIdentity != r.identity) {
+      final ok = await confirmAction(
+        context,
+        title: 'Swap your guest?',
+        message: '$_guestName leaves the screen and ${r.name} comes on.',
+        confirmLabel: 'Bring ${r.name} on',
+      );
+      if (!ok || !mounted) return;
+    }
+    setState(() => _stageBusy = true);
+    try {
+      await sl<StoreRepository>().addLiveGuest(_args.liveId, r.identity);
+      if (!mounted) return;
+      setState(() => _requests.removeWhere((x) => x.identity == r.identity));
+    } on ApiException catch (e) {
+      if (mounted) {
+        AppSnackbar.error(context, e.displayMessage);
+        setState(() => _requests.removeWhere((x) => x.identity == r.identity));
+      }
+    } finally {
+      if (mounted) setState(() => _stageBusy = false);
+    }
+  }
+
+  Future<void> _declineGuest(_JoinRequest r) async {
+    setState(() => _requests.removeWhere((x) => x.identity == r.identity));
+    await _publish({'t': 'join_decline', 'i': r.identity});
+  }
+
+  /// Host: take the guest off screen.
+  Future<void> _removeGuest() async {
+    final ok = await confirmAction(context, title: 'Remove $_guestName from the screen?', message: 'They keep watching the live.', confirmLabel: 'Remove', destructive: true);
+    if (!ok || !mounted) return;
+    setState(() => _stageBusy = true);
+    try {
+      await sl<StoreRepository>().removeLiveGuest(_args.liveId);
+    } on ApiException catch (e) {
+      if (mounted) AppSnackbar.error(context, e.displayMessage);
+    } finally {
+      if (mounted) setState(() => _stageBusy = false);
+    }
+  }
+
+  // ---------- collab (co-hosts) ----------
+
+  void _onCollabEnded() {
+    if (!mounted || _leaving) return;
+    _leaving = true;
+    AppSnackbar.info(context, 'The host ended the collab — thanks for joining!');
+    Navigator.of(context).pop();
+  }
+
+  Future<void> _openCollab() async {
+    final auth = context.read<AuthBloc>().state;
+    await showLiveCollabSheet(context, liveId: _args.liveId, liveTitle: _args.title, myUserId: auth is AuthAuthenticated ? auth.user.id : '');
+  }
+
+  Future<void> _removeCoHost(String identity, String name) async {
+    final ok = await confirmAction(context, title: 'Remove $name from the live?', message: 'They’ll be taken off screen.', confirmLabel: 'Remove', destructive: true);
+    if (!ok || !mounted) return;
+    setState(() => _stageBusy = true);
+    try {
+      await sl<StoreRepository>().removeCollaborator(_args.liveId, identity);
+    } on ApiException catch (e) {
+      if (mounted) AppSnackbar.error(context, e.displayMessage);
+    } finally {
+      if (mounted) setState(() => _stageBusy = false);
+    }
+  }
+
   // ---------- host controls ----------
 
   Future<void> _toggleMic() async {
@@ -410,6 +705,10 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> {
   }
 
   Future<void> _close() async {
+    if (_args.isCoHost && !_ended && !_leaving) {
+      final ok = await confirmAction(context, title: 'Leave the collab?', message: 'You’ll go off screen. You can join again from the live page while it’s on.', confirmLabel: 'Leave');
+      if (!ok) return;
+    }
     if (_args.isHost && !_ended) {
       final ok = await confirmAction(context, title: 'End your live?', message: 'Everyone watching will be disconnected.', confirmLabel: 'End live', destructive: true);
       if (!ok) return;
@@ -424,18 +723,53 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> {
     if (mounted) Navigator.of(context).pop();
   }
 
+  static VideoTrack? _trackOf(Participant? p) {
+    if (p == null) return null;
+    for (final pub in p.videoTrackPublications) {
+      final track = pub.track;
+      if (track is VideoTrack && !pub.muted) return track;
+    }
+    return null;
+  }
+
+  /// The host's camera (top / full screen).
   VideoTrack? get _videoTrack {
     if (_args.isHost) {
       final track = _room.localParticipant?.videoTrackPublications.firstOrNull?.track;
       return track is VideoTrack ? track : null;
     }
-    for (final p in _room.remoteParticipants.values) {
-      for (final pub in p.videoTrackPublications) {
-        final track = pub.track;
-        if (track != null && !pub.muted) return track;
-      }
+    final remotes = _room.remoteParticipants.values;
+    final host = remotes.where((p) => _roleOf(p) == 'host').firstOrNull;
+    if (host != null) return _trackOf(host);
+    // Older lives without roles: the first camera that isn't the guest's.
+    for (final p in remotes) {
+      if (p.identity == _guestIdentity) continue;
+      final t = _trackOf(p);
+      if (t != null) return t;
     }
     return null;
+  }
+
+  /// Everyone on screen besides the host: co-hosts (collab) and the viewer
+  /// who was brought on with "Request to join". Shown under the host.
+  List<({VideoTrack? track, String name, bool isMe, String role, String identity})> get _stage {
+    final out = <({VideoTrack? track, String name, bool isMe, String role, String identity})>[];
+    final local = _room.localParticipant;
+    if ((_args.isCoHost || _onStage) && local != null) {
+      final t = local.videoTrackPublications.firstOrNull?.track;
+      out.add((track: t is VideoTrack && _camOn ? t : null, name: 'You', isMe: true, role: _args.isCoHost ? 'cohost' : 'guest', identity: local.identity));
+    }
+    for (final p in _room.remoteParticipants.values) {
+      final role = _roleOf(p);
+      if (role == 'host') continue;
+      final isGuest = p.identity == _guestIdentity || role == 'guest';
+      if (role != 'cohost' && !isGuest) continue;
+      final t = _trackOf(p);
+      if (t == null && p.audioTrackPublications.isEmpty) continue;
+      final name = p.name.trim().isNotEmpty ? p.name.trim() : (isGuest && _guestName.isNotEmpty ? _guestName : 'Guest');
+      out.add((track: t, name: name, isMe: false, role: role == 'cohost' ? 'cohost' : 'guest', identity: p.identity));
+    }
+    return out;
   }
 
   int get _viewerCount => _room.remoteParticipants.length;
@@ -443,6 +777,7 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> {
   @override
   Widget build(BuildContext context) {
     final track = _videoTrack;
+    final stage = _stage;
     return PopScope(
       canPop: false,
       onPopInvokedWithResult: (didPop, _) {
@@ -456,23 +791,44 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> {
           body: Stack(
             fit: StackFit.expand,
             children: [
-              // Video
-              if (track != null && (!_args.isHost || _camOn))
-                VideoTrackRenderer(track, fit: VideoViewFit.cover)
-              else
-                Center(
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(_args.isHost ? AppIcons.videoCamera : AppIcons.broadcast, color: Colors.white38, size: 48),
-                      const SizedBox(height: AppSpacing.sm),
-                      Text(
-                        _connecting ? 'Connecting…' : (_args.isHost ? 'Camera is off' : 'Waiting for the host…'),
-                        style: const TextStyle(color: Colors.white70),
+              // Video: host full screen, or host on top + guest below.
+              Column(
+                children: [
+                  Expanded(
+                    child: track != null && (!_args.isHost || _camOn)
+                        ? VideoTrackRenderer(track, fit: VideoViewFit.cover)
+                        : Center(
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(_args.isHost ? AppIcons.videoCamera : AppIcons.broadcast, color: Colors.white38, size: 48),
+                          const SizedBox(height: AppSpacing.sm),
+                          Text(
+                            _connecting ? 'Connecting…' : (_args.isHost ? 'Camera is off' : 'Waiting for the host…'),
+                            style: const TextStyle(color: Colors.white70),
+                          ),
+                        ],
                       ),
-                    ],
+                    ),
                   ),
-                ),
+                  for (final g in stage) ...[
+                    const SizedBox(height: 2),
+                    Expanded(
+                      child: _GuestTile(
+                        key: ValueKey(g.identity),
+                        track: g.track,
+                        name: g.role == 'cohost' ? '${g.name} · co-host' : g.name,
+                        busy: _stageBusy,
+                        // Host removes anyone; people on screen can leave.
+                        actionLabel: _args.isHost ? 'Remove' : (g.isMe ? 'Leave' : null),
+                        onAction: _args.isHost
+                            ? (g.role == 'cohost' ? () => _removeCoHost(g.identity, g.name) : _removeGuest)
+                            : (g.isMe ? (g.role == 'cohost' ? _close : _leaveStage) : null),
+                      ).animate().fadeIn(duration: 250.ms).slideY(begin: 0.15, curve: Curves.easeOutCubic),
+                    ),
+                  ],
+                ],
+              ),
               // Readability gradients
               const DecoratedBox(
                 decoration: BoxDecoration(
@@ -510,14 +866,22 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> {
                       onToggleTray: _toggleTray,
                       trayOpen: _trayOpen,
                       combo: _combo,
-                      onQuick: _args.isHost ? null : _sendQuick,
+                      onQuick: _args.isHost || _args.isCoHost ? null : _sendQuick,
                       onMic: _toggleMic,
                       onCamera: _toggleCamera,
                       onFlip: _flipCamera,
                       onWatched: _args.isHost
                           ? () => showAttendanceSheet(context, title: _args.title, load: () => MeetHostApi.liveAttendance(_args.liveId))
                           : null,
-                      onFanBox: _args.isHost || _args.storeId.isEmpty
+                      onStage: _onStage || _args.isCoHost,
+                      onLeaveStage: _args.isCoHost ? _close : (_onStage ? _leaveStage : null),
+                      requestCount: _requests.length,
+                      onRequests: _args.isHost ? _openRequests : null,
+                      onCollab: _args.isHost ? _openCollab : null,
+                      requested: _requested,
+                      // Viewers ask to join (needs chat — it travels the same way).
+                      onRequestJoin: !_args.isHost && !_args.isCoHost && !_onStage && _args.chatEnabled ? _requestJoin : null,
+                      onFanBox: _args.isHost || _args.isCoHost || _args.storeId.isEmpty
                           ? null
                           : () => showFanBoxSheet(
                         context,
@@ -844,9 +1208,31 @@ class _BottomBar extends StatelessWidget {
     required this.onFlip,
     this.onWatched,
     this.onFanBox,
+    this.onStage = false,
+    this.onLeaveStage,
+    this.requestCount = 0,
+    this.onRequests,
+    this.onCollab,
+    this.requested = false,
+    this.onRequestJoin,
   });
 
   final VoidCallback? onFanBox;
+
+  /// Viewer on screen with the host: gets mic / camera / flip + Leave.
+  final bool onStage;
+  final VoidCallback? onLeaveStage;
+
+  /// Host: waiting "Request to join" count + opens the list.
+  final int requestCount;
+  final VoidCallback? onRequests;
+
+  /// Host: invite creators to go live together.
+  final VoidCallback? onCollab;
+
+  /// Viewer: my request is waiting; tap to ask / take it back.
+  final bool requested;
+  final VoidCallback? onRequestJoin;
 
   /// Host: who watched and for how long.
   final VoidCallback? onWatched;
@@ -877,22 +1263,38 @@ class _BottomBar extends StatelessWidget {
       padding: const EdgeInsets.fromLTRB(AppSpacing.md, AppSpacing.xs, AppSpacing.md, AppSpacing.sm),
       child: Column(
         children: [
-          if (isHost)
+          if (isHost || onStage)
             Padding(
               padding: const EdgeInsets.only(bottom: AppSpacing.sm),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  _RoundButton(icon: micOn ? AppIcons.speakerOn : AppIcons.speakerOff, active: micOn, onTap: onMic, label: micOn ? 'Mute' : 'Unmute'),
-                  const SizedBox(width: AppSpacing.md),
-                  _RoundButton(icon: AppIcons.videoCamera, active: camOn, onTap: onCamera, label: camOn ? 'Camera off' : 'Camera on'),
-                  const SizedBox(width: AppSpacing.md),
-                  _RoundButton(icon: AppIcons.refresh, active: true, onTap: onFlip, label: 'Flip camera'),
-                  if (onWatched != null) ...[
+              // Scales down on narrow phones when the host has all buttons.
+              child: FittedBox(
+                fit: BoxFit.scaleDown,
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    _RoundButton(icon: micOn ? AppIcons.speakerOn : AppIcons.speakerOff, active: micOn, onTap: onMic, label: micOn ? 'Mute' : 'Unmute'),
                     const SizedBox(width: AppSpacing.md),
-                    _RoundButton(icon: AppIcons.users, active: true, onTap: onWatched!, label: 'Who watched'),
+                    _RoundButton(icon: AppIcons.videoCamera, active: camOn, onTap: onCamera, label: camOn ? 'Camera off' : 'Camera on'),
+                    const SizedBox(width: AppSpacing.md),
+                    _RoundButton(icon: AppIcons.refresh, active: true, onTap: onFlip, label: 'Flip camera'),
+                    if (onCollab != null) ...[
+                      const SizedBox(width: AppSpacing.md),
+                      _RoundButton(icon: AppIcons.handshake, active: true, onTap: onCollab!, label: 'Go live together'),
+                    ],
+                    if (onRequests != null) ...[
+                      const SizedBox(width: AppSpacing.md),
+                      _BadgeButton(count: requestCount, child: _RoundButton(icon: AppIcons.userPlus, active: true, onTap: onRequests!, label: 'Join requests')),
+                    ],
+                    if (onWatched != null) ...[
+                      const SizedBox(width: AppSpacing.md),
+                      _RoundButton(icon: AppIcons.users, active: true, onTap: onWatched!, label: 'Who watched'),
+                    ],
+                    if (onLeaveStage != null) ...[
+                      const SizedBox(width: AppSpacing.md),
+                      _RoundButton(icon: AppIcons.signOut, active: false, onTap: onLeaveStage!, label: 'Leave screen'),
+                    ],
                   ],
-                ],
+                ),
               ),
             ),
           // Reaction tray
@@ -964,6 +1366,26 @@ class _BottomBar extends StatelessWidget {
                 )
               else
                 const Spacer(),
+              if (onRequestJoin != null) ...[
+                const SizedBox(width: AppSpacing.sm),
+                Tooltip(
+                  message: requested ? 'Cancel request' : 'Request to join',
+                  child: GestureDetector(
+                    onTap: onRequestJoin,
+                    child: AnimatedContainer(
+                      duration: const Duration(milliseconds: 200),
+                      width: 46,
+                      height: 46,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: Colors.white.withValues(alpha: requested ? 0.32 : 0.18),
+                        border: requested ? Border.all(color: Colors.white, width: 1.5) : null,
+                      ),
+                      child: Icon(requested ? AppIcons.hourglass : AppIcons.userPlus, color: Colors.white, size: 21),
+                    ),
+                  ),
+                ),
+              ],
               if (onFanBox != null) ...[
                 const SizedBox(width: AppSpacing.sm),
                 GestureDetector(
@@ -1178,5 +1600,159 @@ class _ShoutoutBanner extends StatelessWidget {
         ],
       ),
     ).animate().fadeIn(duration: 200.ms).then(delay: 2800.ms).fadeOut(duration: 400.ms);
+  }
+}
+
+
+/// Bottom half while a viewer is on screen with the host.
+class _GuestTile extends StatelessWidget {
+  const _GuestTile({super.key, required this.track, required this.name, required this.busy, this.actionLabel, this.onAction});
+
+  final VideoTrack? track;
+  final String name;
+  final bool busy;
+  final String? actionLabel;
+  final VoidCallback? onAction;
+
+  @override
+  Widget build(BuildContext context) {
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        if (track != null)
+          VideoTrackRenderer(track!, fit: VideoViewFit.cover)
+        else
+          const ColoredBox(
+            color: Color(0xFF15151C),
+            child: Center(child: Icon(AppIcons.videoCamera, color: Colors.white30, size: 40)),
+          ),
+        Positioned(
+          left: 12,
+          bottom: 12,
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+            decoration: BoxDecoration(color: Colors.black.withValues(alpha: 0.5), borderRadius: BorderRadius.circular(99)),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Text('🎤', style: TextStyle(fontSize: 12)),
+                const SizedBox(width: 5),
+                ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 160),
+                  child: Text(name, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700, fontSize: 12.5)),
+                ),
+              ],
+            ),
+          ),
+        ),
+        if (actionLabel != null && onAction != null)
+          Positioned(
+            right: 10,
+            top: 10,
+            child: Material(
+              color: Colors.black.withValues(alpha: 0.55),
+              shape: const StadiumBorder(),
+              child: InkWell(
+                customBorder: const StadiumBorder(),
+                onTap: busy ? null : onAction,
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+                  child: busy
+                      ? const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                      : Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(AppIcons.close, color: Colors.white, size: 14),
+                      const SizedBox(width: 4),
+                      Text(actionLabel!, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700, fontSize: 12.5)),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+}
+
+/// Small count bubble over a round button.
+class _BadgeButton extends StatelessWidget {
+  const _BadgeButton({required this.count, required this.child});
+
+  final int count;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return Stack(
+      clipBehavior: Clip.none,
+      children: [
+        child,
+        if (count > 0)
+          Positioned(
+            right: -2,
+            top: -2,
+            child: IgnorePointer(
+              child: Container(
+                constraints: const BoxConstraints(minWidth: 18),
+                height: 18,
+                padding: const EdgeInsets.symmetric(horizontal: 5),
+                alignment: Alignment.center,
+                decoration: BoxDecoration(color: AppColors.error, borderRadius: BorderRadius.circular(9), border: Border.all(color: Colors.black, width: 1.5)),
+                child: Text(count > 9 ? '9+' : '$count', style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.w800, height: 1)),
+              ).animate(key: ValueKey(count)).scale(begin: const Offset(1.4, 1.4), duration: 250.ms, curve: Curves.easeOutBack),
+            ),
+          ),
+      ],
+    );
+  }
+}
+
+/// Host: viewers asking to join, with Accept / Decline.
+class _RequestsSheet extends StatelessWidget {
+  const _RequestsSheet({required this.requests, required this.hasGuest, required this.guestName});
+
+  final List<_JoinRequest> requests;
+  final bool hasGuest;
+  final String guestName;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.palette;
+    return SheetBody(
+      title: 'Join requests · ${requests.length}',
+      subtitle: hasGuest ? '$guestName is on screen now — accepting someone swaps them.' : 'Bring one viewer on screen with you. You can remove them any time.',
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          for (final r in requests)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 10),
+              child: Container(
+                padding: const EdgeInsets.fromLTRB(12, 10, 10, 10),
+                decoration: BoxDecoration(color: palette.surface, borderRadius: BorderRadius.circular(14), border: Border.all(color: palette.border)),
+                child: Row(
+                  children: [
+                    UserAvatar(initials: r.name.isEmpty ? '?' : r.name[0].toUpperCase(), size: 38),
+                    const SizedBox(width: 10),
+                    Expanded(child: Text(r.name, maxLines: 1, overflow: TextOverflow.ellipsis, style: context.text.titleSmall?.copyWith(fontWeight: FontWeight.w800))),
+                    TextButton(
+                      onPressed: () => Navigator.of(context).pop((r, false)),
+                      child: Text('Decline', style: TextStyle(color: palette.textSecondary, fontWeight: FontWeight.w700)),
+                    ),
+                    const SizedBox(width: 4),
+                    FilledButton(
+                      onPressed: () => Navigator.of(context).pop((r, true)),
+                      style: FilledButton.styleFrom(backgroundColor: AppColors.primary, shape: const StadiumBorder(), padding: const EdgeInsets.symmetric(horizontal: 16)),
+                      child: const Text('Accept', style: TextStyle(fontWeight: FontWeight.w800)),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
   }
 }

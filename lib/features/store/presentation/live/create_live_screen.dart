@@ -5,6 +5,7 @@ import 'package:flutter_animate/flutter_animate.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../../core/services/image_crop.dart';
 import '../../../../core/bloc/action_cubit.dart';
 import '../../../../core/bloc/load_cubit.dart';
 import '../../../../core/di/injection.dart';
@@ -193,17 +194,12 @@ class _CreateLiveViewState extends State<_CreateLiveView> {
                 optional: true,
                 enabled: !busy,
                 onPick: () async {
-                  final picked = await sl<MediaPicker>().image();
+                  final picked = await ImageCrop.pick(ImageSlot.livePoster);
                   if (picked != null) setState(() => _cover = picked);
                 },
                 onRemove: () => setState(() => _cover = null),
-                previewBuilder: (context, image) => _LivePosterPreview(
-                  image: image,
-                  title: _title.text.trim(),
-                  isNow: _now,
-                  when: _when,
-                  priceLabel: _free ? 'FREE' : (Fmt.rupeesToPaise(_price.text) == null ? 'PAID' : Fmt.money(Fmt.rupeesToPaise(_price.text)!)),
-                ),
+                // Home shows the picture on its own (title under it), so the box
+                // shows just the picture, cropped to the same shape.
               ),
             ).animate().fadeIn(duration: 300.ms),
             const SizedBox(height: 18),

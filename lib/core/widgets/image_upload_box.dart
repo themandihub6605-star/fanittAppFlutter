@@ -1,3 +1,4 @@
+// File: lib/core/widgets/image_upload_box.dart
 import 'dart:io';
 
 import 'package:cached_network_image/cached_network_image.dart';
@@ -47,53 +48,56 @@ class ImageSlot {
   /// Which part of the picture stays visible when it is cropped.
   final Alignment alignment;
 
-  static const String _noText = 'Use a clear photo with no text on it — the title is added on top for you.';
+  static const String _noText = 'Use a clear photo with no text on it — the title shows under the picture.';
 
-  /// Live stream poster — home "Live" rail card (292 × 212).
+  // Home cards (Live, Online sessions, Stores, Communities) show a 16 : 9
+  // picture with the title under it; products show a square. Uploads use
+  // the same shapes so what you crop is exactly what people see on Home.
+
+  /// Live stream poster — Home "Live" card (16 : 9).
   static const livePoster = ImageSlot(
-    aspectRatio: 292 / 212,
-    bestSize: '1380 × 1000 px',
+    aspectRatio: 16 / 9,
+    bestSize: '1600 × 900 px',
     label: 'Upload live poster',
-    tip: '$_noText Keep faces in the middle; the top corners show the date and price.',
-    shownOn: 'Preview — exactly how your live shows on the home screen',
+    tip: '$_noText Keep faces in the middle; the top-left corner shows a small badge.',
+    shownOn: 'This is exactly how your live picture shows on Home',
   );
 
-  /// Online session (meet) poster — home "Online sessions" card (300 × 192).
+  /// Online session (meet) poster — Home "Online sessions" card (16 : 9).
   static const meetPoster = ImageSlot(
-    aspectRatio: 300 / 192,
-    bestSize: '1500 × 960 px',
+    aspectRatio: 16 / 9,
+    bestSize: '1600 × 900 px',
     label: 'Upload session poster',
-    tip: '$_noText Keep the main subject in the centre; edges may be trimmed.',
-    shownOn: 'Preview — exactly how your session shows on the home screen',
+    tip: '$_noText Keep the main subject in the centre.',
+    shownOn: 'This is exactly how your session picture shows on Home',
   );
 
-  /// Digital product cover — full-bleed product card (184 × 280).
+  /// Digital product cover — square, like the product cards on Home and in the shop.
   static const productCover = ImageSlot(
-    aspectRatio: 184 / 280,
-    bestSize: '1000 × 1520 px (portrait)',
-    displayWidth: 184,
+    aspectRatio: 1,
+    bestSize: '1200 × 1200 px (square)',
+    displayWidth: 240,
     label: 'Upload product cover',
-    tip: '$_noText Portrait works best — the price and title sit on the bottom part.',
-    shownOn: 'Preview — exactly how your product shows in the shop',
+    tip: '$_noText Keep the main thing in the centre — it is shown as a square.',
+    shownOn: 'This is exactly how your product picture shows on Home and in the shop',
   );
 
-  /// Store banner — full-bleed store card (300 × 196).
+  /// Store banner — Home "Stores" card and the top of your store page (16 : 9).
   static const storeBanner = ImageSlot(
-    aspectRatio: 300 / 196,
-    bestSize: '1500 × 980 px',
+    aspectRatio: 16 / 9,
+    bestSize: '1600 × 900 px',
     label: 'Upload store banner',
-    tip: 'Use a clean photo or pattern with no text. Your logo and store name are placed on the bottom-left.',
-    shownOn: 'Preview — exactly how your store shows on the home screen',
+    tip: 'Use a clean photo or pattern with no text. Your logo and store name show next to it.',
+    shownOn: 'This is exactly how your banner shows on Home',
   );
 
-  /// Community cover — full-bleed community card (236 × 286).
+  /// Community cover — Home "Communities" card (16 : 9).
   static const communityCover = ImageSlot(
-    aspectRatio: 236 / 286,
-    bestSize: '1180 × 1430 px (portrait)',
-    displayWidth: 236,
+    aspectRatio: 16 / 9,
+    bestSize: '1600 × 900 px',
     label: 'Upload community cover',
-    tip: '$_noText Keep the main subject in the top half — the name and Join button sit at the bottom.',
-    shownOn: 'Preview — exactly how your community shows on the home screen',
+    tip: '$_noText Keep the main subject in the centre.',
+    shownOn: 'This is exactly how your community picture shows on Home',
   );
 
   /// Campaign cover — campaign page header image (16 : 10).
@@ -289,6 +293,10 @@ class ImageUploadBox extends StatelessWidget {
                 Text('Best size ${slot.bestSize}', style: context.text.bodySmall?.copyWith(color: AppColors.primary, fontWeight: FontWeight.w700)),
                 const SizedBox(height: 4),
                 Text(slot.tip, style: context.text.bodySmall?.copyWith(height: 1.35)),
+                if (enabled) ...[
+                  const SizedBox(height: 4),
+                  Text('Pinch & drag to fit it in the frame.', style: context.text.bodySmall?.copyWith(height: 1.35, color: palette.textSecondary, fontWeight: FontWeight.w600)),
+                ],
                 if (hasError) ...[
                   const SizedBox(height: 4),
                   Text(errorText!, style: context.text.bodySmall?.copyWith(color: AppColors.error, fontWeight: FontWeight.w600)),
@@ -318,11 +326,42 @@ class ImageUploadBox extends StatelessWidget {
             ),
           ],
         ),
+        if (enabled) ...[
+          const SizedBox(height: 8),
+          const CropHint(),
+        ],
         if (hasError) ...[
           const SizedBox(height: 4),
           Text(errorText!, style: context.text.bodySmall?.copyWith(color: AppColors.error, fontWeight: FontWeight.w600)),
         ],
       ],
+    );
+  }
+}
+
+/// "Pinch to zoom and drag to fit…" — shown wherever a photo is uploaded,
+/// so people know they can fit the picture before it's saved.
+class CropHint extends StatelessWidget {
+  const CropHint({super.key, this.text = defaultText});
+
+  static const String defaultText = 'Pinch to zoom and drag to fit your photo inside the frame — what you see in the frame is exactly how it shows in the app.';
+
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.palette;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      decoration: BoxDecoration(color: palette.surfaceMuted, borderRadius: BorderRadius.circular(10)),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(AppIcons.crop, size: 15, color: palette.textSecondary),
+          const SizedBox(width: 8),
+          Expanded(child: Text(text, style: context.text.bodySmall?.copyWith(height: 1.35, color: palette.textSecondary))),
+        ],
+      ),
     );
   }
 }

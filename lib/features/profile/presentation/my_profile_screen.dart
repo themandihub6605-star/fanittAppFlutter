@@ -14,6 +14,7 @@ import '../../../core/theme/app_palette.dart';
 import '../../../core/theme/app_spacing.dart';
 import '../../../core/utils/formatters.dart';
 import '../../../core/utils/json.dart';
+import '../../../core/widgets/app_snackbar.dart';
 import '../../../core/widgets/app_network_image.dart';
 import '../../../core/widgets/stream_video_player.dart';
 import '../../account/presentation/screens/account_screen.dart';
@@ -858,7 +859,7 @@ class _CreatorWorkState extends State<_CreatorWork> {
               _WorkRow(
                 imageUrl: p.campaign?.brand?.logoUrl ?? p.campaign?.campaignImageUrl,
                 icon: AppIcons.brand,
-                title: p.campaign?.title ?? 'Campaign',
+                title: p.campaign?.title ?? 'Campaign no longer available',
                 subtitle: [
                   if ((p.campaign?.brand?.name ?? '').isNotEmpty) p.campaign!.brand!.name,
                   if (p.createdAt != null) 'Applied ${Fmt.shortDate(p.createdAt!.toLocal())}',
@@ -866,6 +867,11 @@ class _CreatorWorkState extends State<_CreatorWork> {
                 stage: stages[p]!,
                 amount: p.quotedAmount != null && p.quotedAmount! > 0 ? Fmt.money(p.quotedAmount!) : p.campaign?.payLabel,
                 onTap: () async {
+                  // The brand deleted the campaign → nothing to open.
+                  if (p.campaign == null || p.campaignId.isEmpty) {
+                    AppSnackbar.info(context, 'This campaign is no longer available');
+                    return;
+                  }
                   await context.push(AppRoutes.campaignDetail(p.campaignId));
                   widget.onChanged();
                 },

@@ -75,6 +75,14 @@
             <meta-data android:name="flutter_deeplinking_enabled" android:value="true" />
         </activity>
 
+        <!-- Photo crop screen (image_cropper / uCrop): banners, posters,
+             covers, logos and post photos are cropped here. Theme lives in
+             res/values/ucrop_styles.xml. -->
+        <activity
+            android:name="com.yalantis.ucrop.UCropActivity"
+            android:screenOrientation="portrait"
+            android:theme="@style/Ucrop.CropTheme" />
+
         <!-- Push notifications: default channel (matches the app) and accent color -->
         <meta-data
             android:name="com.google.firebase.messaging.default_notification_channel_id"

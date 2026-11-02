@@ -20,14 +20,15 @@ import 'link_opener.dart';
 ///
 /// * On Home (any role), after the app has been opened a few times, a small
 ///   sheet asks the user to rate Fanitt.
-/// * "Rate on Google Play" (and "Rate Fanitt" in Settings & more) open
-///   Fanitt's **Play Store page** — always. There the user picks the stars
-///   and writes the review, and it's posted publicly on the store.
+/// * "Rate on Google Play" (and "Rate Fanitt" in Settings & more) first try
+///   Google's **in-app review popup** (stars + review without leaving the
+///   app). Google shows that popup only a few times per user and never says
+///   if it appeared, so we watch whether the app was covered by it; if not,
+///   Fanitt's **Play Store page** opens instead.
 ///
-/// Why not Google's in-app review popup: Google lets that popup appear only
-/// a few times per user and never tells the app if it showed — so tapping a
-/// button often did nothing. Google also says not to start it from a button.
-/// The store page always opens.
+/// Note: on the Play Store page Google hides "Write a review" for accounts
+/// that are testers of the app or have already reviewed it (they see their
+/// old review instead) — that's Play's rule, not the app's.
 abstract final class AppRating {
   static const _doneKey = 'app_rating_done';
   static const _nextKey = 'app_rating_next_at';
@@ -68,13 +69,38 @@ abstract final class AppRating {
     }
   }
 
-  /// "Rate Fanitt" from Settings & more — opens the Play Store page.
+  /// "Rate Fanitt" — in-app popup first, the Play Store page if it didn't show.
   static Future<void> rateNow() async {
     HapticFeedback.selectionClick();
     try {
       await _prefs.setBool(_doneKey, true);
     } catch (_) {}
+    if (await _tryInAppPopup()) return;
     await _openStorePage();
+  }
+
+  /// Google's review popup. True when it actually appeared (the popup covers
+  /// the app, which makes the app inactive for a moment).
+  static Future<bool> _tryInAppPopup() async {
+    if (!Platform.isAndroid && !Platform.isIOS) return false;
+    final review = InAppReview.instance;
+    try {
+      if (!await review.isAvailable()) return false;
+    } catch (_) {
+      return false;
+    }
+    var covered = false;
+    final listener = AppLifecycleListener(onInactive: () => covered = true, onHide: () => covered = true, onPause: () => covered = true);
+    try {
+      await review.requestReview();
+      // The popup may take a moment to come up.
+      await Future<void>.delayed(const Duration(milliseconds: 1600));
+    } catch (e) {
+      debugPrint('[AppRating] in-app review failed: $e');
+    } finally {
+      listener.dispose();
+    }
+    return covered;
   }
 
   static Future<void> _ask(BuildContext context) async {

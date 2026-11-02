@@ -403,6 +403,23 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
                   ],
                 ),
               ),
+            if (current != null && !current.isVideo)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(AppSpacing.gutter, AppSpacing.xs, AppSpacing.gutter, 0),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Icon(AppIcons.crop, size: 14, color: context.palette.textSecondary),
+                    const SizedBox(width: 6),
+                    Expanded(
+                      child: Text(
+                        'Tip: tap “Crop & rotate”, then pinch and drag to fit your photo. Square or 4:5 photos look best in the feed.',
+                        style: context.text.bodySmall?.copyWith(height: 1.35),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
 
             // Thumbnails (posts only — reels and stories are one item)
             if (_items.isNotEmpty && _mode == CreateMode.post)

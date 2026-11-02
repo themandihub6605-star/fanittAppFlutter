@@ -216,6 +216,12 @@ class _SessionBookingsScreenState extends State<SessionBookingsScreen> {
         ).animate().fadeIn(duration: 300.ms).slideY(begin: 0.06),
         const SizedBox(height: 22),
 
+        // Can't join the new time — their messages.
+        if (d.declines.isNotEmpty) ...[
+          _DeclinesCard(declines: d.declines),
+          const SizedBox(height: 22),
+        ],
+
         // List title
         Row(
           children: [
@@ -269,6 +275,73 @@ class _SessionBookingsScreenState extends State<SessionBookingsScreen> {
               ],
             ),
           ),
+      ],
+    );
+  }
+}
+
+/// People who said "I won't join" after a reschedule, with their message.
+class _DeclinesCard extends StatelessWidget {
+  const _DeclinesCard({required this.declines});
+
+  final List<SessionDecline> declines;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.palette;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Text('Can’t join the new time', style: TextStyle(fontSize: 17, fontWeight: FontWeight.w800, letterSpacing: -0.3, color: palette.textPrimary)),
+            const SizedBox(width: 6),
+            Text('· ${declines.length}', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: palette.textTertiary)),
+          ],
+        ),
+        const SizedBox(height: 10),
+        Container(
+          decoration: _frame(context),
+          clipBehavior: Clip.antiAlias,
+          child: Column(
+            children: [
+              for (var i = 0; i < declines.length; i++) ...[
+                if (i > 0) Divider(height: 1, indent: 66, color: palette.border.withValues(alpha: 0.8)),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      UserAvatar(initials: declines[i].name.isEmpty ? '?' : declines[i].name[0].toUpperCase(), imageUrl: declines[i].avatarUrl, size: 40),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(declines[i].name, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 14, fontWeight: FontWeight.w800, color: palette.textPrimary)),
+                            const SizedBox(height: 3),
+                            Text(
+                              declines[i].message.isEmpty ? 'Can’t make the new time.' : '“${declines[i].message}”',
+                              style: TextStyle(fontSize: 13, height: 1.35, color: palette.textSecondary),
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              [
+                                if (declines[i].declinedAt != null) Fmt.relative(declines[i].declinedAt!),
+                                if (declines[i].refunded > 0) '${Fmt.money(declines[i].refunded)} refunded to their wallet',
+                              ].join(' · '),
+                              style: TextStyle(fontSize: 11.5, color: palette.textTertiary),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
       ],
     );
   }

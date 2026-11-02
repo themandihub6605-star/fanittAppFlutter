@@ -67,11 +67,44 @@ class _LiveDetailScreenState extends State<LiveDetailScreen> {
           title: d.live.title,
           connection: joined.connection,
           isHost: joined.isHost,
+          isCoHost: joined.isCoHost,
           chatEnabled: d.live.chatEnabled,
           storeId: d.live.storeId,
-          hostName: d.storeName,
+          hostName: d.collab?.hostName ?? d.storeName,
         ),
       );
+      if (mounted) _cubit.refresh();
+    } on ApiException catch (e) {
+      if (mounted) AppSnackbar.error(context, e.displayMessage);
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  /// Collab invite: accept (joins right away if it's live) or decline.
+  Future<void> _respondCollab(LiveDetail d, bool accept) async {
+    HapticFeedback.mediumImpact();
+    setState(() => _busy = true);
+    try {
+      final r = await sl<StoreRepository>().respondCollab(d.live.id, accept: accept);
+      if (!mounted) return;
+      if (r.connection != null) {
+        await context.push(
+          AppRoutes.liveRoom,
+          extra: LiveRoomArgs(
+            liveId: d.live.id,
+            title: d.live.title,
+            connection: r.connection!,
+            isHost: false,
+            isCoHost: true,
+            chatEnabled: d.live.chatEnabled,
+            storeId: d.live.storeId,
+            hostName: d.collab?.hostName ?? d.storeName,
+          ),
+        );
+      } else {
+        AppSnackbar.info(context, accept ? 'Accepted — we’ll tell you when the live starts' : 'Invite declined');
+      }
       if (mounted) _cubit.refresh();
     } on ApiException catch (e) {
       if (mounted) AppSnackbar.error(context, e.displayMessage);
@@ -136,6 +169,47 @@ class _LiveDetailScreenState extends State<LiveDetailScreen> {
     final live = d.live;
     final access = d.access;
     final palette = context.palette;
+
+    // Collab: the host invited me to go live together.
+    final collab = d.collab;
+    final running = live.isLive;
+    if (collab != null && live.status != LiveStatus.ended && live.status != LiveStatus.cancelled) {
+      if (collab.isInvited) {
+        return Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text(
+              '${collab.hostName} invited you to go live together 🎥',
+              textAlign: TextAlign.center,
+              style: context.text.titleSmall?.copyWith(fontWeight: FontWeight.w800),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              running ? 'Accept to join them on screen now — your camera and mic turn on.' : 'Accept and we’ll tell you when it starts.',
+              textAlign: TextAlign.center,
+              style: context.text.bodySmall,
+            ),
+            const SizedBox(height: AppSpacing.sm),
+            Row(
+              children: [
+                Expanded(child: AppButton.secondary(label: 'Decline', height: 50, onPressed: _busy ? null : () => _respondCollab(d, false))),
+                const SizedBox(width: AppSpacing.sm),
+                Expanded(
+                  flex: 2,
+                  child: AppButton(label: running ? 'Accept & join' : 'Accept', icon: AppIcons.handshake, height: 50, isLoading: _busy, onPressed: _busy ? null : () => _respondCollab(d, true)),
+                ),
+              ],
+            ),
+          ],
+        );
+      }
+      if (collab.isAccepted) {
+        return running
+            ? _JoinButton(label: 'Join as co-host', busy: _busy, onTap: _busy ? null : () => _join(d))
+            : _Note(icon: AppIcons.handshake, text: 'You’re co-hosting with ${collab.hostName} — we’ll tell you when it starts.', color: AppColors.success);
+      }
+    }
 
     if (access.isPrivateBlocked) {
       return AppButton(label: 'Unlock with code', icon: AppIcons.lock, height: 52, onPressed: _useCode);

@@ -7,6 +7,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
+import '../../../../core/services/image_crop.dart';
 import '../../../../core/bloc/action_cubit.dart';
 import '../../../../core/di/injection.dart';
 import '../../../../core/network/api_exception.dart';
@@ -149,7 +150,7 @@ class _EditorBodyState extends State<_EditorBody> {
   }
 
   Future<void> _pickCover() async {
-    final image = await sl<MediaPicker>().image();
+    final image = await ImageCrop.pick(ImageSlot.productCover);
     if (image == null || !mounted) return;
     final result = await context.read<ActionCubit>().run('cover', () => _repo.uploadCover(_p!.id, image));
     if (result != null && mounted) widget.onChanged(result);
@@ -267,17 +268,8 @@ class _EditorBodyState extends State<_EditorBody> {
                 url: p.coverUrl.isEmpty ? null : p.coverUrl,
                 enabled: !busy,
                 onPick: _pickCover,
-                previewBuilder: (context, image) => ProductCardPreview(
-                  image: image,
-                  title: _title.text.trim(),
-                  category: _category,
-                  free: _free,
-                  pricePaise: _pricePaise,
-                  storeName: p.storeName,
-                  storeLogoUrl: p.storeLogoUrl,
-                  sold: p.salesCount,
-                  fileCount: p.files.length,
-                ),
+                // Home shows the picture on its own (title under it), so the box
+                // shows just the picture, cropped to the same shape.
               ),
             ),
             const SizedBox(height: AppSpacing.lg),

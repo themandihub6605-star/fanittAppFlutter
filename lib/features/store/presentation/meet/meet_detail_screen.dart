@@ -18,6 +18,7 @@ import '../../../../core/theme/app_palette.dart';
 import '../../../../core/theme/app_spacing.dart';
 import '../../../../core/utils/formatters.dart';
 import '../../../../core/widgets/app_button.dart';
+import '../../../../core/widgets/app_sheet.dart';
 import '../../../../core/widgets/app_snackbar.dart';
 import '../../../../core/widgets/async_view.dart';
 import '../../../../core/widgets/user_avatar.dart';
@@ -112,6 +113,26 @@ class _MeetDetailScreenState extends State<MeetDetailScreen> {
       await _load();
     } on PaymentCancelled {
       // Closed the checkout.
+    } on ApiException catch (e) {
+      if (mounted) AppSnackbar.error(context, e.displayMessage);
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  /// "I won't join" after a reschedule: optional message → host, money back.
+  Future<void> _decline(MeetDetail d) async {
+    final a = d.access;
+    if (a.bookingId == null) return;
+    final message = await showAppSheet<String>(context, builder: (_) => _DeclineSheet(refund: a.refundAmount, until: a.declineUntil));
+    if (message == null || !mounted) return;
+    setState(() => _busy = true);
+    try {
+      final refunded = await _repo.declineMeetBooking(a.bookingId!, message: message);
+      if (!mounted) return;
+      HapticFeedback.mediumImpact();
+      AppSnackbar.success(context, refunded > 0 ? '${Fmt.money(refunded)} is back in your Fanitt wallet' : 'The host has been told');
+      await _load();
     } on ApiException catch (e) {
       if (mounted) AppSnackbar.error(context, e.displayMessage);
     } finally {
@@ -256,7 +277,23 @@ class _MeetDetailScreenState extends State<MeetDetailScreen> {
           Text(m.description, style: context.text.bodyMedium?.copyWith(color: palette.textPrimary, height: 1.5)),
         ],
         const SizedBox(height: AppSpacing.xl),
+        // Fan: the host just moved it → can opt out for 30 minutes.
+        if (a.canDecline) ...[
+          _RescheduledCard(
+            previous: a.previousScheduledAt,
+            until: a.declineUntil,
+            refund: a.refundAmount,
+            busy: _busy,
+            onDecline: () => _decline(d),
+          ),
+          const SizedBox(height: AppSpacing.md),
+        ],
         action,
+        // Host: fans who can't make the new time, with their messages.
+        if (a.isHost && a.declines.isNotEmpty) ...[
+          const SizedBox(height: AppSpacing.lg),
+          _DeclinesList(declines: a.declines),
+        ],
         // Host: who came, and how long each person stayed.
         if (a.isHost && (m.isLive || a.reason == 'ended')) ...[
           const SizedBox(height: AppSpacing.sm),
@@ -269,6 +306,151 @@ class _MeetDetailScreenState extends State<MeetDetailScreen> {
         const SizedBox(height: AppSpacing.sm),
         Text('Meetings happen right here in the Fanitt app — no other app or passcode needed.', textAlign: TextAlign.center, style: context.text.bodySmall),
       ],
+    );
+  }
+}
+
+/// "Time changed — can't make it?" card for a booked fan.
+class _RescheduledCard extends StatelessWidget {
+  const _RescheduledCard({required this.previous, required this.until, required this.refund, required this.busy, required this.onDecline});
+
+  final DateTime? previous;
+  final DateTime? until;
+  final int refund;
+  final bool busy;
+  final VoidCallback onDecline;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.palette;
+    final left = until == null ? null : until!.difference(DateTime.now());
+    final minutes = left == null ? null : left.inMinutes.clamp(1, 30);
+    return Container(
+      padding: const EdgeInsets.all(AppSpacing.md),
+      decoration: BoxDecoration(
+        color: palette.surface,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: palette.borderStrong),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              Icon(AppIcons.clock, size: 18, color: palette.textPrimary),
+              const SizedBox(width: 8),
+              Expanded(child: Text('The host changed the time', style: context.text.titleSmall?.copyWith(fontWeight: FontWeight.w800))),
+            ],
+          ),
+          if (previous != null) ...[
+            const SizedBox(height: 4),
+            Text('Was ${Fmt.weekdayDateTime(previous!.toLocal())}', style: context.text.bodySmall?.copyWith(decoration: TextDecoration.lineThrough)),
+          ],
+          const SizedBox(height: 6),
+          Text(
+            'Can’t make the new time? Tell the host${minutes == null ? '' : ' within $minutes min'}'
+                '${refund > 0 ? ' and ${Fmt.money(refund)} comes back to your Fanitt wallet.' : '.'}',
+            style: context.text.bodySmall?.copyWith(color: palette.textSecondary, height: 1.4),
+          ),
+          const SizedBox(height: AppSpacing.sm),
+          AppButton.secondary(label: 'I won’t join', icon: AppIcons.xCircle, height: 46, isLoading: busy, onPressed: busy ? null : onDecline),
+        ],
+      ),
+    );
+  }
+}
+
+/// Asks for an optional message to the host, then confirms.
+class _DeclineSheet extends StatefulWidget {
+  const _DeclineSheet({required this.refund, this.until});
+
+  final int refund;
+  final DateTime? until;
+
+  @override
+  State<_DeclineSheet> createState() => _DeclineSheetState();
+}
+
+class _DeclineSheetState extends State<_DeclineSheet> {
+  final _message = TextEditingController();
+
+  @override
+  void dispose() {
+    _message.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.palette;
+    return SheetBody(
+      title: 'Can’t join the new time?',
+      subtitle: widget.refund > 0 ? '${Fmt.money(widget.refund)} goes back to your Fanitt wallet right away.' : 'Your seat is freed for someone else.',
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          TextField(
+            controller: _message,
+            maxLength: 300,
+            minLines: 2,
+            maxLines: 4,
+            textCapitalization: TextCapitalization.sentences,
+            decoration: InputDecoration(
+              labelText: 'Message to the host (optional)',
+              hintText: 'Sorry, I have work at that time.',
+              filled: true,
+              fillColor: palette.surfaceMuted,
+              border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
+            ),
+          ),
+          const SizedBox(height: AppSpacing.md),
+          AppButton(label: 'I won’t join', onPressed: () => Navigator.of(context).pop(_message.text.trim())),
+          const SizedBox(height: AppSpacing.xs),
+          TextButton(onPressed: () => Navigator.of(context).pop(), child: Text('Keep my booking', style: TextStyle(color: palette.textSecondary))),
+        ],
+      ),
+    );
+  }
+}
+
+/// Host: fans who said they can't make the new time.
+class _DeclinesList extends StatelessWidget {
+  const _DeclinesList({required this.declines});
+
+  final List<SessionDecline> declines;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.palette;
+    return Container(
+      decoration: BoxDecoration(color: palette.surface, borderRadius: BorderRadius.circular(16), border: Border.all(color: palette.borderStrong)),
+      padding: const EdgeInsets.all(AppSpacing.md),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('Can’t join the new time · ${declines.length}', style: context.text.titleSmall?.copyWith(fontWeight: FontWeight.w800)),
+          for (final x in declines) ...[
+            const SizedBox(height: AppSpacing.sm),
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                UserAvatar(initials: x.name.isEmpty ? '?' : x.name[0].toUpperCase(), imageUrl: x.avatarUrl.isEmpty ? null : x.avatarUrl, size: 34),
+                const SizedBox(width: AppSpacing.sm),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(x.name, style: context.text.titleSmall),
+                      Text(x.message.isEmpty ? 'Can’t make the new time.' : '“${x.message}”', style: context.text.bodySmall?.copyWith(color: palette.textSecondary, height: 1.35)),
+                      if (x.refunded > 0) Text('${Fmt.money(x.refunded)} refunded to their wallet', style: context.text.bodySmall?.copyWith(fontSize: 11.5, color: palette.textTertiary)),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ],
+      ),
     );
   }
 }

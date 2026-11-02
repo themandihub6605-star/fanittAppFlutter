@@ -7,6 +7,7 @@ import 'package:flutter_animate/flutter_animate.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../../core/services/image_crop.dart';
 import '../../../../core/bloc/action_cubit.dart';
 import '../../../../core/bloc/load_cubit.dart';
 import '../../../../core/di/injection.dart';
@@ -590,7 +591,7 @@ class _ProfileStepState extends State<_ProfileStep> {
   }
 
   Future<void> _pickImage({required bool banner}) async {
-    final image = await sl<MediaPicker>().image();
+    final image = await ImageCrop.pick(banner ? ImageSlot.storeBanner : ImageSlot.logo);
     if (image == null || !mounted) return;
     final result = await context.read<ActionCubit>().run('image', () => sl<StoreRepository>().uploadStoreImage(image, banner: banner));
     if (result != null && mounted) {
@@ -618,13 +619,8 @@ class _ProfileStepState extends State<_ProfileStep> {
                 optional: true,
                 enabled: !busy,
                 onPick: () => _pickImage(banner: true),
-                previewBuilder: (context, image) => StorefrontPreview(
-                  banner: image,
-                  name: _name.text.trim(),
-                  tagline: _tagline.text.trim(),
-                  logoUrl: store.logoUrl,
-                  sold: store.stats.orders,
-                ),
+                // Home shows the picture on its own (title under it), so the box
+                // shows just the picture, cropped to the same shape.
               ),
             ),
             const SizedBox(height: AppSpacing.lg),

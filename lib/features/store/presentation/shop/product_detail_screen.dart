@@ -88,9 +88,15 @@ class _Body extends StatelessWidget {
     return ListView(
       padding: const EdgeInsets.fromLTRB(AppSpacing.gutter, AppSpacing.xs, AppSpacing.gutter, AppSpacing.huge),
       children: [
-        ClipRRect(
-          borderRadius: BorderRadius.circular(AppRadius.lg),
-          child: AspectRatio(aspectRatio: 16 / 10, child: StoreImage(url: p.coverUrl, icon: AppIcons.package)),
+        // Square cover, the same shape the creator cropped — never cut off.
+        Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 320),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(AppRadius.lg),
+              child: AspectRatio(aspectRatio: 1, child: StoreImage(url: p.coverUrl, icon: AppIcons.package)),
+            ),
+          ),
         ).animate().fadeIn(duration: 350.ms).scaleXY(begin: 0.97, curve: Curves.easeOutCubic),
         const SizedBox(height: AppSpacing.md),
         Row(

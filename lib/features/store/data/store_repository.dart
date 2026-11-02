@@ -322,6 +322,23 @@ class StoreRepository {
     await _api.post('/store/me/lives/$liveId/cancel', data: {'reason': reason}, parser: (_) => null);
   }
 
+  // ---------- live: "Request to join" (one viewer on screen with the host) ----------
+
+  /// Host accepts a viewer's request → they can turn on camera + mic.
+  Future<void> addLiveGuest(String liveId, String identity) async {
+    await _api.post('/store/me/lives/$liveId/guest', data: {'identity': identity}, parser: (_) => null);
+  }
+
+  /// Host takes the guest off screen.
+  Future<void> removeLiveGuest(String liveId) async {
+    await _api.post('/store/me/lives/$liveId/guest/remove', parser: (_) => null);
+  }
+
+  /// The guest leaves the stage (keeps watching).
+  Future<void> leaveLiveGuest(String liveId) async {
+    await _api.post('/store/lives/$liveId/guest/leave', parser: (_) => null);
+  }
+
   // ---------- live streams: viewers ----------
 
   Future<LiveDetail> liveDetail(String liveId, {String? invite}) async => (await _api.get(
@@ -373,13 +390,46 @@ class StoreRepository {
   ))
       .data;
 
-  /// Viewer (or host) connection for a running live.
-  Future<({LiveConnection connection, bool isHost})> joinLive(String liveId, {String? invite}) async => (await _api.post(
+  /// Viewer (or host / co-host) connection for a running live.
+  Future<({LiveConnection connection, bool isHost, bool isCoHost})> joinLive(String liveId, {String? invite}) async => (await _api.post(
     '/store/lives/$liveId/join',
     data: {if (invite != null && invite.isNotEmpty) 'invite': invite},
     parser: (d) {
       final m = J.asMap(d);
-      return (connection: LiveConnection.fromJson(J.map(m, 'connection')), isHost: J.str(m, 'role') == 'host');
+      final role = J.str(m, 'role');
+      return (connection: LiveConnection.fromJson(J.map(m, 'connection')), isHost: role == 'host', isCoHost: role == 'cohost');
+    },
+  ))
+      .data;
+
+  // ---------- collab lives: go live together with other creators ----------
+
+  static ({List<LiveCollaborator> items, int max}) _collabs(dynamic d) {
+    final m = J.asMap(d);
+    return (items: J.list(m, 'collaborators', LiveCollaborator.fromJson), max: J.integer(m, 'max', 2));
+  }
+
+  /// Host: creators invited to this live.
+  Future<({List<LiveCollaborator> items, int max})> liveCollaborators(String liveId) async =>
+      (await _api.get('/store/me/lives/$liveId/collaborators', parser: _collabs)).data;
+
+  /// Host: invite a creator (by their user id).
+  Future<({List<LiveCollaborator> items, int max})> inviteCollaborator(String liveId, String userId) async =>
+      (await _api.post('/store/me/lives/$liveId/collaborators', data: {'userId': userId}, parser: _collabs)).data;
+
+  /// Host: remove a co-host / cancel an invite.
+  Future<({List<LiveCollaborator> items, int max})> removeCollaborator(String liveId, String userId) async =>
+      (await _api.delete('/store/me/lives/$liveId/collaborators/$userId', parser: _collabs)).data;
+
+  /// Invited creator: accept / decline. Accepting while it's live returns a
+  /// connection to join on screen right away.
+  Future<({String status, LiveConnection? connection})> respondCollab(String liveId, {required bool accept}) async => (await _api.post(
+    '/store/lives/$liveId/collab/respond',
+    data: {'accept': accept},
+    parser: (d) {
+      final m = J.asMap(d);
+      final c = J.map(m, 'connection');
+      return (status: J.str(m, 'status'), connection: c == null ? null : LiveConnection.fromJson(c));
     },
   ))
       .data;
@@ -675,6 +725,15 @@ class StoreRepository {
       parser: (_) => null,
     );
   }
+
+  /// "I won't join" after the host rescheduled (within 30 minutes). Paid
+  /// bookings are refunded to the Fanitt wallet. Returns paise refunded.
+  Future<int> declineMeetBooking(String bookingId, {String message = ''}) async => (await _api.patch(
+    '/bookings/$bookingId/decline',
+    data: {'message': message},
+    parser: (d) => J.integer(J.asMap(d), 'refunded'),
+  ))
+      .data;
 
   /// Meets anyone can find. tab: live | upcoming | booked.
   Future<Paged<StoreMeet>> meets({String tab = 'upcoming', List<String>? ids, int page = 1}) async => (await _api.get(

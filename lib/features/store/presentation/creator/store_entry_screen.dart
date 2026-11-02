@@ -5,6 +5,7 @@ import 'package:flutter_animate/flutter_animate.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../../core/services/image_crop.dart';
 import '../../../../core/bloc/action_cubit.dart';
 import '../../../../core/bloc/load_cubit.dart';
 import '../../../../core/di/injection.dart';
@@ -12,7 +13,6 @@ import '../../../../core/network/api_exception.dart';
 import '../../../../core/router/app_routes.dart';
 import '../../../../core/services/feature_flags.dart';
 import '../../../../core/services/share_service.dart';
-import '../../../../core/services/media_picker.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_icons.dart';
 import '../../../../core/theme/app_palette.dart';
@@ -873,7 +873,7 @@ class _EditStoreSheetState extends State<_EditStoreSheet> {
   }
 
   Future<void> _image(bool banner) async {
-    final picked = await sl<MediaPicker>().image();
+    final picked = await ImageCrop.pick(banner ? ImageSlot.storeBanner : ImageSlot.logo);
     if (picked == null || !mounted) return;
     final result = await context.read<ActionCubit>().run('image', () => sl<StoreRepository>().uploadStoreImage(picked, banner: banner));
     if (result != null && mounted) {
@@ -912,13 +912,8 @@ class _EditStoreSheetState extends State<_EditStoreSheet> {
               optional: true,
               enabled: !busy,
               onPick: () => _image(true),
-              previewBuilder: (context, image) => StorefrontPreview(
-                banner: image,
-                name: _name.text.trim(),
-                tagline: _tagline.text.trim(),
-                logoUrl: _store.logoUrl,
-                sold: _store.stats.orders,
-              ),
+              // Home shows the picture on its own (title under it), so the box
+              // shows just the picture, cropped to the same shape.
             ),
           ),
           const SizedBox(height: AppSpacing.md),

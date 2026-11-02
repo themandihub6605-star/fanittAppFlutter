@@ -141,7 +141,7 @@ class _MyProductsScreenState extends State<MyProductsScreen> {
                         SliverPadding(
                           padding: const EdgeInsets.fromLTRB(AppSpacing.gutter, 8, AppSpacing.gutter, 100),
                           sliver: SliverGrid.builder(
-                            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: 2, mainAxisSpacing: AppSpacing.sm, crossAxisSpacing: AppSpacing.sm, childAspectRatio: 0.66),
+                            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: 2, mainAxisSpacing: AppSpacing.sm, crossAxisSpacing: AppSpacing.sm, childAspectRatio: 0.55),
                             itemCount: shown.length,
                             itemBuilder: (context, i) => ProductTile(
                               product: shown[i],

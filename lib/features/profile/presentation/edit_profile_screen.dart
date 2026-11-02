@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
+import '../../../core/services/image_crop.dart';
 import '../../../core/bloc/action_cubit.dart';
 import '../../../core/bloc/load_cubit.dart';
 import '../../../core/di/injection.dart';
@@ -181,7 +182,9 @@ class _AvatarPicker extends StatelessWidget {
     final hasUrl = (url ?? '').isNotEmpty;
 
     Future<void> pick() async {
-      final image = await sl<MediaPicker>().image();
+      // Crop to the shape it's shown in: the tall Home card for creators,
+      // a circle for the brand logo / fan photo.
+      final image = await ImageCrop.pick(creatorCard != null ? ImageSlot.creatorPhoto : (isLogo ? _logoSlot : _photoSlot));
       if (image == null || !context.mounted) return;
       final repo = sl<ProfileRepository>();
       final uploaded = await context.read<ActionCubit>().run(

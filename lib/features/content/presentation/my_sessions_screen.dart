@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
+import '../../../core/services/image_crop.dart';
 import '../../../core/bloc/action_cubit.dart';
 import '../../../core/bloc/load_cubit.dart';
 import '../../../core/bloc/paged_cubit.dart';
@@ -11,6 +12,7 @@ import '../../../core/di/injection.dart';
 import '../../../core/models/common_models.dart';
 import '../../../core/network/api_exception.dart';
 import '../../../core/services/media_picker.dart';
+import '../../../core/services/share_service.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_icons.dart';
 import '../../../core/theme/app_palette.dart';
@@ -323,7 +325,7 @@ class _StatBox extends StatelessWidget {
   }
 }
 
-enum _More { edit, postpone, tips, cancel }
+enum _More { share, copyLink, edit, reschedule, tips, cancel }
 
 class _SessionCard extends StatelessWidget {
   const _SessionCard({required this.item});
@@ -370,9 +372,29 @@ class _SessionCard extends StatelessWidget {
     if (updated == true && context.mounted) _reload(context);
   }
 
-  Future<void> _postpone(BuildContext context) async {
-    final moved = await showAppSheet<bool>(context, builder: (_) => SheetActionScope(child: _PostponeSheet(session: session)));
+  Future<void> _reschedule(BuildContext context) async {
+    final moved = await showAppSheet<bool>(context, builder: (_) => SheetActionScope(child: _RescheduleSheet(session: session)));
     if (moved == true && context.mounted) _reload(context);
+  }
+
+  ShareMessage _shareMessage(BuildContext context) {
+    final auth = context.read<AuthBloc>().state;
+    return ShareService.session(
+      id: session.id,
+      title: session.title,
+      host: auth is AuthAuthenticated ? auth.user.name : '',
+      when: session.scheduledAt,
+      price: session.type == SessionType.free ? 0 : session.price,
+      mine: true,
+    );
+  }
+
+  Future<void> _share(BuildContext context) => ShareService.send(context, _shareMessage(context));
+
+  Future<void> _copyLink(BuildContext context) async {
+    HapticFeedback.selectionClick();
+    await Clipboard.setData(ClipboardData(text: ShareLinks.open('session', session.id)));
+    if (context.mounted) AppSnackbar.success(context, 'Link copied — paste it anywhere to share');
   }
 
   Future<void> _bookings(BuildContext context) async {
@@ -383,10 +405,14 @@ class _SessionCard extends StatelessWidget {
 
   void _more(BuildContext context, _More m) {
     switch (m) {
+      case _More.share:
+        _share(context);
+      case _More.copyLink:
+        _copyLink(context);
       case _More.edit:
         _edit(context);
-      case _More.postpone:
-        _postpone(context);
+      case _More.reschedule:
+        _reschedule(context);
       case _More.tips:
         showAppSheet<void>(context, builder: (_) => _TipsSheet(session: session));
       case _More.cancel:
@@ -486,6 +512,17 @@ class _SessionCard extends StatelessWidget {
                             child: Text(_countdown(s.scheduledAt), style: TextStyle(color: palette.textPrimary, fontSize: 10.5, fontWeight: FontWeight.w800)),
                           ),
                         const Spacer(),
+                        // Share is always one tap away (live or not).
+                        SizedBox(
+                          width: 32,
+                          height: 32,
+                          child: IconButton(
+                            padding: EdgeInsets.zero,
+                            tooltip: 'Share',
+                            icon: Icon(AppIcons.share, size: 18, color: palette.textSecondary),
+                            onPressed: () => _share(context),
+                          ),
+                        ),
                         if (!s.isLive)
                           SizedBox(
                             width: 32,
@@ -498,8 +535,10 @@ class _SessionCard extends StatelessWidget {
                               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
                               onSelected: (m) => _more(context, m),
                               itemBuilder: (_) => [
+                                const PopupMenuItem(value: _More.share, child: _MenuRow(icon: AppIcons.share, label: 'Share')),
+                                const PopupMenuItem(value: _More.copyLink, child: _MenuRow(icon: AppIcons.link, label: 'Copy link')),
                                 const PopupMenuItem(value: _More.edit, child: _MenuRow(icon: AppIcons.pencil, label: 'Edit')),
-                                const PopupMenuItem(value: _More.postpone, child: _MenuRow(icon: AppIcons.calendar, label: 'Postpone')),
+                                const PopupMenuItem(value: _More.reschedule, child: _MenuRow(icon: AppIcons.calendar, label: 'Reschedule')),
                                 const PopupMenuItem(value: _More.tips, child: _MenuRow(icon: AppIcons.gift, label: 'Tips')),
                                 const PopupMenuItem(value: _More.cancel, child: _MenuRow(icon: AppIcons.xCircle, label: 'Cancel session', danger: true)),
                               ],
@@ -788,16 +827,12 @@ class _NewSessionSheetState extends State<_NewSessionSheet> {
                 optional: true,
                 enabled: !busy,
                 onPick: () async {
-                  final image = await sl<MediaPicker>().image();
+                  final image = await ImageCrop.pick(ImageSlot.meetPoster);
                   if (image != null) setState(() => _cover = image);
                 },
                 onRemove: () => setState(() => _cover = null),
-                previewBuilder: (context, image) => MeetPosterPreview(
-                  image: image,
-                  title: _title.text.trim(),
-                  when: _when,
-                  durationMinutes: _duration,
-                ),
+                // Home shows the picture on its own (title under it), so the box
+                // shows just the picture, cropped to the same shape.
               ),
             ),
             const SizedBox(height: AppSpacing.md),
@@ -965,15 +1000,11 @@ class _EditSessionSheetState extends State<_EditSessionSheet> {
               url: current,
               enabled: !busy,
               onPick: () async {
-                final picked = await sl<MediaPicker>().image();
+                final picked = await ImageCrop.pick(ImageSlot.meetPoster);
                 if (picked != null) setState(() => _cover = picked);
               },
-              previewBuilder: (context, image) => MeetPosterPreview(
-                image: image,
-                title: _title.text.trim(),
-                when: widget.session.scheduledAt,
-                durationMinutes: int.tryParse(_duration.text.trim()) ?? widget.session.durationMinutes,
-              ),
+              // Home shows the picture on its own (title under it), so the box
+              // shows just the picture, cropped to the same shape.
             ),
           ),
           const SizedBox(height: AppSpacing.md),
@@ -1002,16 +1033,19 @@ class _EditSessionSheetState extends State<_EditSessionSheet> {
 }
 
 /// Move a session to a new date and time. People who booked get a notification.
-class _PostponeSheet extends StatefulWidget {
-  const _PostponeSheet({required this.session});
+/// Reschedule: any new date and time — earlier or later. Everyone who booked
+/// is told and has 30 minutes to say "I won't join" (paid bookings get their
+/// money back in their Fanitt wallet).
+class _RescheduleSheet extends StatefulWidget {
+  const _RescheduleSheet({required this.session});
 
   final LiveSession session;
 
   @override
-  State<_PostponeSheet> createState() => _PostponeSheetState();
+  State<_RescheduleSheet> createState() => _RescheduleSheetState();
 }
 
-class _PostponeSheetState extends State<_PostponeSheet> {
+class _RescheduleSheetState extends State<_RescheduleSheet> {
   DateTime? _when;
   final _note = TextEditingController();
 
@@ -1023,14 +1057,25 @@ class _PostponeSheetState extends State<_PostponeSheet> {
 
   Future<void> _pick() async {
     final now = DateTime.now();
-    final start = widget.session.scheduledAt.isAfter(now) ? widget.session.scheduledAt : now;
-    final date = await showDatePicker(context: context, initialDate: start.add(const Duration(days: 1)), firstDate: now, lastDate: now.add(const Duration(days: 180)));
+    final current = widget.session.scheduledAt.toLocal();
+    // Start from the current date so moving earlier is as easy as later.
+    final initial = (_when ?? current).isBefore(now) ? now : (_when ?? current);
+    final date = await showDatePicker(
+      context: context,
+      initialDate: DateTime(initial.year, initial.month, initial.day),
+      firstDate: DateTime(now.year, now.month, now.day),
+      lastDate: now.add(const Duration(days: 180)),
+    );
     if (date == null || !mounted) return;
-    final time = await showTimePicker(context: context, initialTime: TimeOfDay.fromDateTime(widget.session.scheduledAt));
+    final time = await showTimePicker(context: context, initialTime: TimeOfDay.fromDateTime(_when ?? current));
     if (time == null) return;
     final picked = DateTime(date.year, date.month, date.day, time.hour, time.minute);
     if (picked.isBefore(DateTime.now().add(const Duration(minutes: 5)))) {
       if (mounted) AppSnackbar.error(context, 'Pick a time at least 5 minutes from now');
+      return;
+    }
+    if (picked.isAtSameMomentAs(current)) {
+      if (mounted) AppSnackbar.error(context, 'That’s the same time — pick a different one');
       return;
     }
     setState(() => _when = picked);
@@ -1041,10 +1086,10 @@ class _PostponeSheetState extends State<_PostponeSheet> {
       AppSnackbar.error(context, 'Pick the new date and time');
       return;
     }
-    final ok = await context.read<ActionCubit>().run('postpone', () async {
+    final ok = await context.read<ActionCubit>().run('reschedule', () async {
       await sl<ContentRepository>().updateSession(widget.session.id, scheduledAt: _when, rescheduleNote: _note.text.trim());
       return true;
-    }, success: widget.session.bookedCount > 0 ? 'Moved — everyone who booked has been told' : 'Session moved');
+    }, success: widget.session.bookedCount > 0 ? 'Rescheduled — everyone who booked has been told' : 'Session rescheduled');
     if (ok == true && mounted) Navigator.of(context).pop(true);
   }
 
@@ -1053,8 +1098,8 @@ class _PostponeSheetState extends State<_PostponeSheet> {
     final busy = context.watch<ActionCubit>().state.isBusy;
     final palette = context.palette;
     return SheetBody(
-      title: 'Postpone session',
-      subtitle: 'Now: ${Fmt.weekdayDateTime(widget.session.scheduledAt)}',
+      title: 'Reschedule session',
+      subtitle: 'Now: ${Fmt.weekdayDateTime(widget.session.scheduledAt.toLocal())} · move it earlier or later',
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
@@ -1086,11 +1131,28 @@ class _PostponeSheetState extends State<_PostponeSheet> {
           AppTextField(label: 'Message to attendees (optional)', hint: 'Sorry for the change — see you then!', controller: _note, maxLength: 300, minLines: 2, maxLines: 3),
           if (widget.session.bookedCount > 0) ...[
             const SizedBox(height: AppSpacing.xs),
-            Text('${widget.session.bookedCount} people booked this. They’ll get a notification with the new time.', style: context.text.bodySmall),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(color: palette.surfaceMuted, borderRadius: BorderRadius.circular(12)),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Icon(AppIcons.info, size: 16, color: palette.textSecondary),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      '${widget.session.bookedCount} ${widget.session.bookedCount == 1 ? 'person' : 'people'} booked this. They get a notification and have 30 minutes to say they can’t join'
+                          '${widget.session.type == SessionType.free ? '.' : ' — their money goes back to their Fanitt wallet.'} You’ll see their messages in Bookings.',
+                      style: context.text.bodySmall?.copyWith(height: 1.35),
+                    ),
+                  ),
+                ],
+              ),
+            ),
           ],
           const SizedBox(height: AppSpacing.md),
           const InlineActionError(),
-          AppButton(label: 'Move session', icon: AppIcons.calendar, isLoading: busy, onPressed: busy ? null : _save),
+          AppButton(label: 'Reschedule', icon: AppIcons.calendar, isLoading: busy, onPressed: busy ? null : _save),
         ],
       ),
     );

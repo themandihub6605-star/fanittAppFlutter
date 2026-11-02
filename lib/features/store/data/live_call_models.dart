@@ -181,16 +181,18 @@ class LiveAccess extends Equatable {
 }
 
 class LiveDetail extends Equatable {
-  const LiveDetail({required this.live, required this.access, required this.storeName, required this.storeSlug, required this.storeLogoUrl});
+  const LiveDetail({required this.live, required this.access, required this.storeName, required this.storeSlug, required this.storeLogoUrl, this.collab});
 
   factory LiveDetail.fromJson(Map<String, dynamic> json) {
     final store = J.map(json, 'store') ?? const <String, dynamic>{};
+    final collab = J.map(json, 'collab');
     return LiveDetail(
       live: LiveStream.fromJson(J.map(json, 'live') ?? const {}),
       access: LiveAccess.fromJson(J.map(json, 'access')),
       storeName: J.str(store, 'name'),
       storeSlug: J.str(store, 'slug'),
       storeLogoUrl: J.str(store, 'logoUrl'),
+      collab: collab == null ? null : LiveCollabInvite.fromJson(collab),
     );
   }
 
@@ -200,8 +202,45 @@ class LiveDetail extends Equatable {
   final String storeSlug;
   final String storeLogoUrl;
 
+  /// Set when the host invited me to go live together.
+  final LiveCollabInvite? collab;
+
   @override
-  List<Object?> get props => [live, access];
+  List<Object?> get props => [live, access, collab?.status];
+}
+
+/// "RK invited you to go live together" — what the invited creator sees.
+class LiveCollabInvite {
+  const LiveCollabInvite({required this.status, required this.hostName, required this.hostAvatarUrl});
+
+  factory LiveCollabInvite.fromJson(Map<String, dynamic> json) =>
+      LiveCollabInvite(status: J.str(json, 'status'), hostName: J.str(json, 'hostName', 'The host'), hostAvatarUrl: J.str(json, 'hostAvatarUrl'));
+
+  final String status; // invited | accepted
+  final String hostName;
+  final String hostAvatarUrl;
+
+  bool get isInvited => status == 'invited';
+  bool get isAccepted => status == 'accepted';
+}
+
+/// A creator the host invited to a collab live (host's list).
+class LiveCollaborator {
+  const LiveCollaborator({required this.userId, required this.name, required this.avatarUrl, required this.status});
+
+  factory LiveCollaborator.fromJson(Map<String, dynamic> json) => LiveCollaborator(
+    userId: J.refId(json, 'userId') ?? '',
+    name: J.str(json, 'name', 'Creator'),
+    avatarUrl: J.str(json, 'avatarUrl'),
+    status: J.str(json, 'status'),
+  );
+
+  final String userId;
+  final String name;
+  final String avatarUrl;
+  final String status; // invited | accepted | declined
+
+  String get statusLabel => switch (status) { 'accepted' => 'Accepted', 'declined' => 'Declined', _ => 'Invite sent' };
 }
 
 /// Where and how to join a LiveKit room.

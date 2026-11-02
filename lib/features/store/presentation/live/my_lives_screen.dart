@@ -5,6 +5,8 @@ import 'package:flutter_animate/flutter_animate.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../../core/services/image_crop.dart';
+import '../../../../core/widgets/image_upload_box.dart';
 import '../../../../core/bloc/load_cubit.dart';
 import '../../../../core/di/injection.dart';
 import '../../../../core/network/api_exception.dart';
@@ -21,10 +23,12 @@ import '../../../../core/widgets/app_snackbar.dart';
 import '../../../../core/widgets/app_text_field.dart';
 import '../../../../core/widgets/async_view.dart';
 import '../../../../core/widgets/user_avatar.dart';
+import '../../../auth/presentation/bloc/auth_bloc.dart';
 import '../../data/meet_host_api.dart';
 import '../../data/store_repository.dart';
 import '../meet/attendance_sheet.dart';
 import '../widgets/store_widgets.dart';
+import 'live_collab_sheet.dart';
 import 'live_room_screen.dart';
 import 'live_tickets_screen.dart';
 
@@ -394,7 +398,7 @@ class _StatBox extends StatelessWidget {
   }
 }
 
-enum _More { edit, invite, tickets, cancel }
+enum _More { edit, collab, invite, tickets, cancel }
 
 class _UpcomingCard extends StatelessWidget {
   const _UpcomingCard({required this.item});
@@ -465,6 +469,9 @@ class _UpcomingCard extends StatelessWidget {
     switch (m) {
       case _More.edit:
         _edit(context);
+      case _More.collab:
+        final auth = context.read<AuthBloc>().state;
+        showLiveCollabSheet(context, liveId: live.id, liveTitle: live.title, myUserId: auth is AuthAuthenticated ? auth.user.id : '');
       case _More.invite:
         _copyInvite(context);
       case _More.tickets:
@@ -531,6 +538,7 @@ class _UpcomingCard extends StatelessWidget {
                               onSelected: (m) => _more(context, m),
                               itemBuilder: (_) => [
                                 const PopupMenuItem(value: _More.edit, child: _MenuRow(icon: AppIcons.pencil, label: 'Edit')),
+                                const PopupMenuItem(value: _More.collab, child: _MenuRow(icon: AppIcons.handshake, label: 'Go live together')),
                                 if (hasInvite) const PopupMenuItem(value: _More.invite, child: _MenuRow(icon: AppIcons.copy, label: 'Copy invite')),
                                 if (!l.isFree) const PopupMenuItem(value: _More.tickets, child: _MenuRow(icon: AppIcons.receipt, label: 'Tickets')),
                                 const PopupMenuItem(value: _More.cancel, child: _MenuRow(icon: AppIcons.xCircle, label: 'Cancel live', danger: true)),
@@ -1180,7 +1188,7 @@ class _EditLiveSheetState extends State<_EditLiveSheet> {
             onTap: _busy
                 ? null
                 : () async {
-              final picked = await sl<MediaPicker>().image();
+              final picked = await ImageCrop.pick(ImageSlot.livePoster);
               if (picked != null) setState(() => _cover = picked);
             },
             child: Container(
@@ -1199,6 +1207,8 @@ class _EditLiveSheetState extends State<_EditLiveSheet> {
               ),
             ),
           ),
+          const SizedBox(height: AppSpacing.xs),
+          const CropHint(text: 'Pinch to zoom and drag to fit your poster inside the frame — that’s exactly how your live shows on Home.'),
           const SizedBox(height: AppSpacing.md),
           AppTextField(label: 'Title', controller: _title, maxLength: 120, textCapitalization: TextCapitalization.sentences),
           const SizedBox(height: AppSpacing.sm),

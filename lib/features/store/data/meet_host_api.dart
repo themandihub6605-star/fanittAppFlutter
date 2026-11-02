@@ -118,6 +118,7 @@ class SessionBookings {
     required this.earned,
     required this.bookedToday,
     required this.people,
+    this.declines = const [],
     this.scheduledAt,
   });
 
@@ -131,6 +132,7 @@ class SessionBookings {
     earned: J.integer(json, 'earned'),
     bookedToday: J.integer(json, 'bookedToday'),
     people: J.list(json, 'people', SessionBooker.fromJson),
+    declines: J.list(json, 'declines', SessionDecline.fromJson),
     scheduledAt: J.date(json, 'scheduledAt'),
   );
 
@@ -143,7 +145,31 @@ class SessionBookings {
   final int earned;
   final int bookedToday;
   final List<SessionBooker> people;
+
+  /// People who said "I won't join" after a reschedule, with their message.
+  final List<SessionDecline> declines;
   final DateTime? scheduledAt;
+}
+
+/// "I won't join" from a fan after the host moved the session.
+class SessionDecline {
+  const SessionDecline({required this.name, required this.avatarUrl, required this.message, required this.refunded, this.declinedAt});
+
+  factory SessionDecline.fromJson(Map<String, dynamic> json) => SessionDecline(
+    name: J.str(json, 'name', 'Fanitt user'),
+    avatarUrl: J.str(json, 'avatarUrl'),
+    message: J.str(json, 'message'),
+    refunded: J.integer(json, 'refunded'),
+    declinedAt: J.date(json, 'declinedAt'),
+  );
+
+  final String name;
+  final String avatarUrl;
+  final String message;
+
+  /// Paise refunded to their wallet (0 for free sessions).
+  final int refunded;
+  final DateTime? declinedAt;
 }
 
 class SessionBooker {

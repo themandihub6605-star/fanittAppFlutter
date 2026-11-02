@@ -226,7 +226,8 @@ class MarketProductCard extends StatefulWidget {
   final int index;
   final double? width;
 
-  static const double _imageRatio = 1.3;
+  /// Square cover — the same shape as on Home and in the upload crop.
+  static const double _imageRatio = 1;
 
   /// Exact card height for a card [width] wide: picture + 2-line title +
   /// store/price row + paddings. Grids use it so cards have no empty space.

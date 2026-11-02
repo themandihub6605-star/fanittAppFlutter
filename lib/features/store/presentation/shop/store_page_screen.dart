@@ -205,7 +205,8 @@ class _StoreBody extends StatelessWidget {
             SliverPadding(
               padding: const EdgeInsets.fromLTRB(AppSpacing.gutter, 0, AppSpacing.gutter, AppSpacing.huge),
               sliver: SliverGrid.builder(
-                gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: 2, mainAxisSpacing: AppSpacing.sm, crossAxisSpacing: AppSpacing.sm, childAspectRatio: 0.72),
+                // Taller cells: product covers are square now.
+                gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: 2, mainAxisSpacing: AppSpacing.sm, crossAxisSpacing: AppSpacing.sm, childAspectRatio: 0.62),
                 itemCount: page.products.length,
                 itemBuilder: (context, i) => ProductTile(
                   product: page.products[i],

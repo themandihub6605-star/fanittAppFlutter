@@ -3,7 +3,8 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
-import '../../../../core/di/injection.dart';
+import '../../../../core/widgets/image_upload_box.dart';
+import '../../../../core/services/image_crop.dart';
 import '../../../../core/network/api_exception.dart';
 import '../../../../core/services/media_picker.dart';
 import '../../../../core/theme/app_colors.dart';
@@ -147,14 +148,8 @@ class _ShopProductEditorScreenState extends State<ShopProductEditorScreen> {
   Future<void> _addPhotos() async {
     final room = _maxPhotos - _photos.length;
     if (room <= 0) return;
-    final picker = sl<MediaPicker>();
-    final List<PickedMedia> picked;
-    if (room >= 2) {
-      picked = await picker.images(limit: room);
-    } else {
-      final one = await picker.image();
-      picked = one == null ? const [] : [one];
-    }
+    // Square like the product card; each photo gets its own crop.
+    final picked = await ImageCrop.pickMany(ImageCrop.square, limit: room, title: 'Fit your product photo');
     if (picked.isEmpty || !mounted) return;
     setState(() => _photos = [..._photos, ...picked.take(room).map(_Photo.file)]);
   }
@@ -348,7 +343,9 @@ class _ShopProductEditorScreenState extends State<ShopProductEditorScreen> {
 
               // Photos
               FieldLabel('Photos (${_photos.length}/$_maxPhotos)', isRequired: true),
-              Text('First photo is the cover. Use clear, square photos on a plain background.', style: context.text.bodySmall),
+              Text('First photo is the cover. Use clear photos on a plain background.', style: context.text.bodySmall),
+              const SizedBox(height: AppSpacing.xs),
+              const CropHint(text: 'Pinch to zoom and drag to fit each photo inside the square frame — that’s exactly how it shows in the shop.'),
               const SizedBox(height: AppSpacing.xs),
               SizedBox(
                 height: 96,

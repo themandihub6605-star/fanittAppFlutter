@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
+import '../../../../core/services/image_crop.dart';
 import '../../../../core/bloc/action_cubit.dart';
 import '../../../../core/bloc/load_cubit.dart';
 import '../../../../core/di/injection.dart';
@@ -393,7 +394,7 @@ class _ProductSheetState extends State<_ProductSheet> {
                   onTap: busy
                       ? null
                       : () async {
-                    final picked = await sl<MediaPicker>().image();
+                    final picked = await ImageCrop.pick(ImageCrop.square, title: 'Fit your product photo');
                     if (picked != null) setState(() => _image = picked);
                   },
                   child: ClipRRect(
@@ -408,7 +409,12 @@ class _ProductSheetState extends State<_ProductSheet> {
                   ),
                 ),
                 const SizedBox(width: AppSpacing.sm),
-                Expanded(child: Text(_image != null ? 'New photo selected' : 'Tap to upload your own photo', style: context.text.bodySmall)),
+                Expanded(
+                  child: Text(
+                    _image != null ? 'New photo selected' : 'Tap to upload your own photo — pinch to zoom and drag to fit it inside the square frame.',
+                    style: context.text.bodySmall,
+                  ),
+                ),
               ],
             ),
             const SizedBox(height: AppSpacing.sm),

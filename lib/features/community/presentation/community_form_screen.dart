@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../core/services/image_crop.dart';
 import '../../../core/bloc/action_cubit.dart';
 import '../../../core/di/injection.dart';
 import '../../../core/models/common_models.dart';
@@ -115,12 +116,12 @@ class _FormViewState extends State<_FormView> {
   }
 
   Future<void> _pickCover() async {
-    final picked = await sl<MediaPicker>().image();
+    final picked = await ImageCrop.pick(ImageSlot.communityCover);
     if (picked != null) setState(() => _cover = picked);
   }
 
   Future<void> _pickIcon() async {
-    final picked = await sl<MediaPicker>().image();
+    final picked = await ImageCrop.pick(ImageSlot.squareIcon);
     if (picked != null) setState(() => _icon = picked);
   }
 
@@ -210,17 +211,8 @@ class _FormViewState extends State<_FormView> {
                 enabled: !busy,
                 onPick: _pickCover,
                 onRemove: _cover == null ? null : () => setState(() => _cover = null),
-                previewBuilder: (context, image) => CommunityCardPreview(
-                  image: image,
-                  icon: _hasIcon ? _imageOrNetwork(_icon, widget.community?.iconUrl) : null,
-                  name: _ownerFields ? _name.text.trim() : widget.community!.name,
-                  about: _description.text.trim(),
-                  category: _categories.where((c) => c.id == _categoryId).firstOrNull?.label ?? widget.community?.category?.label ?? '',
-                  isPrivate: _isPrivate,
-                  members: widget.community?.memberCount ?? 1,
-                  posts: widget.community?.discussionCount ?? 0,
-                  joinLabel: _joinLabel,
-                ),
+                // Home shows the picture on its own (title under it), so the box
+                // shows just the picture, cropped to the same shape.
               ),
             ),
             if (_hasCover) ...[

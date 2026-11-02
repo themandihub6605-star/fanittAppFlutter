@@ -1,3 +1,4 @@
+// File: lib/features/store/presentation/widgets/store_widgets.dart
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
@@ -69,13 +70,13 @@ class StoreLogo extends StatelessWidget {
         borderRadius: BorderRadius.circular(size * 0.3 - (borderColor == null ? 0 : 3)),
         child: url.isEmpty
             ? Container(
-                alignment: Alignment.center,
-                decoration: const BoxDecoration(gradient: LinearGradient(colors: [Color(0xFFF4511E), Color(0xFFEC2A78)])),
-                child: Text(
-                  name.trim().isEmpty ? 'F' : name.trim()[0].toUpperCase(),
-                  style: TextStyle(color: Colors.white, fontWeight: FontWeight.w800, fontSize: size * 0.42),
-                ),
-              )
+          alignment: Alignment.center,
+          decoration: const BoxDecoration(gradient: LinearGradient(colors: [Color(0xFFF4511E), Color(0xFFEC2A78)])),
+          child: Text(
+            name.trim().isEmpty ? 'F' : name.trim()[0].toUpperCase(),
+            style: TextStyle(color: Colors.white, fontWeight: FontWeight.w800, fontSize: size * 0.42),
+          ),
+        )
             : StoreImage(url: url),
       ),
     );
@@ -155,8 +156,9 @@ class ProductTile extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            // Square cover — same shape as Home and the upload crop.
             AspectRatio(
-              aspectRatio: 4 / 3,
+              aspectRatio: 1,
               child: Stack(
                 fit: StackFit.expand,
                 children: [

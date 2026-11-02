@@ -15,8 +15,8 @@ import '../../../../core/widgets/form_controls.dart';
 import '../../data/store_repository.dart';
 import '../widgets/store_widgets.dart';
 
-const _sourceLabels = {'digital_product': 'Digital products', 'live_stream': 'Live tickets', 'call': 'Calls', 'fanbox': 'FanBox'};
-const _sourceColors = {'digital_product': Color(0xFFF4511E), 'live_stream': Color(0xFFDC2F2F), 'call': Color(0xFF2F6FEB), 'fanbox': Color(0xFFEC2A78)};
+const _sourceLabels = {'digital_product': 'Digital products', 'session': 'Live sessions', 'live_stream': 'Live tickets', 'call': 'Calls', 'fanbox': 'FanBox'};
+const _sourceColors = {'digital_product': Color(0xFFF4511E), 'session': Color(0xFF7C4DFF), 'live_stream': Color(0xFFDC2F2F), 'call': Color(0xFF2F6FEB), 'fanbox': Color(0xFFEC2A78)};
 
 /// Creator: how the store is doing over 7 / 30 / 90 days.
 class StoreAnalyticsScreen extends StatefulWidget {

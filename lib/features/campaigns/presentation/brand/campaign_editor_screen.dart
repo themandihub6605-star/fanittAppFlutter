@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
+import '../../../../core/services/image_crop.dart';
 import '../../../../core/bloc/load_cubit.dart';
 import '../../../../core/di/injection.dart';
 import '../../../../core/models/common_models.dart';
@@ -569,7 +570,7 @@ class _ProductSheetState extends State<_ProductSheet> {
             InkWell(
               borderRadius: BorderRadius.circular(AppRadius.md),
               onTap: () async {
-                final image = await sl<MediaPicker>().image();
+                final image = await ImageCrop.pick(ImageCrop.square, title: 'Fit your product photo');
                 if (image != null) setState(() => _image = image);
               },
               child: Container(
@@ -591,6 +592,8 @@ class _ProductSheetState extends State<_ProductSheet> {
                 ),
               ),
             ),
+            const SizedBox(height: AppSpacing.xs),
+            const CropHint(text: 'Pinch to zoom and drag to fit the photo inside the square frame — that’s how creators will see it.'),
             const SizedBox(height: AppSpacing.md),
             AppTextField(
               label: 'Product name',
@@ -825,7 +828,7 @@ class _MediaStepState extends State<_MediaStep> {
               url: campaign.campaignImageUrl,
               enabled: !saving,
               onPick: () async {
-                final image = await sl<MediaPicker>().image();
+                final image = await ImageCrop.pick(ImageSlot.campaignCover);
                 if (image != null) await cubit.uploadMedia(cover: image);
               },
               previewBuilder: (context, image) => CampaignCoverPreview(image: image, campaign: campaign),

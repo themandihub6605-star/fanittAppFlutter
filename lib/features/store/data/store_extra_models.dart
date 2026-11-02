@@ -1,6 +1,7 @@
 import 'package:equatable/equatable.dart';
 
 import '../../../core/utils/json.dart';
+import 'meet_host_api.dart' show SessionDecline;
 
 // Affiliate, FanBox, analytics and Virtual Meet models. Money in paise.
 
@@ -324,7 +325,7 @@ class StoreAnalytics {
       uniqueVisitors: J.integer(totals, 'uniqueVisitors'),
       customers: J.integer(totals, 'customers'),
       conversionRate: (totals['conversionRate'] as num?)?.toDouble() ?? 0,
-      bySource: {for (final key in const ['digital_product', 'live_stream', 'call', 'fanbox']) key: SourceTotals.fromJson(J.map(by, key))},
+      bySource: {for (final key in const ['digital_product', 'session', 'live_stream', 'call', 'fanbox']) key: SourceTotals.fromJson(J.map(by, key))},
       daily: J.list(json, 'daily', DayPoint.fromJson),
       topItems: J.list(json, 'topItems', (m) => (title: J.str(m, 'title'), orders: J.integer(m, 'orders'), gross: J.integer(m, 'gross'))),
       liveCount: J.integer(lives, 'count'),
@@ -434,11 +435,33 @@ class StoreMeet extends Equatable {
 
 /// What the current user can do with a meet.
 class MeetAccess extends Equatable {
-  const MeetAccess({required this.isHost, required this.booked, required this.canJoin, this.reason});
+  const MeetAccess({
+    required this.isHost,
+    required this.booked,
+    required this.canJoin,
+    this.reason,
+    this.canDecline = false,
+    this.declineUntil,
+    this.bookingId,
+    this.refundAmount = 0,
+    this.previousScheduledAt,
+    this.declines = const [],
+  });
 
   factory MeetAccess.fromJson(Map<String, dynamic>? json) {
     final j = json ?? const <String, dynamic>{};
-    return MeetAccess(isHost: J.boolean(j, 'isHost'), booked: J.boolean(j, 'booked'), canJoin: J.boolean(j, 'canJoin'), reason: J.strOrNull(j, 'reason'));
+    return MeetAccess(
+      isHost: J.boolean(j, 'isHost'),
+      booked: J.boolean(j, 'booked'),
+      canJoin: J.boolean(j, 'canJoin'),
+      reason: J.strOrNull(j, 'reason'),
+      canDecline: J.boolean(j, 'canDecline'),
+      declineUntil: J.date(j, 'declineUntil'),
+      bookingId: J.strOrNull(j, 'bookingId'),
+      refundAmount: J.integer(j, 'refundAmount'),
+      previousScheduledAt: J.date(j, 'previousScheduledAt'),
+      declines: J.list(j, 'declines', SessionDecline.fromJson),
+    );
   }
 
   final bool isHost;
@@ -446,8 +469,20 @@ class MeetAccess extends Equatable {
   final bool canJoin;
   final String? reason; // cancelled | ended | login_required | too_early | not_booked | not_started
 
+  /// Booked fan, host rescheduled less than 30 min ago → "I won't join".
+  final bool canDecline;
+  final DateTime? declineUntil;
+  final String? bookingId;
+
+  /// Paise that go back to the fan's wallet (0 = free session).
+  final int refundAmount;
+  final DateTime? previousScheduledAt;
+
+  /// Host only: fans who can't make the new time, with their messages.
+  final List<SessionDecline> declines;
+
   @override
-  List<Object?> get props => [isHost, booked, canJoin, reason];
+  List<Object?> get props => [isHost, booked, canJoin, reason, canDecline, declineUntil, bookingId, refundAmount, declines.length];
 }
 
 class MeetDetail extends Equatable {
