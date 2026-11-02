@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../core/services/purchase_policy.dart';
 import '../../../core/widgets/app_tour.dart';
 import '../../../core/bloc/load_cubit.dart';
 import '../../../core/di/injection.dart';
@@ -123,7 +124,7 @@ class _CreatorHomeView extends StatelessWidget {
                         final sessions = HomeAction(icon: AppIcons.videoCamera, label: 'Live sessions', color: const Color(0xFF7C3AED), onTap: () => context.push(AppRoutes.meets));
                         final communities = HomeAction(icon: AppIcons.users, label: 'Communities', color: AppColors.warning, onTap: () => context.push(AppRoutes.communities));
                         final fanittStore = HomeAction(icon: AppIcons.store, label: 'Fanitt Store', color: const Color(0xFF00A3A3), onTap: () => context.push(AppRoutes.shop));
-                        final plans = HomeAction(icon: AppIcons.crown, label: 'Plans', color: const Color(0xFFEAB308), onTap: () => context.push(AppRoutes.plans));
+                        final plans = HomeAction(icon: AppIcons.crown, label: PurchasePolicy.canBuyDigital ? 'Plans' : 'My plan', color: const Color(0xFFEAB308), onTap: () => context.push(AppRoutes.plans));
                         final brands = HomeAction(icon: AppIcons.brand, label: 'Brands', color: const Color(0xFF7C4DFF), onTap: () => context.push(AppRoutes.brands));
                         final campaigns = HomeAction(icon: AppIcons.campaigns, label: 'Campaigns', color: AppColors.success, onTap: () => context.go(AppRoutes.creatorCampaigns));
                         final messages = HomeAction(icon: AppIcons.messages, label: 'Messages', color: const Color(0xFF0EA5E9), onTap: () => context.go(AppRoutes.creatorMessages));

@@ -302,13 +302,20 @@ class _Hero extends StatelessWidget {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
-                            premium ? 'You’re on Premium' : (isBrand ? 'Hire better creators, faster' : 'Go Premium, grow faster'),
+                            premium
+                                ? 'You’re on Premium'
+                            // iPhone: no upsell wording (plans can't be bought in the app).
+                                : !PurchasePolicy.canBuyDigital
+                                ? 'Your plan'
+                                : (isBrand ? 'Hire better creators, faster' : 'Go Premium, grow faster'),
                             style: context.text.headlineSmall?.copyWith(color: Colors.white, fontSize: 24, fontWeight: FontWeight.w800, letterSpacing: -0.4, height: 1.2),
                           ),
                           const SizedBox(height: 6),
                           Text(
                             premium
                                 ? 'All your plan benefits are active.'
+                                : !PurchasePolicy.canBuyDigital
+                                ? 'Here’s what your current plan includes.'
                                 : access.any
                                 ? 'A paid plan unlocks the tools below.'
                                 : (isBrand ? 'Post more campaigns and pay lower fees.' : 'Send more proposals, keep more of what you earn.'),

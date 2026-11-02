@@ -16,6 +16,7 @@ import '../../../core/utils/formatters.dart';
 import '../../../core/widgets/app_network_image.dart';
 import '../../../core/widgets/app_sheet.dart';
 import '../../../core/widgets/app_snackbar.dart';
+import '../../../core/widgets/report_sheet.dart';
 import '../../../core/widgets/user_avatar.dart';
 import '../data/story_repository.dart';
 
@@ -108,6 +109,19 @@ class _StoryViewerScreenState extends State<StoryViewerScreen> {
     setState(() => _groups[groupIndex] = StoryGroup(author: g.author, stories: left, isMine: g.isMine));
   }
 
+  /// You blocked this person — their stories go away.
+  void _blockedGroup(int groupIndex) {
+    if (groupIndex >= _groups.length) return;
+    _groups = [for (var i = 0; i < _groups.length; i++) if (i != groupIndex) _groups[i]];
+    if (_groups.isEmpty) {
+      _close();
+      return;
+    }
+    setState(() {
+      if (_group >= _groups.length) _group = _groups.length - 1;
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     return PopScope(
@@ -138,6 +152,7 @@ class _StoryViewerScreenState extends State<StoryViewerScreen> {
               onSeen: (id) => _seen(i, id),
               onReacted: (id, emoji) => _reacted(i, id, emoji),
               onRemoved: (id) => _removed(i, id),
+              onBlocked: () => _blockedGroup(i),
             ),
           ),
         ),
@@ -159,6 +174,7 @@ class _GroupPlayer extends StatefulWidget {
     required this.onSeen,
     required this.onReacted,
     required this.onRemoved,
+    required this.onBlocked,
   });
 
   final StoryGroup group;
@@ -172,6 +188,9 @@ class _GroupPlayer extends StatefulWidget {
   final ValueChanged<String> onSeen;
   final void Function(String storyId, String? emoji) onReacted;
   final ValueChanged<String> onRemoved;
+
+  /// The viewer blocked this person.
+  final VoidCallback onBlocked;
 
   @override
   State<_GroupPlayer> createState() => _GroupPlayerState();
@@ -412,6 +431,32 @@ class _GroupPlayerState extends State<_GroupPlayer> with SingleTickerProviderSta
     if (mounted) _pause(false);
   }
 
+  /// Someone else's story: report it, or block the person.
+  Future<void> _otherMenu() async {
+    _pause(true);
+    final story = _story;
+    final author = widget.group.author;
+    final result = await showContentActions(context, type: ReportType.story, id: story.id, name: author.name, userId: author.userId);
+    if (!mounted) return;
+    if (result == 'blocked') {
+      widget.onBlocked();
+      return;
+    }
+    if (result == 'reported') {
+      // Hide the reported story right away.
+      final wasLast = widget.group.stories.length == 1;
+      widget.onRemoved(story.id);
+      if (wasLast) return;
+      if (_index >= widget.group.stories.length - 1) _index = (widget.group.stories.length - 2).clamp(0, 999);
+      _paused = false;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _start();
+      });
+      return;
+    }
+    _pause(false);
+  }
+
   Future<void> _showViewers(Story story) async {
     List<StoryViewer> viewers = const [];
     try {
@@ -549,7 +594,7 @@ class _GroupPlayerState extends State<_GroupPlayer> with SingleTickerProviderSta
                           ),
                         ),
                       ),
-                      if (g.isMine) IconButton(tooltip: 'More', icon: const Icon(AppIcons.dotsThree, color: Colors.white), onPressed: _ownerMenu),
+                      IconButton(tooltip: g.isMine ? 'More' : 'Report or block', icon: const Icon(AppIcons.dotsThree, color: Colors.white), onPressed: g.isMine ? _ownerMenu : _otherMenu),
                       IconButton(tooltip: 'Close', icon: const Icon(AppIcons.close, color: Colors.white), onPressed: widget.onClose),
                     ],
                   ),

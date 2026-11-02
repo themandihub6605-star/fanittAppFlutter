@@ -7,6 +7,7 @@ import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import '../../../core/services/feature_flags.dart';
+import '../../../core/services/purchase_policy.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
 
@@ -1228,6 +1229,16 @@ class _PickedForYouSectionState extends State<PickedForYouSection> {
               );
             }
             final data = snap.data!;
+            if (data.locked && !PurchasePolicy.canBuyDigital) {
+              // iPhone: no plan upsell — point to the open campaigns instead.
+              return _PickedPrompt(
+                icon: AppIcons.campaigns,
+                title: 'Browse open campaigns',
+                message: 'Find campaigns that fit you',
+                action: 'Open',
+                onTap: () => context.go(AppRoutes.creatorCampaigns),
+              );
+            }
             if (data.locked) {
               return _PickedPrompt(
                 icon: AppIcons.crown,

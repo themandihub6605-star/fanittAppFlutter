@@ -30,6 +30,9 @@ import 'link_opener.dart';
 /// that are testers of the app or have already reviewed it (they see their
 /// old review instead) — that's Play's rule, not the app's.
 abstract final class AppRating {
+  /// The store the app came from — iPhone must never say "Google Play".
+  static String get storeName => Platform.isIOS ? 'the App Store' : 'Google Play';
+
   static const _doneKey = 'app_rating_done';
   static const _nextKey = 'app_rating_next_at';
   static const _opensKey = 'app_rating_opens';
@@ -168,7 +171,7 @@ class _RateSheet extends StatelessWidget {
               ],
             ),
             const SizedBox(height: AppSpacing.md),
-            Text('Rate Fanitt on Google Play', textAlign: TextAlign.center, style: TextStyle(fontSize: 20, fontWeight: FontWeight.w900, letterSpacing: -0.4, color: palette.textPrimary)),
+            Text(Platform.isIOS ? 'Rate Fanitt on the App Store' : 'Rate Fanitt on Google Play', textAlign: TextAlign.center, style: TextStyle(fontSize: 20, fontWeight: FontWeight.w900, letterSpacing: -0.4, color: palette.textPrimary)),
             const SizedBox(height: AppSpacing.xs),
             Text(
               'Your rating helps more creators, brands and fans find Fanitt. It only takes a few seconds.',
@@ -177,7 +180,7 @@ class _RateSheet extends StatelessWidget {
             ),
             const SizedBox(height: AppSpacing.xl),
             AppButton(
-              label: 'Rate on Google Play',
+              label: Platform.isIOS ? 'Rate on the App Store' : 'Rate on Google Play',
               icon: AppIcons.starFilled,
               onPressed: () => Navigator.of(context).pop(true),
             ),

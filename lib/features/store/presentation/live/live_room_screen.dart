@@ -12,6 +12,7 @@ import 'package:wakelock_plus/wakelock_plus.dart';
 
 import '../../../../core/di/injection.dart';
 import '../../../../core/network/api_exception.dart';
+import '../../../../core/services/purchase_policy.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_icons.dart';
 import '../../../../core/theme/app_palette.dart';
@@ -19,6 +20,7 @@ import '../../../../core/theme/app_spacing.dart';
 import '../../../../core/utils/formatters.dart';
 import '../../../../core/widgets/app_sheet.dart';
 import '../../../../core/widgets/app_snackbar.dart';
+import '../../../../core/widgets/report_sheet.dart';
 import '../../../../core/widgets/user_avatar.dart';
 import '../../../auth/presentation/bloc/auth_bloc.dart';
 import '../../data/meet_host_api.dart';
@@ -297,6 +299,8 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> {
 
   void _addChat(_ChatLine line) {
     if (!mounted || line.text.trim().isEmpty) return;
+    // People you blocked don't show up in your chat.
+    if (line.identity.isNotEmpty && BlockedUsers.instance.blockedByMe(line.identity)) return;
     setState(() {
       _chat.add(line);
       if (_chat.length > 60) _chat.removeAt(0);
@@ -704,6 +708,32 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> {
     }
   }
 
+  /// Viewer: report or block the host of this live (Apple needs this for
+  /// user content). Blocking the host leaves the live.
+  Future<void> _reportHost() async {
+    final host = _room.remoteParticipants.values.where((p) => _roleOf(p) == 'host').firstOrNull;
+    final hostId = host?.identity ?? '';
+    if (hostId.isEmpty) {
+      AppSnackbar.info(context, 'The host isn’t here right now. Try again in a moment.');
+      return;
+    }
+    final name = _args.hostName.isEmpty ? (host?.name ?? 'host') : _args.hostName;
+    final result = await showContentActions(context, type: ReportType.user, id: hostId, name: name, userId: hostId);
+    if (result == 'blocked' && mounted) {
+      _leaving = true;
+      Navigator.of(context).pop();
+    }
+  }
+
+  /// Long-press a chat message: report or block the person who wrote it.
+  Future<void> _reportChatLine(_ChatLine line) async {
+    if (line.identity.isEmpty || line.mine || line.system) return;
+    final result = await showContentActions(context, type: ReportType.user, id: line.identity, name: line.name, userId: line.identity);
+    if (result == 'blocked' && mounted) {
+      setState(() => _chat.removeWhere((l) => l.identity == line.identity));
+    }
+  }
+
   Future<void> _close() async {
     if (_args.isCoHost && !_ended && !_leaving) {
       final ok = await confirmAction(context, title: 'Leave the collab?', message: 'You’ll go off screen. You can join again from the live page while it’s on.', confirmLabel: 'Leave');
@@ -851,9 +881,10 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> {
                       fanboxTotal: _args.isHost ? _fanboxTotal : 0,
                       fanboxCount: _args.isHost ? _fanboxCount : 0,
                       reactions: _reactionTotal,
+                      onReport: _args.isHost || _args.isCoHost ? null : _reportHost,
                     ),
                     const Spacer(),
-                    if (_args.chatEnabled) _ChatList(lines: _chat, onTapLine: _args.isHost ? _offerShoutout : null),
+                    if (_args.chatEnabled) _ChatList(lines: _chat, onTapLine: _args.isHost ? _offerShoutout : null, onLongPressLine: _reportChatLine),
                     _BottomBar(
                       isHost: _args.isHost,
                       chatEnabled: _args.chatEnabled,
@@ -881,7 +912,8 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> {
                       requested: _requested,
                       // Viewers ask to join (needs chat — it travels the same way).
                       onRequestJoin: !_args.isHost && !_args.isCoHost && !_onStage && _args.chatEnabled ? _requestJoin : null,
-                      onFanBox: _args.isHost || _args.isCoHost || _args.storeId.isEmpty
+                      // FanBox isn't available on iPhone (Apple rules).
+                      onFanBox: _args.isHost || _args.isCoHost || _args.storeId.isEmpty || !PurchasePolicy.canBuyDigital
                           ? null
                           : () => showFanBoxSheet(
                         context,
@@ -934,7 +966,10 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> {
 }
 
 class _TopBar extends StatelessWidget {
-  const _TopBar({required this.title, required this.viewers, required this.onClose, this.fanboxTotal = 0, this.fanboxCount = 0, this.reactions = 0});
+  const _TopBar({required this.title, required this.viewers, required this.onClose, this.fanboxTotal = 0, this.fanboxCount = 0, this.reactions = 0, this.onReport});
+
+  /// Viewers: report / block the host.
+  final VoidCallback? onReport;
 
   /// Reactions thrown in this live (everyone sees it).
   final int reactions;
@@ -1006,6 +1041,7 @@ class _TopBar extends StatelessWidget {
           ],
           const SizedBox(width: AppSpacing.sm),
           Expanded(child: Text(title, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600))),
+          if (onReport != null) IconButton(tooltip: 'Report or block', onPressed: onReport, icon: const Icon(AppIcons.dotsThree, color: Colors.white)),
           IconButton(tooltip: 'Close', onPressed: onClose, icon: const Icon(AppIcons.close, color: Colors.white)),
         ],
       ),
@@ -1014,9 +1050,12 @@ class _TopBar extends StatelessWidget {
 }
 
 class _ChatList extends StatelessWidget {
-  const _ChatList({required this.lines, this.onTapLine});
+  const _ChatList({required this.lines, this.onTapLine, this.onLongPressLine});
 
   final List<_ChatLine> lines;
+
+  /// Everyone: long-press someone's message to report / block them.
+  final ValueChanged<_ChatLine>? onLongPressLine;
 
   /// Host only: tap a viewer's message to give them a shoutout.
   final ValueChanged<_ChatLine>? onTapLine;
@@ -1032,6 +1071,7 @@ class _ChatList extends StatelessWidget {
           for (final line in recent)
             GestureDetector(
               onTap: onTapLine == null || line.identity.isEmpty || line.mine ? null : () => onTapLine!(line),
+              onLongPress: onLongPressLine == null || line.identity.isEmpty || line.mine || line.system ? null : () => onLongPressLine!(line),
               child: Container(
                 margin: const EdgeInsets.only(bottom: 6),
                 padding: EdgeInsets.symmetric(horizontal: 10, vertical: line.system ? 4 : 6),

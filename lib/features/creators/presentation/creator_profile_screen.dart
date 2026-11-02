@@ -166,27 +166,31 @@ class _LoadedState extends State<_Loaded> {
                 child: const Icon(AppIcons.instagram, color: Colors.white, size: 30),
               ),
               const SizedBox(height: AppSpacing.md),
-              Text('Unlock Instagram profiles', textAlign: TextAlign.center, style: sheet.text.titleLarge),
+              Text(PurchasePolicy.canBuyDigital ? 'Unlock Instagram profiles' : 'Instagram profiles', textAlign: TextAlign.center, style: sheet.text.titleLarge),
               const SizedBox(height: AppSpacing.xs),
               Text(
-                'See ${widget.data.creator.name}’s Instagram and every creator’s social profile with any paid Fanitt plan.',
+                // iPhone: no plan upsell (plans can't be bought in the app).
+                PurchasePolicy.canBuyDigital
+                    ? 'See ${widget.data.creator.name}’s Instagram and every creator’s social profile with any paid Fanitt plan.'
+                    : 'Creators’ Instagram profiles aren’t available on your current plan.',
                 textAlign: TextAlign.center,
                 style: sheet.text.bodyMedium?.copyWith(color: sheet.palette.textSecondary, height: 1.45),
               ),
               const SizedBox(height: AppSpacing.xl),
-              SizedBox(
-                width: double.infinity,
-                child: _ActionButton(
-                  label: 'See plans',
-                  icon: AppIcons.crown,
-                  filled: true,
-                  onTap: () {
-                    Navigator.of(sheet).pop();
-                    context.push(AppRoutes.plans).then((_) => _checkInsta());
-                  },
+              if (PurchasePolicy.canBuyDigital)
+                SizedBox(
+                  width: double.infinity,
+                  child: _ActionButton(
+                    label: 'See plans',
+                    icon: AppIcons.crown,
+                    filled: true,
+                    onTap: () {
+                      Navigator.of(sheet).pop();
+                      context.push(AppRoutes.plans).then((_) => _checkInsta());
+                    },
+                  ),
                 ),
-              ),
-              TextButton(onPressed: () => Navigator.of(sheet).pop(), child: const Text('Not now')),
+              TextButton(onPressed: () => Navigator.of(sheet).pop(), child: Text(PurchasePolicy.canBuyDigital ? 'Not now' : 'OK')),
             ],
           ),
         ),

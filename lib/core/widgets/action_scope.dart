@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 
 import '../bloc/action_cubit.dart';
 import '../router/app_routes.dart';
+import '../services/purchase_policy.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_icons.dart';
 import '../theme/app_palette.dart';
@@ -14,6 +15,9 @@ import 'app_snackbar.dart';
 
 /// Backend error codes that mean "your plan doesn't allow this".
 const _upgradeCodes = {'PROPOSAL_QUOTA_EXCEEDED', 'EXCLUSIVE_CAMPAIGN_LOCKED', 'PRO_FEATURE_LOCKED'};
+
+/// iPhone: the server's "upgrade to …" text can't be shown (Apple rules).
+const _iosPlanMessage = 'This isn’t available on your current plan.';
 
 /// Provides an [ActionCubit] to a screen and reports every action's
 /// outcome — snackbars for success and errors, an upgrade prompt for
@@ -61,7 +65,8 @@ Future<void> showUpgradePrompt(BuildContext context, String message) {
   return showAppSheet<void>(
     context,
     builder: (sheetContext) => SheetBody(
-      title: 'Upgrade your plan',
+      // iPhone: plans can't be bought in the app — no "upgrade" wording or button.
+      title: PurchasePolicy.canBuyDigital ? 'Upgrade your plan' : 'Not available right now',
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
@@ -75,16 +80,16 @@ Future<void> showUpgradePrompt(BuildContext context, String message) {
               children: [
                 const Icon(AppIcons.crown, color: AppColors.primary),
                 const SizedBox(width: AppSpacing.sm),
-                Expanded(child: Text(message, style: sheetContext.text.bodyMedium?.copyWith(color: sheetContext.palette.textPrimary))),
+                Expanded(child: Text(PurchasePolicy.canBuyDigital ? message : _iosPlanMessage, style: sheetContext.text.bodyMedium?.copyWith(color: sheetContext.palette.textPrimary))),
               ],
             ),
           ),
           const SizedBox(height: AppSpacing.lg),
           AppButton(
-            label: 'See plans',
+            label: PurchasePolicy.canBuyDigital ? 'See plans' : 'OK',
             onPressed: () {
               Navigator.of(sheetContext).pop();
-              context.push(AppRoutes.plans);
+              if (PurchasePolicy.canBuyDigital) context.push(AppRoutes.plans);
             },
           ),
         ],
@@ -118,39 +123,42 @@ class InlineActionError extends StatelessWidget {
           child: message == null
               ? const SizedBox(width: double.infinity)
               : Container(
-                  width: double.infinity,
-                  margin: const EdgeInsets.only(bottom: AppSpacing.md),
-                  padding: const EdgeInsets.all(AppSpacing.sm),
-                  decoration: BoxDecoration(
-                    color: AppColors.error.withValues(alpha: 0.08),
-                    borderRadius: BorderRadius.circular(AppRadius.sm),
-                  ),
-                  child: Row(
+            width: double.infinity,
+            margin: const EdgeInsets.only(bottom: AppSpacing.md),
+            padding: const EdgeInsets.all(AppSpacing.sm),
+            decoration: BoxDecoration(
+              color: AppColors.error.withValues(alpha: 0.08),
+              borderRadius: BorderRadius.circular(AppRadius.sm),
+            ),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Icon(AppIcons.warning, size: 18, color: AppColors.error),
+                const SizedBox(width: AppSpacing.xs),
+                Expanded(
+                  child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const Icon(AppIcons.warning, size: 18, color: AppColors.error),
-                      const SizedBox(width: AppSpacing.xs),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(message, style: context.text.bodyMedium?.copyWith(color: context.palette.textPrimary)),
-                            if (_upgradeCodes.contains(state.errorCode))
-                              TextButton(
-                                style: TextButton.styleFrom(padding: EdgeInsets.zero, minimumSize: const Size(0, 32)),
-                                onPressed: () {
-                                  final router = GoRouter.of(context);
-                                  Navigator.of(context).pop();
-                                  router.push(AppRoutes.plans);
-                                },
-                                child: const Text('See plans'),
-                              ),
-                          ],
-                        ),
+                      Text(
+                        _upgradeCodes.contains(state.errorCode) && !PurchasePolicy.canBuyDigital ? _iosPlanMessage : message,
+                        style: context.text.bodyMedium?.copyWith(color: context.palette.textPrimary),
                       ),
+                      if (_upgradeCodes.contains(state.errorCode) && PurchasePolicy.canBuyDigital)
+                        TextButton(
+                          style: TextButton.styleFrom(padding: EdgeInsets.zero, minimumSize: const Size(0, 32)),
+                          onPressed: () {
+                            final router = GoRouter.of(context);
+                            Navigator.of(context).pop();
+                            router.push(AppRoutes.plans);
+                          },
+                          child: const Text('See plans'),
+                        ),
                     ],
                   ),
                 ),
+              ],
+            ),
+          ),
         );
       },
     );

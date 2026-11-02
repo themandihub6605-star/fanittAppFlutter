@@ -7,6 +7,7 @@ import 'package:flutter_animate/flutter_animate.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../../core/services/purchase_policy.dart';
 import '../../../../core/services/image_crop.dart';
 import '../../../../core/bloc/action_cubit.dart';
 import '../../../../core/bloc/load_cubit.dart';
@@ -361,10 +362,17 @@ class _PlanGate extends StatelessWidget {
               .scaleXY(begin: 1, end: 1.05, duration: 1400.ms, curve: Curves.easeInOut),
         ),
         const SizedBox(height: AppSpacing.lg),
-        Text('Unlock your Fanitt Store', textAlign: TextAlign.center, style: context.text.headlineSmall?.copyWith(fontWeight: FontWeight.w900)),
+        Text(
+          PurchasePolicy.canBuyDigital ? 'Unlock your Fanitt Store' : 'Fanitt Store',
+          textAlign: TextAlign.center,
+          style: context.text.headlineSmall?.copyWith(fontWeight: FontWeight.w900),
+        ),
         const SizedBox(height: AppSpacing.xs),
         Text(
-          'Opening a store needs a Fanitt plan — monthly or yearly. Pick one and come right back to set up your store.',
+          // iPhone: no "pick a plan" (plans can't be bought in the app).
+          PurchasePolicy.canBuyDigital
+              ? 'Opening a store needs a Fanitt plan — monthly or yearly. Pick one and come right back to set up your store.'
+              : 'The Fanitt Store isn’t available on your current plan yet.',
           textAlign: TextAlign.center,
           style: context.text.bodyMedium?.copyWith(height: 1.45),
         ),
@@ -394,11 +402,13 @@ class _PlanGate extends StatelessWidget {
           ),
         ),
         const SizedBox(height: AppSpacing.xl),
-        AppButton(label: 'See plans', icon: AppIcons.crown, onPressed: () => _openPlans(context)),
-        const SizedBox(height: AppSpacing.sm),
+        if (PurchasePolicy.canBuyDigital) ...[
+          AppButton(label: 'See plans', icon: AppIcons.crown, onPressed: () => _openPlans(context)),
+          const SizedBox(height: AppSpacing.sm),
+        ],
         TextButton(
           onPressed: () => context.read<LoadCubit<MyStore>>().refresh(),
-          child: const Text('I’ve already subscribed — check again'),
+          child: Text(PurchasePolicy.canBuyDigital ? 'I’ve already subscribed — check again' : 'Check again'),
         ),
       ],
     );

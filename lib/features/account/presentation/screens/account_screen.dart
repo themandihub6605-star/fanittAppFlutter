@@ -12,6 +12,7 @@ import '../../../../core/router/app_routes.dart';
 import '../../../../core/services/app_rating.dart';
 import '../../../../core/services/share_service.dart';
 import '../../../../core/services/link_opener.dart';
+import '../../../../core/services/purchase_policy.dart';
 import '../../../../core/services/feature_flags.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_icons.dart';
@@ -140,7 +141,7 @@ class AccountScreen extends StatelessWidget {
                   _Tile(icon: AppIcons.shieldCheck, title: 'Privacy policy', onTap: () => context.push(AppRoutes.privacyPolicy)),
                   _Tile(icon: AppIcons.fileText, title: 'Terms of use', onTap: () => context.push(AppRoutes.termsOfUse)),
                   Builder(builder: (ctx) => _Tile(icon: AppIcons.share, title: 'Share Fanitt', subtitle: 'Invite friends to the app', onTap: () => ShareService.send(ctx, ShareService.app()))),
-                  _Tile(icon: AppIcons.star, title: 'Rate Fanitt', subtitle: 'Leave a rating on Google Play', onTap: AppRating.rateNow),
+                  _Tile(icon: AppIcons.star, title: 'Rate Fanitt', subtitle: 'Leave a rating on ${AppRating.storeName}', onTap: AppRating.rateNow),
                 ]),
                 const SizedBox(height: AppSpacing.lg),
                 _Group(children: [
@@ -258,7 +259,7 @@ class AccountCardState extends State<AccountCard> {
         color: const Color(0xFFF59E0B),
         label: 'Wallet',
         value: Fmt.money(user.walletBalance),
-        hint: _isCreator ? 'Withdraw' : 'Add money',
+        hint: _isCreator ? 'Withdraw' : 'Details',
         hintColor: AppColors.primary,
         onTap: () => context.push(AppRoutes.wallet),
       ),
@@ -268,7 +269,8 @@ class AccountCardState extends State<AccountCard> {
           color: const Color(0xFFEAB308),
           label: 'Plan',
           value: sub?.plan.name,
-          hint: sub == null ? null : (sub.plan.isFree ? 'Upgrade' : 'Manage'),
+          // iPhone: plans can't be bought in the app, so no "Upgrade".
+          hint: sub == null ? null : (!PurchasePolicy.canBuyDigital ? 'Details' : (sub.plan.isFree ? 'Upgrade' : 'Manage')),
           hintColor: AppColors.primary,
           loading: !_loaded,
           onTap: () => context.push(AppRoutes.plans),
@@ -570,7 +572,7 @@ class _ProposalMeter extends StatelessWidget {
                   style: context.text.bodySmall?.copyWith(fontSize: 12),
                 ),
               ),
-              if (isFree) Text('Get more', style: context.text.bodySmall?.copyWith(fontSize: 12, color: AppColors.primary, fontWeight: FontWeight.w800)),
+              if (isFree && PurchasePolicy.canBuyDigital) Text('Get more', style: context.text.bodySmall?.copyWith(fontSize: 12, color: AppColors.primary, fontWeight: FontWeight.w800)),
             ],
           ),
           const SizedBox(height: 6),

@@ -4,6 +4,7 @@ import 'package:flutter_animate/flutter_animate.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../core/services/purchase_policy.dart';
 import '../../../core/widgets/app_tour.dart';
 import '../../../core/bloc/load_cubit.dart';
 import '../../../core/di/injection.dart';
@@ -119,7 +120,7 @@ class _BrandHomeView extends StatelessWidget {
                             const Icon(AppIcons.crown, size: 14, color: AppColors.sunrise),
                             const SizedBox(width: 4),
                             Text(
-                              data.subscription.plan.isFree ? '${data.subscription.plan.name} · Upgrade' : data.subscription.plan.name,
+                              data.subscription.plan.isFree && PurchasePolicy.canBuyDigital ? '${data.subscription.plan.name} · Upgrade' : data.subscription.plan.name,
                               style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w700),
                             ),
                           ],
@@ -184,7 +185,7 @@ class _BrandHomeView extends StatelessWidget {
                         final products = HomeAction(icon: AppIcons.package, label: 'Digital products', color: const Color(0xFF0D9488), onTap: () => context.push(AppRoutes.products));
                         final rest = [
                           HomeAction(icon: AppIcons.wallet, label: 'Wallet', color: const Color(0xFFF59E0B), onTap: () => context.push(AppRoutes.wallet)),
-                          HomeAction(icon: AppIcons.crown, label: 'Plans', color: const Color(0xFFEAB308), onTap: () => context.push(AppRoutes.plans)),
+                          HomeAction(icon: AppIcons.crown, label: PurchasePolicy.canBuyDigital ? 'Plans' : 'My plan', color: const Color(0xFFEAB308), onTap: () => context.push(AppRoutes.plans)),
                           HomeAction(icon: AppIcons.receipt, label: 'Activity', color: const Color(0xFF16A34A), onTap: () => context.push(AppRoutes.transactions)),
                           HomeAction(icon: AppIcons.userPlus, label: 'Following', color: const Color(0xFF14B8A6), onTap: () => context.push(AppRoutes.following)),
                           HomeAction(icon: AppIcons.pencil, label: 'Edit profile', color: AppColors.info, onTap: () => context.push(AppRoutes.editProfile)),

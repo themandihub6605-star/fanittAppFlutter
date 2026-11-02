@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../core/services/purchase_policy.dart';
 import '../../../core/services/image_crop.dart';
 import '../../../core/bloc/action_cubit.dart';
 import '../../../core/di/injection.dart';
@@ -452,18 +453,27 @@ class _PlanNeededCard extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text('Fanitt plan needed', style: TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.w800)),
+                Text(
+                  PurchasePolicy.canBuyDigital ? 'Fanitt plan needed' : 'Not available on your plan',
+                  style: const TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.w800),
+                ),
                 const SizedBox(height: 2),
-                Text('Pick a monthly or yearly plan to create communities.', style: TextStyle(color: Colors.white.withValues(alpha: 0.9), fontSize: 12.5)),
+                Text(
+                  // iPhone: no "pick a plan" (plans can't be bought in the app).
+                  PurchasePolicy.canBuyDigital ? 'Pick a monthly or yearly plan to create communities.' : 'Creating communities isn’t available on your current plan.',
+                  style: TextStyle(color: Colors.white.withValues(alpha: 0.9), fontSize: 12.5),
+                ),
               ],
             ),
           ),
-          const SizedBox(width: 8),
-          FilledButton(
-            onPressed: onSeePlans,
-            style: FilledButton.styleFrom(backgroundColor: Colors.white, foregroundColor: AppColors.primary),
-            child: const Text('See plans'),
-          ),
+          if (PurchasePolicy.canBuyDigital) ...[
+            const SizedBox(width: 8),
+            FilledButton(
+              onPressed: onSeePlans,
+              style: FilledButton.styleFrom(backgroundColor: Colors.white, foregroundColor: AppColors.primary),
+              child: const Text('See plans'),
+            ),
+          ],
         ],
       ),
     );
