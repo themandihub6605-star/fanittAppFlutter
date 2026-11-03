@@ -1,4 +1,5 @@
 // File: lib/features/account/presentation/widgets/security_sheets.dart
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
@@ -15,6 +16,7 @@ import '../../../../core/widgets/app_card.dart';
 import '../../../../core/widgets/app_sheet.dart';
 import '../../../../core/widgets/app_snackbar.dart';
 import '../../../../core/widgets/app_text_field.dart';
+import '../../../auth/data/services/apple_auth_service.dart';
 import '../../../auth/presentation/bloc/auth_bloc.dart';
 import '../../../profile/data/profile_repository.dart';
 
@@ -110,12 +112,22 @@ class _DeleteAccountSheetState extends State<_DeleteAccountSheet> {
     super.dispose();
   }
 
+  /// Signed up with Apple on this iPhone — Apple's sign-in must be revoked too.
+  bool get _isAppleUser {
+    final auth = context.read<AuthBloc>().state;
+    return !kIsWeb && defaultTargetPlatform == TargetPlatform.iOS && auth is AuthAuthenticated && auth.user.authProvider == 'apple';
+  }
+
   Future<void> _delete() async {
+    final apple = _isAppleUser;
     final ok = await context.read<ActionCubit>().run('delete', () async {
       await sl<ProfileRepository>().deleteAccount();
       return true;
     });
-    if (ok != null && mounted) Navigator.of(context).pop(true);
+    if (ok == null || !mounted) return;
+    // Apple rule: revoke "Sign in with Apple" for this app (after the deletion went through).
+    if (apple) await sl<AppleAuthService>().revokeAccess();
+    if (mounted) Navigator.of(context).pop(true);
   }
 
   @override
@@ -134,7 +146,8 @@ class _DeleteAccountSheetState extends State<_DeleteAccountSheet> {
               'Your account is locked right away and permanently deleted within 7 days — your profile, '
                   'posts, stories and community posts are removed. Payment records are kept only as required by law. '
                   'Withdraw any wallet balance first — it can’t be recovered after deletion. '
-                  'You can sign up again later with the same email.',
+                  'You can sign up again later with the same email.'
+                  '${_isAppleUser ? ' Apple will ask you to confirm once more to remove Sign in with Apple.' : ''}',
               style: context.text.bodyMedium?.copyWith(color: context.palette.textPrimary),
             ),
           ),

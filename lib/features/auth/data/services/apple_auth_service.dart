@@ -35,6 +35,28 @@ class AppleAuthService {
     }
   }
 
+  /// Apple rule: when someone who signed in with Apple deletes their account,
+  /// the app must revoke the Apple sign-in. Apple shows its sheet once more
+  /// to give a fresh code, and Firebase revokes it with Apple.
+  ///
+  /// Needs the Apple key set up in Firebase (Authentication → Apple →
+  /// OAuth code flow: Team ID, Key ID, private key). Never throws — the
+  /// account deletion has already gone through.
+  Future<void> revokeAccess() async {
+    try {
+      final provider = AppleAuthProvider()..addScope('email');
+      final credential = await _auth.signInWithProvider(provider);
+      final code = credential.additionalUserInfo?.authorizationCode;
+      if (code != null && code.isNotEmpty) {
+        await _auth.revokeTokenWithAuthorizationCode(code);
+      }
+    } catch (_) {
+      // Cancelled, offline, or the Apple key isn't set up yet — nothing to do.
+    } finally {
+      await signOut();
+    }
+  }
+
   /// Firebase is only used to get the token; Fanitt keeps its own session.
   Future<void> signOut() async {
     try {
