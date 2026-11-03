@@ -141,7 +141,9 @@ class AccountScreen extends StatelessWidget {
                   _Tile(icon: AppIcons.shieldCheck, title: 'Privacy policy', onTap: () => context.push(AppRoutes.privacyPolicy)),
                   _Tile(icon: AppIcons.fileText, title: 'Terms of use', onTap: () => context.push(AppRoutes.termsOfUse)),
                   Builder(builder: (ctx) => _Tile(icon: AppIcons.share, title: 'Share Fanitt', subtitle: 'Invite friends to the app', onTap: () => ShareService.send(ctx, ShareService.app()))),
-                  _Tile(icon: AppIcons.star, title: 'Rate Fanitt', subtitle: 'Leave a rating on ${AppRating.storeName}', onTap: AppRating.rateNow),
+                  // iPhone: hidden until the app is live on the App Store.
+                  if (AppRating.canOpenStore)
+                    _Tile(icon: AppIcons.star, title: 'Rate Fanitt', subtitle: 'Leave a rating on ${AppRating.storeName}', onTap: AppRating.rateNow),
                 ]),
                 const SizedBox(height: AppSpacing.lg),
                 _Group(children: [

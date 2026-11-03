@@ -33,6 +33,14 @@ abstract final class AppRating {
   /// The store the app came from — iPhone must never say "Google Play".
   static String get storeName => Platform.isIOS ? 'the App Store' : 'Google Play';
 
+  /// iPhone: the app's App Store ID (the number in its App Store link, e.g.
+  /// apps.apple.com/app/id1234567890 → '1234567890'). Empty until the app is
+  /// live on the App Store — till then iPhone has no "Rate Fanitt" button.
+  static const String appStoreId = '';
+
+  /// False on iPhone until [appStoreId] is set (the store page doesn't exist yet).
+  static bool get canOpenStore => !Platform.isIOS || appStoreId.isNotEmpty;
+
   static const _doneKey = 'app_rating_done';
   static const _nextKey = 'app_rating_next_at';
   static const _opensKey = 'app_rating_opens';
@@ -66,6 +74,13 @@ abstract final class AppRating {
       // Let Home settle first.
       await Future<void>.delayed(const Duration(seconds: 3));
       if (!context.mounted || _showing) return;
+      if (Platform.isIOS) {
+        // Apple allows only its own review popup (no custom sheet before it).
+        // iOS itself decides whether to show it (max 3 times a year).
+        await prefs.setInt(_nextKey, DateTime.now().add(_snooze).millisecondsSinceEpoch);
+        await _tryInAppPopup();
+        return;
+      }
       await _ask(context);
     } catch (e) {
       debugPrint('[AppRating] $e');
@@ -78,6 +93,20 @@ abstract final class AppRating {
     try {
       await _prefs.setBool(_doneKey, true);
     } catch (_) {}
+    if (Platform.isIOS) {
+      // App Store page (with "Write a review") once the app is live;
+      // before that only Apple's own popup — never a blank store page.
+      if (appStoreId.isNotEmpty) {
+        try {
+          await InAppReview.instance.openStoreListing(appStoreId: appStoreId);
+          return;
+        } catch (e) {
+          debugPrint('[AppRating] App Store page did not open: $e');
+        }
+      }
+      await _tryInAppPopup();
+      return;
+    }
     if (await _tryInAppPopup()) return;
     await _openStorePage();
   }
@@ -129,7 +158,7 @@ abstract final class AppRating {
     try {
       final info = await PackageInfo.fromPlatform();
       final url = Platform.isIOS
-          ? 'https://apps.apple.com/search?term=fanitt'
+          ? 'https://apps.apple.com/app/id$appStoreId'
           : 'https://play.google.com/store/apps/details?id=${info.packageName}';
       await LinkOpener.open(url);
     } catch (e) {

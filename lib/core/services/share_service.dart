@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
@@ -12,6 +13,10 @@ import '../theme/app_icons.dart';
 abstract final class ShareLinks {
   static const String site = 'https://fanitt.com';
   static const String playStore = 'https://play.google.com/store/apps/details?id=fanitt.comapp.fanittapp';
+
+  /// "Download the app" link. iPhone must never share a Google Play link
+  /// (Apple rule), so it shares the website, which offers both stores.
+  static String get download => !kIsWeb && defaultTargetPlatform == TargetPlatform.iOS ? site : playStore;
 
   static String open(String type, String id) => '$site/open/$type/${Uri.encodeComponent(id)}';
 }
@@ -132,9 +137,9 @@ abstract final class ShareService {
     );
   }
 
-  static ShareMessage app() => const ShareMessage(
+  static ShareMessage app() => ShareMessage(
     subject: 'Join me on Fanitt',
-    text: '🚀 I’m on Fanitt — where creators, brands and fans work together.\n\nFind paid campaigns, open your own store, go live and earn.\n\nDownload the app 👉 ${ShareLinks.playStore}',
+    text: '🚀 I’m on Fanitt — where creators, brands and fans work together.\n\nFind paid campaigns, open your own store, go live and earn.\n\nDownload the app 👉 ${ShareLinks.download}',
   );
 
   /// Refer & earn invite with the user's own code.
@@ -148,7 +153,7 @@ abstract final class ShareService {
         '🔒 Every payment protected until the work is done\n\n'
         '✨ Use my code: *$code*\n'
         '(enter it when you sign up)\n\n'
-        'Download now 👉 ${ShareLinks.playStore}',
+        'Download now 👉 ${ShareLinks.download}',
   );
 }
 
